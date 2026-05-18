@@ -11,7 +11,7 @@ void main() async {
   );
   // ↓ これを追加！ URLは Firebase Console の Realtime Database 画面上部にある
   // https://[プロジェクト名]-default-rtdb.firebaseio.com/ のような形式のものです。
-  FirebaseDatabase.instance.databaseURL = "https://mori-game-default-rtdb.firebaseio.com/";
+  FirebaseDatabase.instance.databaseURL = "https://mori-game-default-rtdb.asia-southeast1.firebasedatabase.app/";
 
   runApp(const MoriApp());
 }
