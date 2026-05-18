@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart'; // flutterfire configureで生成されたファイル
+import 'package:mori_game/pages/GamePage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +19,7 @@ class MoriApp extends StatelessWidget {
     return MaterialApp(
       title: 'もり - リアルタイム対戦',
       theme: ThemeData(primarySwatch: Colors.green), // トランプっぽく緑
-      home: const GamePage(),
+      home: GamePage(),
     );
   }
 }

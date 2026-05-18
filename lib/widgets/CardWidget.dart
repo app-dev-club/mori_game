@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/CardModel.dart';
+import 'package:mori_game/models/CardModel.dart';
 
 class CardWidget extends StatelessWidget {
   final CardModel card;

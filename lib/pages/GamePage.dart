@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../models/CardModel.dart';
-import '../logic/MoriLogic.dart';
-import '../widgets/CardWidget.dart';
+import 'package:mori_game/models/CardModel.dart'; // package:プロジェクト名/... に書き換え
+import 'package:mori_game/logic/MoriLogic.dart';
+import 'package:mori_game/widgets/CardWidget.dart';
 
 class GamePage extends StatefulWidget {
   const GamePage({super.key});

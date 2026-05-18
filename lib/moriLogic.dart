@@ -1,4 +1,4 @@
-import '../models/CardModel.dart';
+import 'package:mori_game/models/CardModel.dart'; 
 
 class MoriLogic {
   // 通常の「もり」判定（合計値）
