@@ -13,6 +13,10 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> {
+  late String myId;
+  String? hostId;
+  bool get isHost => myId == hostId;
+
   // DatabaseURLを明示的に指定して接続を安定させる
   final DatabaseReference _roomRef = FirebaseDatabase.instance.ref('rooms/test_room');
 
@@ -28,13 +32,33 @@ class _GamePageState extends State<GamePage> {
   @override
   void initState() {
     super.initState();
+    myId = DateTime.now().millisecondsSinceEpoch.toString(); // 簡易的なID生成
+
     _prepareLocalCards();
     _listenToRoom();
+
+    _initializeHostAndGame();
+  }
+
+  Future<void> _initializeHostAndGame() async {
+    await Future.delayed(const Duration(milliseconds: 500)); // 少し待ってから開始
     
-    // Firebaseの準備が整うまで少し待ってから初期化チェック
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _checkAndInitializeFirebase();
-    });
+    final snapshot = await _roomRef.get();
+
+    if (!snapshot.exists || snapshot.child('host').value == null) {
+      // 最初のプレイヤーがホストになる
+      await _roomRef.update({'host': myId});
+      print("あなたがホストになりました。ID: $myId");
+    } else {
+      hostId = snapshot.child('host').value.toString();
+      print("現在のホストは: $hostId です。");
+    }
+
+    if (isHost) {
+      if (!snapshot.exists || snapshot.child('field').value != null) {
+        _forceDrawFromDeckToField();
+      }
+    }
   }
 
   @override
@@ -46,31 +70,31 @@ class _GamePageState extends State<GamePage> {
   void _listenToRoom() {
     _roomSubscription = _roomRef.onValue.listen((event) {
       final data = event.snapshot.value as Map?;
-      if (data == null) {
-        // 部屋が空の状態（リセット後など）
-        setState(() => fieldNumber = -1);
-        return;
-      }
+      if (data == null) return;
+
+      setState((){
+        hostId = data['host']?.toString();
 
       final field = data['field'] as Map?;
       if (field != null) {
-        if (mounted) {
-          setState(() {
-            fieldNumber = field['number'];
-            fieldSuit = Suit.values.firstWhere(
-              (e) => e.name == field['suit'],
-              orElse: () => Suit.joker,
-            );
-            isInitialPhase = data['isInitialPhase'] ?? true;
-          });
-
-          // 【修正】データを受信した結果「誰も出せない初期状態」なら、
-          // 0.5秒待ってから自分がめくる（全員で実行してもFirebaseが順序制御します）
-          if (isInitialPhase && !_hasInitialMatchingCard()) {
-            _drawNextInitialCard();
-          }
-        }
+        fieldNumber = field['number'];
+        fieldSuit = Suit.values.firstWhere(
+          (e) => e.name == field['suit'],
+          orElse: () => Suit.joker,
+        );
+        isInitialPhase = data['isInitialPhase'] ?? true;
       }
+    });
+
+    if (isHost && isInitialPhase && !_hasInitialMatchingCard()) {
+      _drawNextInitialCard();
+    }
+  });
+  }
+
+  void _resetGame() {
+    _roomRef.remove().then((_) {
+      _initializeHostAndGame();
     });
   }
 
@@ -190,13 +214,6 @@ class _GamePageState extends State<GamePage> {
         _resetGame();
       }, child: const Text('リセット'))],
     ));
-  }
-
-  void _resetGame() {
-    _roomRef.remove().then((_) {
-      _prepareLocalCards();
-      _checkAndInitializeFirebase();
-    });
   }
 
   @override
