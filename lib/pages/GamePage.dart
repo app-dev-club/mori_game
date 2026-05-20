@@ -29,7 +29,7 @@ class _GamePageState extends State<GamePage> {
   bool isInitialPhase = true;
   bool isInitializing = true;
   int currentTurnIndex = 0;
-  bool isDrawCompetitive = false; // ドローによる早い者勝ちモード
+  bool isDrawCompetitive = false; 
 
   @override
   void initState() {
@@ -45,18 +45,18 @@ class _GamePageState extends State<GamePage> {
     super.dispose();
   }
 
-  // --- 初期化: プレイヤー登録とホスト判定 ---
+  // --- 初期化: プレイヤーリストの整合性を保ちつつ入室 ---
   Future<void> _initializeGame() async {
     setState(() => isInitializing = true);
     await Future.delayed(const Duration(milliseconds: 1000));
     
     final snapshot = await _roomRef.get();
     
-    // プレイヤーリストの登録 (入室順)
     List<String> currentPlayers = [];
     if (snapshot.child('players').exists) {
       currentPlayers = List<String>.from(snapshot.child('players').value as List);
     }
+    
     if (!currentPlayers.contains(myId)) {
       currentPlayers.add(myId);
       await _roomRef.child('players').set(currentPlayers);
@@ -147,56 +147,51 @@ class _GamePageState extends State<GamePage> {
     });
   }
 
-  // --- ターン制御ロジック ---
+  // --- ターン・割り込み判定ロジック ---
   bool _canIPlay(CardModel card) {
     if (isInitialPhase) return card.number == fieldNumber;
 
-    // ルール1: 同じ数字はいつでも早い者勝ち
+    // 1. 同じ数字はいつでも割り込みOK (早い者勝ち)
     if (card.number == fieldNumber) return true;
 
-    // ルール2: 自分のターンの判定
     int myIndex = playerIds.indexOf(myId);
-    bool isMyTurn = (currentTurnIndex % playerIds.length == myIndex);
-
-    // ルール3: カードドローによる早い者勝ち状態
-    // (引いた人と、その次の人のどちらかであればOK)
+    if (myIndex == -1) return false;
+    int officialTurnIndex = currentTurnIndex % playerIds.length;
+    
+    // 2. ドロー後の早い者勝ち
     if (isDrawCompetitive) {
-      int prevIndex = (currentTurnIndex - 1 + playerIds.length) % playerIds.length;
-      if (myIndex == currentTurnIndex || myIndex == prevIndex) {
+      int drawerIndex = (currentTurnIndex - 1 + playerIds.length) % playerIds.length;
+      if (myIndex == drawerIndex || myIndex == officialTurnIndex) {
         if (card.suit == fieldSuit) return true;
       }
+      return false;
     }
 
-    // 基本ルール: 自分のターンなら同じマーク
-    if (isMyTurn && card.suit == fieldSuit) return true;
+    // 3. 通常ターン
+    if (myIndex == officialTurnIndex && card.suit == fieldSuit) return true;
 
     return false;
   }
 
   void _playCard(CardModel card) {
     if (!_canIPlay(card)) {
-      _showErrorSnackBar(card.number == fieldNumber ? "早い者勝ちに負けました" : "今はあなたの番ではありません");
+      _showErrorSnackBar("今は出せません");
       return;
     }
 
+    int myIndex = playerIds.indexOf(myId);
+    if (myIndex == -1) return;
+
     setState(() => myHand.remove(card));
 
-    // 次のターンの計算
-    int myIndex = playerIds.indexOf(myId);
-    int nextTurn;
-    if (card.number == fieldNumber) {
-      // 同じ数字で割り込んだら、自分の次の人がターンになる
-      nextTurn = (myIndex + 1) % playerIds.length;
-    } else {
-      // 通常通りなら順番を進める
-      nextTurn = (currentTurnIndex + 1) % playerIds.length;
-    }
+    // 次のターンは、誰がどのような形で出したとしても「出した人の次」に回す
+    int nextTurnIndex = (myIndex + 1) % playerIds.length;
 
     _roomRef.update({
       'field': {'number': card.number, 'suit': card.suit.name},
       'isInitialPhase': false,
-      'currentTurnIndex': nextTurn,
-      'isDrawCompetitive': false, // 誰かが出したら競争モード終了
+      'currentTurnIndex': nextTurnIndex,
+      'isDrawCompetitive': false,
     });
   }
 
@@ -204,7 +199,6 @@ class _GamePageState extends State<GamePage> {
     if (firebaseDeck.isEmpty || isInitialPhase) return;
     if (myHand.length >= 7) return;
 
-    // 自分の番の時だけ引ける、または引いた瞬間に「次の人」との競争モードへ
     int myIndex = playerIds.indexOf(myId);
     if (currentTurnIndex % playerIds.length != myIndex) return;
 
@@ -216,7 +210,7 @@ class _GamePageState extends State<GamePage> {
 
       setState(() => myHand.add(drawnCard));
       
-      // ドローしたら「自分」と「次の人」で早い者勝ちモードへ
+      // ドロー後は「次の人」に公式ターンを渡し、競争モードをONにする
       await _roomRef.update({
         'deck': deckData,
         'currentTurnIndex': (currentTurnIndex + 1) % playerIds.length,
@@ -225,7 +219,7 @@ class _GamePageState extends State<GamePage> {
     }
   }
 
-  // --- ヘルパー ---
+  // --- ヘルパーメソッド ---
   List<CardModel> _generateFullDeck() {
     List<CardModel> deck = [];
     for (var suit in Suit.values) {
@@ -274,9 +268,18 @@ class _GamePageState extends State<GamePage> {
     }
 
     int myIndex = playerIds.indexOf(myId);
-    bool isMyTurn = (currentTurnIndex % playerIds.length == myIndex);
-    String turnText = isMyTurn ? "あなたの番です！" : "相手の番を待っています...";
-    if (isDrawCompetitive) turnText = "早い者勝ち！ドローされました";
+    int officialTurnIndex = currentTurnIndex % playerIds.length;
+    bool isMyTurn = (officialTurnIndex == myIndex);
+    
+    // 自分がドローした本人かどうか
+    bool iAmDrawer = false;
+    if (isDrawCompetitive) {
+      int drawerIndex = (currentTurnIndex - 1 + playerIds.length) % playerIds.length;
+      if (myId == playerIds[drawerIndex]) iAmDrawer = true;
+    }
+
+    String turnText = isMyTurn ? "あなたの番です" : "待機中...";
+    if (isDrawCompetitive) turnText = (isMyTurn || iAmDrawer) ? "ドロー競争中！" : "相手がドローしました";
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
@@ -288,7 +291,10 @@ class _GamePageState extends State<GamePage> {
       body: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(turnText, style: TextStyle(color: isMyTurn ? Colors.orange : Colors.white70, fontWeight: FontWeight.bold, fontSize: 18)),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(turnText, style: TextStyle(color: (isMyTurn || iAmDrawer) ? Colors.orange : Colors.white70, fontWeight: FontWeight.bold, fontSize: 18)),
+          ),
           Padding(
             padding: const EdgeInsets.only(top: 10),
             child: GestureDetector(
