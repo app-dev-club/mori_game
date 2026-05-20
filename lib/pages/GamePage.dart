@@ -22,11 +22,14 @@ class _GamePageState extends State<GamePage> {
 
   List<CardModel> firebaseDeck = []; 
   List<CardModel> myHand = []; 
+  List<String> playerIds = [];
   
   int fieldNumber = -1;
   Suit fieldSuit = Suit.joker;
   bool isInitialPhase = true;
-  bool isInitializing = true; // 初期化中フラグ
+  bool isInitializing = true;
+  int currentTurnIndex = 0;
+  bool isDrawCompetitive = false; // ドローによる早い者勝ちモード
 
   @override
   void initState() {
@@ -42,43 +45,46 @@ class _GamePageState extends State<GamePage> {
     super.dispose();
   }
 
-  // --- 初期化ロジック (競合対策版) ---
+  // --- 初期化: プレイヤー登録とホスト判定 ---
   Future<void> _initializeGame() async {
     setState(() => isInitializing = true);
-    
-    // Firebaseの反映を待つためのバッファ
     await Future.delayed(const Duration(milliseconds: 1000));
+    
     final snapshot = await _roomRef.get();
     
+    // プレイヤーリストの登録 (入室順)
+    List<String> currentPlayers = [];
+    if (snapshot.child('players').exists) {
+      currentPlayers = List<String>.from(snapshot.child('players').value as List);
+    }
+    if (!currentPlayers.contains(myId)) {
+      currentPlayers.add(myId);
+      await _roomRef.child('players').set(currentPlayers);
+    }
+
     if (!snapshot.exists || snapshot.child('host').value == null) {
-      print("自分がホストとして初期化します");
       await _setupNewRoom();
     } else {
-      print("ゲストとして参加し、山札を待ちます");
       await _joinAsGuest();
     }
-    
     setState(() => isInitializing = false);
   }
 
   Future<void> _setupNewRoom() async {
     List<CardModel> fullDeck = _generateFullDeck();
     fullDeck.shuffle();
-
-    // 自分の手札をローカルで確保
     final initialHand = fullDeck.sublist(0, 5);
     fullDeck.removeRange(0, 5);
-    
-    // 初期場札
     final firstCard = fullDeck.removeLast();
 
-    // Firebaseへ一括書き込み
     await _roomRef.set({
       'host': myId,
+      'players': [myId],
       'deck': fullDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'field': {'number': firstCard.number, 'suit': firstCard.suit.name},
       'isInitialPhase': true,
-      'lastPlayerId': 'system',
+      'currentTurnIndex': 0,
+      'isDrawCompetitive': false,
     });
 
     setState(() {
@@ -92,32 +98,18 @@ class _GamePageState extends State<GamePage> {
     while (retryCount < 5) {
       final snapshot = await _roomRef.get();
       final deckData = snapshot.child('deck').value as List?;
-      
       if (deckData != null && deckData.length >= 5) {
         List<CardModel> currentDeck = deckData.map((item) {
           final map = item as Map;
-          return CardModel(
-            number: (map['number'] as num).toInt(),
-            suit: Suit.values.firstWhere((e) => e.name == map['suit']),
-          );
+          return CardModel(number: (map['number'] as num).toInt(), suit: Suit.values.firstWhere((e) => e.name == map['suit']));
         }).toList();
-
-        final initialHand = currentDeck.sublist(0, 5);
-        final remainingDeck = currentDeck.sublist(5);
-
-        // Firebaseの山札を更新（自分が引いた分を消す）
-        await _roomRef.update({
-          'deck': remainingDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-        });
-
         setState(() {
-          myHand = initialHand;
-          firebaseDeck = remainingDeck;
+          myHand = currentDeck.sublist(0, 5);
+          firebaseDeck = currentDeck.sublist(5);
         });
+        await _roomRef.update({'deck': firebaseDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList()});
         return;
       }
-      
-      print("山札がまだ準備されていません。リトライ中... ($retryCount)");
       await Future.delayed(const Duration(seconds: 1));
       retryCount++;
     }
@@ -128,18 +120,17 @@ class _GamePageState extends State<GamePage> {
     _roomSubscription = _roomRef.onValue.listen((event) {
       final data = event.snapshot.value as Map?;
       if (data == null) return;
-
       if (mounted) {
         setState(() {
           hostId = data['host']?.toString();
+          playerIds = List<String>.from(data['players'] ?? []);
+          currentTurnIndex = (data['currentTurnIndex'] as num? ?? 0).toInt();
+          isDrawCompetitive = data['isDrawCompetitive'] ?? false;
+          
           if (data['deck'] != null) {
-            List<dynamic> deckData = data['deck'];
-            firebaseDeck = deckData.map((item) {
+            firebaseDeck = (data['deck'] as List).map((item) {
               final map = item as Map;
-              return CardModel(
-                number: (map['number'] as num).toInt(),
-                suit: Suit.values.firstWhere((e) => e.name == map['suit']),
-              );
+              return CardModel(number: (map['number'] as num).toInt(), suit: Suit.values.firstWhere((e) => e.name == map['suit']));
             }).toList();
           }
           final field = data['field'] as Map?;
@@ -149,8 +140,6 @@ class _GamePageState extends State<GamePage> {
             isInitialPhase = data['isInitialPhase'] ?? true;
           }
         });
-
-        // ホストのみ：初期フェーズの自動めくり
         if (isHost && isInitialPhase && fieldNumber != -1 && !_hasInitialMatchingCard()) {
           _drawNextInitialCard();
         }
@@ -158,70 +147,95 @@ class _GamePageState extends State<GamePage> {
     });
   }
 
-  // --- ゲームアクション ---
+  // --- ターン制御ロジック ---
+  bool _canIPlay(CardModel card) {
+    if (isInitialPhase) return card.number == fieldNumber;
+
+    // ルール1: 同じ数字はいつでも早い者勝ち
+    if (card.number == fieldNumber) return true;
+
+    // ルール2: 自分のターンの判定
+    int myIndex = playerIds.indexOf(myId);
+    bool isMyTurn = (currentTurnIndex % playerIds.length == myIndex);
+
+    // ルール3: カードドローによる早い者勝ち状態
+    // (引いた人と、その次の人のどちらかであればOK)
+    if (isDrawCompetitive) {
+      int prevIndex = (currentTurnIndex - 1 + playerIds.length) % playerIds.length;
+      if (myIndex == currentTurnIndex || myIndex == prevIndex) {
+        if (card.suit == fieldSuit) return true;
+      }
+    }
+
+    // 基本ルール: 自分のターンなら同じマーク
+    if (isMyTurn && card.suit == fieldSuit) return true;
+
+    return false;
+  }
+
   void _playCard(CardModel card) {
-    if (myHand.length == 1 && card.number != fieldNumber) {
-       _showErrorSnackBar("最後の一枚は「もり」以外では出せません！");
-       return;
+    if (!_canIPlay(card)) {
+      _showErrorSnackBar(card.number == fieldNumber ? "早い者勝ちに負けました" : "今はあなたの番ではありません");
+      return;
     }
 
-    bool canPlay = false;
-    if (fieldSuit == Suit.joker || 
-        (isInitialPhase && card.number == fieldNumber) || 
-        (!isInitialPhase && (card.number == fieldNumber || card.suit == fieldSuit))) {
-      canPlay = true;
+    setState(() => myHand.remove(card));
+
+    // 次のターンの計算
+    int myIndex = playerIds.indexOf(myId);
+    int nextTurn;
+    if (card.number == fieldNumber) {
+      // 同じ数字で割り込んだら、自分の次の人がターンになる
+      nextTurn = (myIndex + 1) % playerIds.length;
+    } else {
+      // 通常通りなら順番を進める
+      nextTurn = (currentTurnIndex + 1) % playerIds.length;
     }
 
-    if (canPlay) {
-      setState(() => myHand.remove(card));
-      _roomRef.update({
-        'field': {'number': card.number, 'suit': card.suit.name},
-        'isInitialPhase': false,
-        'lastPlayerId': myId,
-      });
-    }
+    _roomRef.update({
+      'field': {'number': card.number, 'suit': card.suit.name},
+      'isInitialPhase': false,
+      'currentTurnIndex': nextTurn,
+      'isDrawCompetitive': false, // 誰かが出したら競争モード終了
+    });
   }
 
   Future<void> _drawCard() async {
     if (firebaseDeck.isEmpty || isInitialPhase) return;
-    if (myHand.length >= 7) {
-      _showErrorSnackBar("手札がいっぱいです！");
-      return;
-    }
+    if (myHand.length >= 7) return;
+
+    // 自分の番の時だけ引ける、または引いた瞬間に「次の人」との競争モードへ
+    int myIndex = playerIds.indexOf(myId);
+    if (currentTurnIndex % playerIds.length != myIndex) return;
 
     final snapshot = await _roomRef.child('deck').get();
     if (snapshot.exists) {
       List<dynamic> deckData = List.from(snapshot.value as List);
       var lastCardMap = deckData.removeLast() as Map;
-      CardModel drawnCard = CardModel(
-        number: (lastCardMap['number'] as num).toInt(),
-        suit: Suit.values.firstWhere((e) => e.name == lastCardMap['suit']),
-      );
+      CardModel drawnCard = CardModel(number: (lastCardMap['number'] as num).toInt(), suit: Suit.values.firstWhere((e) => e.name == lastCardMap['suit']));
 
       setState(() => myHand.add(drawnCard));
-      await _roomRef.update({'deck': deckData});
+      
+      // ドローしたら「自分」と「次の人」で早い者勝ちモードへ
+      await _roomRef.update({
+        'deck': deckData,
+        'currentTurnIndex': (currentTurnIndex + 1) % playerIds.length,
+        'isDrawCompetitive': true,
+      });
     }
   }
 
-  // --- ヘルパーメソッド ---
+  // --- ヘルパー ---
   List<CardModel> _generateFullDeck() {
-    List<CardModel> newDeck = [];
+    List<CardModel> deck = [];
     for (var suit in Suit.values) {
-      if (suit == Suit.joker) {
-        newDeck.add(CardModel(suit: suit, number: 0));
-      } else {
-        for (int i = 1; i <= 13; i++) {
-          newDeck.add(CardModel(suit: suit, number: i));
-        }
-      }
+      if (suit == Suit.joker) { deck.add(CardModel(suit: suit, number: 0)); }
+      else { for (int i = 1; i <= 13; i++) { deck.add(CardModel(suit: suit, number: i)); } }
     }
-    return newDeck;
+    return deck;
   }
 
-  bool _hasInitialMatchingCard() {
-    if (fieldSuit == Suit.joker) return true;
-    return myHand.any((c) => c.number == fieldNumber);
-  }
+  bool _hasInitialMatchingCard() => fieldSuit == Suit.joker || myHand.any((c) => c.number == fieldNumber);
 
   Future<void> _drawNextInitialCard() async {
     if (firebaseDeck.isEmpty) return;
@@ -237,17 +251,12 @@ class _GamePageState extends State<GamePage> {
 
   bool _canMori() {
     if (isInitialPhase || fieldNumber == -1) return false;
-    if (myHand.length == 2) {
-      return MoriLogic.checkNormalMori(fieldNumber, myHand) ||
-             MoriLogic.checkSpecialMori(fieldNumber, myHand);
-    }
+    if (myHand.length == 2) return MoriLogic.checkNormalMori(fieldNumber, myHand) || MoriLogic.checkSpecialMori(fieldNumber, myHand);
     if (myHand.length == 1) return myHand[0].number == fieldNumber;
     return false;
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
+  void _showErrorSnackBar(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(milliseconds: 500)));
 
   void _showResultDialog(String title, String message) {
     showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(
@@ -256,50 +265,38 @@ class _GamePageState extends State<GamePage> {
     ));
   }
 
-  void _resetGame() {
-    _roomRef.remove().then((_) => _initializeGame());
-  }
+  void _resetGame() => _roomRef.remove().then((_) => _initializeGame());
 
   @override
   Widget build(BuildContext context) {
-    // 初期化中、またはデータ読み込み前はぐるぐるを表示
     if (isInitializing || fieldNumber == -1 || myHand.isEmpty) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF1B5E20),
-        body: Center(child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: Colors.white),
-            SizedBox(height: 20),
-            Text("手札を配っています...", style: TextStyle(color: Colors.white)),
-          ],
-        )),
-      );
+      return const Scaffold(backgroundColor: Color(0xFF1B5E20), body: Center(child: CircularProgressIndicator(color: Colors.white)));
     }
+
+    int myIndex = playerIds.indexOf(myId);
+    bool isMyTurn = (currentTurnIndex % playerIds.length == myIndex);
+    String turnText = isMyTurn ? "あなたの番です！" : "相手の番を待っています...";
+    if (isDrawCompetitive) turnText = "早い者勝ち！ドローされました";
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
         title: Text(isHost ? 'もり (ホスト)' : 'もり (ゲスト)'),
         backgroundColor: Colors.transparent,
-        actions: [
-          Center(child: Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Text('山札: ${firebaseDeck.length}'),
-          ))
-        ],
+        actions: [Center(child: Padding(padding: const EdgeInsets.only(right: 16), child: Text('山札: ${firebaseDeck.length}')))],
       ),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          Text(turnText, style: TextStyle(color: isMyTurn ? Colors.orange : Colors.white70, fontWeight: FontWeight.bold, fontSize: 18)),
           Padding(
-            padding: const EdgeInsets.only(top: 20),
+            padding: const EdgeInsets.only(top: 10),
             child: GestureDetector(
-              onTap: _drawCard,
+              onTap: isMyTurn ? _drawCard : null,
               child: Container(
                 width: 70, height: 100,
                 decoration: BoxDecoration(
-                  color: isInitialPhase ? Colors.grey : Colors.blueGrey[900],
+                  color: !isMyTurn || isInitialPhase ? Colors.grey : Colors.blueGrey[900],
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.white, width: 2),
                 ),
@@ -309,7 +306,7 @@ class _GamePageState extends State<GamePage> {
           ),
           Column(
             children: [
-              Text(isInitialPhase ? '【初期】数字を合わせろ' : '共有の場', 
+              Text(isInitialPhase ? '【初期】数字を合わせろ' : '場: ${fieldSuit.name} $fieldNumber', 
                 style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               CardWidget(card: CardModel(suit: fieldSuit, number: fieldNumber), onTap: () {}),
@@ -321,7 +318,7 @@ class _GamePageState extends State<GamePage> {
               children: [
                 ElevatedButton(
                   onPressed: _canMori() ? () => _showResultDialog("もり！", "上がりです！") : null,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, disabledBackgroundColor: Colors.grey),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
                   child: const Text('もり！'),
                 ),
                 const SizedBox(height: 20),
@@ -335,7 +332,6 @@ class _GamePageState extends State<GamePage> {
                     )).toList(),
                   ),
                 ),
-                const SizedBox(height: 10),
                 Text('手札: ${myHand.length}/7', style: const TextStyle(color: Colors.white70)),
               ],
             ),
