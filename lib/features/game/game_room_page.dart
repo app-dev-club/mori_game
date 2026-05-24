@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart'; // これが必要
 import 'dart:async';
 import '../../services/firebase_db.dart';
-import '../../logic/game_rules.dart';
 import 'game_board_view.dart';
 
 class GameRoomPage extends StatefulWidget {
@@ -50,23 +49,30 @@ class _GameRoomPageState extends State<GameRoomPage> {
   void _onDataReceived(DatabaseEvent event) { // DatabaseEventが認識されます
     final data = event.snapshot.value as Map?;
     if (data == null || !mounted) return;
+
     setState(() {
       hostId = data['host'];
       playerIds = List<String>.from(data['players'] ?? []);
       currentTurn = data['currentTurnIndex'] ?? 0;
       lastPlayerId = data['lastPlayerId'];
+      
       if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
+      
       if (data['field'] != null) {
         fieldNumber = data['field']['number'];
         fieldSuit = Suit.values.firstWhere((e) => e.name == data['field']['suit'], orElse: () => Suit.joker);
       }
+      
       if (data['deck'] != null) {
-        deck = (data['deck'] as List).map((i) => CardWidget(
-          number: i['number'], 
-          suit: Suit.values.firstWhere((e) => e.name == i['suit'])
-        )).toList();
+        deck = (data['deck'] as List).map((i) {
+          return CardWidget(
+            number: (i['number'] as num).toInt(), 
+            suit: Suit.values.firstWhere((e) => e.name == i['suit'])
+          );
+        }).toList();
+      } else {
+        deck = [];
       }
-      isInitialPhase = data['isInitialPhase'] ?? true;
     });
   }
 
@@ -101,14 +107,38 @@ class _GameRoomPageState extends State<GameRoomPage> {
   @override
   Widget build(BuildContext context) {
     return GameBoardView(
-      roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit,
-      myHand: myHand, playerIds: playerIds, myId: myId, handCounts: handCounts,
+      roomId: widget.roomId, 
+      fieldNumber: fieldNumber, 
+      fieldSuit: fieldSuit,
+      myHand: myHand, 
+      playerIds: playerIds, 
+      myId: myId, 
+      handCounts: handCounts,
       isMyTurn: playerIds.isNotEmpty && currentTurn % playerIds.length == playerIds.indexOf(myId),
-      isHost: myId == hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
-      onPlay: _onPlay, onDraw: () {}, onFlip: () {
+      isHost: myId == hostId, 
+      lastPlayerId: lastPlayerId, 
+      isInitialPhase: isInitialPhase,
+      onPlay: _onPlay, 
+      onDraw: () {}, 
+      onFlip: () {
         if (deck.isEmpty) return;
         final first = deck.last;
-        _db.updateGameStatus({'gameStarted': true, 'field': {'number': first.number, 'suit': first.suit.name}, 'isInitialPhase': false});
+
+        final remainingDeckData = deck
+          .sublist(0, deck.length - 1)
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList();
+
+        _db.updateGameStatus({
+          'gameStarted': true, 
+          'field': {
+            'number': first.number, 
+            'suit': first.suit.name
+          },
+          'deck': remainingDeckData,
+          'isInitialPhase': false,
+          'lastPlayerId': 'system',
+        });
       },
       onMori: () => print("Win"),
     );
