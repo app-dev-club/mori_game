@@ -6,12 +6,10 @@ enum Suit { spade, heart, diamond, club, joker }
 class CardWidget extends StatelessWidget {
   final int number;
   final Suit suit;
-  final bool isSelected;
   final VoidCallback? onTap;
 
   const CardWidget({
-    super.key, required this.number, required this.suit, 
-    this.isSelected = false, this.onTap
+    super.key, required this.number, required this.suit, this.onTap
   });
 
   String get displayNumber {
@@ -30,9 +28,10 @@ class CardWidget extends StatelessWidget {
       child: Container(
         width: 60, height: 90,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.yellow[100] : Colors.white,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isSelected ? Colors.orange : Colors.black, width: isSelected ? 3 : 1),
+          border: Border.all(color: Colors.black, width: 1),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1))]
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -65,7 +64,6 @@ class GameBoardView extends StatelessWidget {
   final int fieldNumber;
   final Suit fieldSuit;
   final List<CardWidget> myHand;
-  final List<int> selectedIndices;
   final List<String> playerIds;
   final String myId;
   final Map<String, int> handCounts;
@@ -73,7 +71,7 @@ class GameBoardView extends StatelessWidget {
   final bool isHost;
   final String? lastPlayerId;
   final bool isInitialPhase;
-  final String moriPhase; // 追加: もりステータス
+  final String moriPhase; 
 
   final Function(int) onCardTap;
   final VoidCallback onMori;
@@ -82,7 +80,7 @@ class GameBoardView extends StatelessWidget {
 
   const GameBoardView({
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
-    required this.myHand, required this.selectedIndices, required this.playerIds,
+    required this.myHand, required this.playerIds,
     required this.myId, required this.handCounts, required this.currentTurnIndex,
     required this.isHost, this.lastPlayerId, required this.isInitialPhase,
     required this.moriPhase,
@@ -92,14 +90,10 @@ class GameBoardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    List<CardWidget> selectedCards = selectedIndices.map((i) => myHand[i]).toList();
-    
-    // もりの条件判定
-    bool canMori = GameRules.isValidMori(fieldNumber, selectedCards);
-    // 通常時の自滅防止（もり返しフェーズ中は自分のカードにも「もり返し」可能）
-    if (moriPhase == 'none' && lastPlayerId == myId) {
-      canMori = false;
-    }
+    // 手札全体を使ったもりの条件判定
+    bool canMori = GameRules.isValidMori(fieldNumber, myHand);
+    // 通常時の自滅防止
+    if (moriPhase == 'none' && lastPlayerId == myId) canMori = false;
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
@@ -111,27 +105,30 @@ class GameBoardView extends StatelessWidget {
           _buildFieldArea(),
           const Spacer(),
           
-          // --- もり / もり返し ボタンエリア ---
-          if (canMori || moriPhase == 'mori_declared') 
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: ElevatedButton(
-                // 条件を満たしていない場合はボタンを非活性化
-                onPressed: canMori ? onMori : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange, 
-                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15)
-                ),
-                child: Text(
-                  moriPhase == 'mori_declared' ? "もり返し！！" : "もり！", 
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)
-                ),
+          // --- もりボタン（常設、条件を満たした時のみ押せる） ---
+          Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: ElevatedButton(
+              onPressed: canMori ? onMori : null, // 押せるかどうかの判定
+              style: ElevatedButton.styleFrom(
+                backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange, 
+                disabledBackgroundColor: Colors.grey[700], // 押せない時はグレー
+                padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15)
+              ),
+              child: Text(
+                moriPhase == 'mori_declared' ? "もり返し！！" : "もり！", 
+                style: TextStyle(
+                  fontSize: 24, 
+                  fontWeight: FontWeight.bold, 
+                  color: canMori ? Colors.white : Colors.white38
+                )
               ),
             ),
+          ),
 
           if (moriPhase == 'mori_declared')
             const Padding(
-              padding: EdgeInsets.all(8.0),
+              padding: EdgeInsets.only(bottom: 10),
               child: Text("🔥 もり返し受付中！ 🔥", style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold)),
             ),
 
@@ -158,11 +155,9 @@ class GameBoardView extends StatelessWidget {
         ),
       
       if (isJokerField && !isInitialPhase)
-        const Text("🃏 ジョーカー！誰でも出せます！", 
-          style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+        const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
       if (!isMyTurn && !isJokerField && fieldNumber != -1 && moriPhase == 'none')
-        const Text("同じ数字なら割り込み可能", 
-          style: TextStyle(color: Colors.white70, fontSize: 10)),
+        const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
 
       const SizedBox(height: 10),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -221,8 +216,7 @@ class GameBoardView extends StatelessWidget {
               child: CardWidget(
                 number: myHand[i].number, 
                 suit: myHand[i].suit, 
-                isSelected: selectedIndices.contains(i), 
-                onTap: () => onCardTap(i)
+                onTap: () => onCardTap(i) // タップで即座にプレイ
               )
             )
           )
