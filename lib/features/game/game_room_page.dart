@@ -31,6 +31,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String? lastPlayerId;
   List<CardWidget> deck = [];
 
+  // ドローした直後のカードを記憶（早い者勝ちで出すため）
+  CardWidget? _justDrawnCard;
+
   // もりシステム用
   String moriPhase = 'none'; 
   String? lastMoriPlayerId;  
@@ -38,10 +41,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Timer? _moriTimer;         
   String _lastTrackedMoriPlayer = ''; 
 
-  // 【今回の追加】自分がこのゲーム中にもり/もり返しを宣言したかのフラグ
   bool hasDeclaredMori = false;
-
-  // 部屋の開閉状態管理フラグ
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
 
@@ -133,9 +133,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
       
       if (data['field'] != null) {
-        fieldNumber = data['field']['number'];
-        fieldSuit = Suit.values.firstWhere((e) => e.name == data['field']['suit'], orElse: () => Suit.joker);
+        int newFieldNumber = data['field']['number'];
+        Suit newFieldSuit = Suit.values.firstWhere((e) => e.name == data['field']['suit'], orElse: () => Suit.joker);
+        
+        // 誰かがカードを出して場が更新されたら、ドロー直後のカードを出す権利（ワンチャンス）をリセット
+        if (fieldNumber != -1 && (fieldNumber != newFieldNumber || fieldSuit != newFieldSuit)) {
+          _justDrawnCard = null;
+        }
+
+        fieldNumber = newFieldNumber;
+        fieldSuit = newFieldSuit;
       }
+      
       if (data['deck'] != null) {
         deck = (data['deck'] as List).map((i) => CardWidget(
           number: i['number'], suit: Suit.values.firstWhere((e) => e.name == i['suit'])
@@ -147,7 +156,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       lastMoriPlayerId = data['lastMoriPlayerId'];
       loserPlayerId = data['loserPlayerId'];
 
-      // 通常状態（none）に戻ったら、自分の宣言フラグをリセットする
       if (moriPhase == 'none') {
         hasDeclaredMori = false;
       }
@@ -200,6 +208,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     });
   }
 
+  // --- カードタップ処理 ---
   void _onCardTap(int index) {
     if (moriPhase == 'mori_declared') return;
 
@@ -211,15 +220,60 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     bool isInterrupt = (!isMyTurn && card.number == fieldNumber && fieldNumber != -1);
     bool canPlayInTurn = isMyTurn && GameRules.canPlayNormal(fieldNumber, fieldSuit, card);
 
-    if (canPlayInTurn || isInterrupt || isJokerField) {
+    // 【修正箇所】自分が直前にドローしたカードなら、ターンが移った後でも特別に出せる（早い者勝ち）
+    bool canPlayJustDrawn = (_justDrawnCard != null && 
+                             card.number == _justDrawnCard!.number && 
+                             card.suit == _justDrawnCard!.suit && 
+                             GameRules.canPlayNormal(fieldNumber, fieldSuit, card));
+
+    if (canPlayInTurn || isInterrupt || isJokerField || canPlayJustDrawn) {
       _executePlay([card]);
+      _justDrawnCard = null; // 出したら優先権をリセット
     }
   }
 
-  // もり・もり返しボタンを押した時の処理
+  // --- ドロー処理 ---
+  void _onDraw() {
+    if (deck.isEmpty || moriPhase == 'mori_declared') return;
+    
+    // 1. ゲーム開始前はドロー不可
+    if (isInitialPhase) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ゲーム開始前は引けません！')));
+      return;
+    }
+
+    // 2. 自分のターンのみドロー可能
+    int myIdx = playerIds.indexOf(myId);
+    bool isMyTurn = (currentTurn % playerIds.length == myIdx);
+    if (!isMyTurn) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('自分のターンのみ引けます！')));
+      return;
+    }
+
+    final drawn = deck.last;
+    bool canPlayDrawnCard = GameRules.canPlayNormal(fieldNumber, fieldSuit, drawn);
+    
+    if (GameRules.isBurst(myHand.length + 1, canPlayDrawnCard)) {
+      _db.updateGameStatus({'winnerId': 'other_players'});
+      _showGameOver("バースト！手札が7枚になり、出せるカードがありません。");
+      return;
+    }
+
+    setState(() {
+      myHand.add(drawn);
+      _justDrawnCard = drawn; // 引いたカードを一時記憶
+    });
+
+    // 3. ドローした瞬間にターンを次に移す（連打防止 ＆ 次の人の早い者勝ち発生）
+    _db.updateGameStatus({
+      'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'playerHands/$myId': myHand.length,
+      'currentTurnIndex': (currentTurn + 1) % playerIds.length, 
+    });
+  }
+
   void _onMori() {
     if (GameRules.isValidMori(fieldNumber, myHand)) {
-      // 自分が宣言したことをローカルに記憶（View側で即座にボタンをグレーアウトさせる）
       setState(() {
         hasDeclaredMori = true;
       });
@@ -238,38 +292,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       } else if (moriPhase == 'mori_declared') {
         _db.updateGameStatus({
           'lastMoriPlayerId': myId,
-          'loserPlayerId': lastMoriPlayerId, // 直前の宣言者が新たな暫定敗者に
+          'loserPlayerId': lastMoriPlayerId,
         });
       }
-      
-      // 【重要】手札は減らさず、公開キープ状態のままFirebaseの状態だけを更新
     }
   }
 
-  void _onDraw() {
-    if (deck.isEmpty || moriPhase == 'mori_declared') return;
-    
-    final drawn = deck.last;
-    bool canPlayDrawnCard = GameRules.canPlayNormal(fieldNumber, fieldSuit, drawn);
-    
-    if (GameRules.isBurst(myHand.length + 1, canPlayDrawnCard)) {
-      _db.updateGameStatus({'winnerId': 'other_players'});
-      _showGameOver("バースト！手札が7枚になり、出せるカードがありません。");
-      return;
-    }
-
-    setState(() {
-      myHand.add(drawn);
-    });
-
-    _db.updateGameStatus({
-      'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-      'playerHands/$myId': myHand.length,
-      'currentTurnIndex': (currentTurn + 1) % playerIds.length, 
-    });
-  }
-
-  void _executePlay(List<CardWidget> cards) {
+  void _executePlay(List<CardWidget> cards, {bool isMoriAction = false}) {
     if (cards.isEmpty) return;
     final lastCard = cards.last;
     int myIdx = playerIds.indexOf(myId);
@@ -281,16 +310,21 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
     });
 
-    _db.updateGameStatus({
+    Map<String, dynamic> updates = {
       'field': {'number': lastCard.number, 'suit': lastCard.suit.name},
       'playerHands/$myId': myHand.length,
-      'lastPlayerId': myId,
-      'currentTurnIndex': nextTurnIndex,
-      'isInitialPhase': false,
-      'gameStarted': true,
-    });
+    };
 
-    if (myHand.isEmpty) {
+    if (!isMoriAction) {
+      updates['lastPlayerId'] = myId;
+      updates['currentTurnIndex'] = nextTurnIndex;
+      updates['isInitialPhase'] = false;
+      updates['gameStarted'] = true;
+    }
+
+    _db.updateGameStatus(updates);
+
+    if (myHand.isEmpty && !isMoriAction) {
       _db.updateGameStatus({'winnerId': myId});
     }
   }
@@ -356,7 +390,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       myHand: myHand, playerIds: playerIds, myId: myId, handCounts: handCounts, 
       currentTurnIndex: currentTurn, isHost: isHost, lastPlayerId: lastPlayerId, 
       isInitialPhase: isInitialPhase, moriPhase: moriPhase, 
-      hasDeclaredMori: hasDeclaredMori, // View側へ自分の宣言状態を渡す
+      hasDeclaredMori: hasDeclaredMori, 
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }
