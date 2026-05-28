@@ -15,9 +15,15 @@ class _EntrancePageState extends State<EntrancePage> {
   final TextEditingController _controller = TextEditingController();
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
 
+  @override
+  void initState() {
+    super.initState();
+    // 画面を開いた瞬間に、誰もいない部屋や古い部屋を一掃する
+    FirebaseDB.cleanupOldRooms();
+  }
+
   // ルーム作成処理
   void _createRoom({required bool isPrivate}) {
-    // 4桁のランダムなIDを生成
     String newRoomId = (Random().nextInt(9000) + 1000).toString();
     
     Navigator.push(
@@ -38,13 +44,18 @@ class _EntrancePageState extends State<EntrancePage> {
     final db = FirebaseDB(roomId);
     final snapshot = await db.getSnapshot();
     
-    // 入室前のバリデーション（存在チェックや開始済みチェック）
-    if (snapshot.exists && snapshot.child('gameStarted').value == true) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('その部屋は既にゲームが開始されています')),
-      );
-      return;
+    // 入室前のバリデーション
+    if (snapshot.exists) {
+      bool isStarted = snapshot.child('gameStarted').value == true;
+      String status = snapshot.child('roomStatus').value as String? ?? 'open';
+
+      if (isStarted || status == 'closed') {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('その部屋は既に開始されているか、閉鎖されています')),
+        );
+        return;
+      }
     }
 
     if (!mounted) return;
@@ -95,10 +106,16 @@ class _EntrancePageState extends State<EntrancePage> {
                 }
 
                 Map rooms = snapshot.data!.snapshot.value as Map;
-                // 公開ルームかつ開始前のみフィルタリング
+                
+                // フィルタリングを強化: 公開中 かつ 未開始 かつ プレイヤーが存在 かつ closedではない
                 List<MapEntry> activeRooms = rooms.entries.where((e) {
                   final data = e.value as Map;
-                  return data['isPrivate'] != true && data['gameStarted'] != true && data['players'] != null;
+                  bool isPrivate = data['isPrivate'] == true;
+                  bool isStarted = data['gameStarted'] == true;
+                  bool isClosed = data['roomStatus'] == 'closed';
+                  bool hasPlayers = data['players'] != null && (data['players'] as List).isNotEmpty;
+                  
+                  return !isPrivate && !isStarted && !isClosed && hasPlayers;
                 }).toList();
 
                 if (activeRooms.isEmpty) {
