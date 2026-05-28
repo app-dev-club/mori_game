@@ -37,7 +37,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
 
-  // 【重要】直前にカードを引いたプレイヤーのIDを管理
+  // 直前にカードを引いたプレイヤーのIDを管理
   String? lastDrawerId;
 
   bool get isHost => myId == hostId;
@@ -102,7 +102,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       lastPlayerId = data['lastPlayerId'];
       roomStatus = data['roomStatus'] ?? 'open';
       
-      // サーバー上のドロープレイヤー情報を同期
       lastDrawerId = data['lastDrawerId'];
 
       if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
@@ -127,18 +126,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     });
   }
 
-  // --- カード提出（タップ）処理 ---
   void _onCardTap(int index) {
     if (moriPhase == 'mori_declared') return;
     final card = myHand[index];
     int myIdx = playerIds.indexOf(myId);
     
     bool isServerTurn = (currentTurn % playerIds.length == myIdx);
-    bool isLastDrawer = (lastDrawerId == myId); // 【新規】自分が直前にドローした本人の優先権
+    bool isLastDrawer = (lastDrawerId == myId); 
     bool isInterrupt = (card.number == fieldNumber && fieldNumber != -1);
     bool isJokerField = (fieldSuit == Suit.joker);
 
-    // 通常の自分のターン、またはドロー直後の優先権、または割り込み（数字一致 / ジョーカー場）
     if (isServerTurn || isLastDrawer || isInterrupt || isJokerField) {
       if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField) {
         _executePlay([card]);
@@ -146,19 +143,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
   }
 
-  // --- ドロー処理 ---
   void _onDraw() {
     if (deck.isEmpty || moriPhase != 'none' || isInitialPhase) return;
     int myIdx = playerIds.indexOf(myId);
-    if (currentTurn % playerIds.length != myIdx) return; // 自分のターンのみ
+    if (currentTurn % playerIds.length != myIdx) return;
 
     final drawn = deck.last;
     
-    // 【ルール5.4】引いたカードを含めた手札全体で、通常出せるカードが1枚でもあるか確認
     List<CardWidget> tempHand = List.from(myHand)..add(drawn);
     bool hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
 
-    // 7枚になって1枚も出せるカードが無ければバースト敗北
     if (tempHand.length >= 7 && !hasPlayableCard) { 
       _db.updateGameStatus({'winnerId': 'other_players'}); 
       _showGameOver("バースト！手札が7枚になり、出せるカードがありません。");
@@ -167,17 +161,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     setState(() { myHand.add(drawn); });
 
-    // 【最重要】ドローした瞬間にターンインデックスを次の人に移す（次のプレイヤーに引く/出す権限を与える）
-    // 同時に、自分が引いた（lastDrawerId = myId）を記録し、早い者勝ちの優先権を保持する
     _db.updateGameStatus({
       'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'playerHands/$myId': myHand.length,
-      'currentTurnIndex': (myIdx + 1) % playerIds.length, // ターンを次に移す
-      'lastDrawerId': myId, // ドローした人を記録
+      'currentTurnIndex': (myIdx + 1) % playerIds.length,
+      'lastDrawerId': myId,
     });
   }
 
-  // --- プレイ実行（場にカードを出す） ---
   void _executePlay(List<CardWidget> cards) {
     if (cards.isEmpty) return;
     int myIdx = playerIds.indexOf(myId);
@@ -187,13 +178,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'field': {'number': cards.last.number, 'suit': cards.last.suit.name},
       'playerHands/$myId': myHand.length,
       'lastPlayerId': myId,
-      // カードを場に出した人の次のプレイヤーへターンを移す
       'currentTurnIndex': (myIdx + 1) % playerIds.length, 
-      'lastDrawerId': null, // カードが提出されたのでドローによる早い者勝ちフェーズは終了
+      'lastDrawerId': null, 
       'isInitialPhase': false, 
       'gameStarted': true,
     });
-    if (myHand.isEmpty) _db.updateGameStatus({'winnerId': myId});
+    
+    // 【修正箇所】 手札が0枚になった場合の自動勝利判定（winnerIdの更新）を削除しました。
+    // 手札が0枚になっても、勝つためには「もり」の宣言が必須となります。
   }
 
   void _onMori() {
