@@ -8,9 +8,7 @@ class CardWidget extends StatelessWidget {
   final Suit suit;
   final VoidCallback? onTap;
 
-  const CardWidget({
-    super.key, required this.number, required this.suit, this.onTap
-  });
+  const CardWidget({super.key, required this.number, required this.suit, this.onTap});
 
   String get displayNumber {
     if (suit == Suit.joker) return 'JOKER';
@@ -28,7 +26,7 @@ class CardWidget extends StatelessWidget {
       child: Container(
         width: 60, height: 90,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.white, 
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.black, width: 1),
           boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1))]
@@ -60,47 +58,33 @@ class CardWidget extends StatelessWidget {
 }
 
 class GameBoardView extends StatelessWidget {
-  final String roomId;
-  final int fieldNumber;
+  final String roomId, myId, moriPhase;
+  final int fieldNumber, currentTurnIndex;
   final Suit fieldSuit;
   final List<CardWidget> myHand;
   final List<String> playerIds;
-  final String myId;
   final Map<String, int> handCounts;
-  final int currentTurnIndex;
-  final bool isHost;
+  final bool isHost, isInitialPhase, hasDeclaredMori;
   final String? lastPlayerId;
-  final bool isInitialPhase;
-  final String moriPhase; 
-  final bool hasDeclaredMori; // 追加: 自分がこのゲーム内で宣言したか
-
+  final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
-  final VoidCallback onMori;
-  final VoidCallback onDraw;
-  final VoidCallback onFlip;
 
   const GameBoardView({
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
-    required this.myHand, required this.playerIds,
-    required this.myId, required this.handCounts, required this.currentTurnIndex,
-    required this.isHost, this.lastPlayerId, required this.isInitialPhase,
-    required this.moriPhase, required this.hasDeclaredMori,
-    required this.onCardTap, required this.onMori,
-    required this.onDraw, required this.onFlip,
+    required this.myHand, required this.playerIds, required this.myId, required this.handCounts,
+    required this.currentTurnIndex, required this.isHost, this.lastPlayerId,
+    required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
+    required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
 
   @override
   Widget build(BuildContext context) {
-    // 1. 手札全体を使ったもりの基本条件判定
     bool canMori = GameRules.isValidMori(fieldNumber, myHand);
-    
-    // 2. 通常時（誰ももりを言っていない時）の自滅防止
-    if (moriPhase == 'none' && lastPlayerId == myId) {
-      canMori = false;
-    }
-
-    // 3. 【修正の肝】条件を満たしていても、一度もりを宣言した人はゲーム終了まで強制グレーアウト
+    if (moriPhase == 'none' && lastPlayerId == myId) canMori = false;
     bool isButtonEnabled = canMori && !hasDeclaredMori;
+
+    int myIdx = playerIds.indexOf(myId);
+    bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
@@ -109,77 +93,55 @@ class GameBoardView extends StatelessWidget {
         children: [
           _buildOthersStatus(),
           const Spacer(),
-          _buildFieldArea(),
+          _buildFieldArea(isMyTurn),
           const Spacer(),
-          
-          // --- もりボタン（常設、条件を満たし、かつ未宣言の人だけが押せる） ---
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
             child: ElevatedButton(
-              onPressed: isButtonEnabled ? onMori : null, // 活性・非活性の制御
+              onPressed: isButtonEnabled ? onMori : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange, 
-                disabledBackgroundColor: Colors.grey[700], 
+                backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange,
+                disabledBackgroundColor: Colors.grey[700],
                 padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15)
               ),
               child: Text(
                 moriPhase == 'mori_declared' ? "もり返し！！" : "もり！", 
-                style: TextStyle(
-                  fontSize: 24, 
-                  fontWeight: FontWeight.bold, 
-                  color: isButtonEnabled ? Colors.white : Colors.white38
-                )
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isButtonEnabled ? Colors.white : Colors.white38)
               ),
             ),
           ),
-
           if (moriPhase == 'mori_declared')
             const Padding(
               padding: EdgeInsets.only(bottom: 10),
-              child: Text("🔥 もり返し受付中！ 🔥", style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+              child: Text("🔥 もり返し受付中 (5秒) 🔥", style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold)),
             ),
-
-          _buildMyHandSection(),
+          _buildMyHandSection(isMyTurn),
         ],
       ),
     );
   }
 
-  Widget _buildFieldArea() {
-    bool isJokerField = fieldSuit == Suit.joker;
-    int myIdx = playerIds.indexOf(myId);
-    bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);
-
+  Widget _buildFieldArea(bool isMyTurn) {
     return Column(children: [
       if (isInitialPhase && isHost)
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
-          child: ElevatedButton(
-            onPressed: onFlip,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]),
-            child: const Text("山札をめくる", style: TextStyle(color: Colors.white)),
-          ),
+          child: ElevatedButton(onPressed: onFlip, style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]), child: const Text("山札をめくる", style: TextStyle(color: Colors.white))),
         ),
-      
-      if (isJokerField && !isInitialPhase)
-        const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
-      if (!isMyTurn && !isJokerField && fieldNumber != -1 && moriPhase == 'none')
-        const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
-
+      if (fieldSuit == Suit.joker && !isInitialPhase) const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+      if (!isMyTurn && fieldSuit != Suit.joker && fieldNumber != -1 && moriPhase == 'none') const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
       const SizedBox(height: 10),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         GestureDetector(
-          onTap: onDraw,
+          onTap: (isMyTurn && !isInitialPhase && moriPhase == 'none') ? onDraw : null,
           child: Container(
             width: 60, height: 90, 
-            decoration: BoxDecoration(color: Colors.blueGrey[900], borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white24)),
+            decoration: BoxDecoration(color: isMyTurn ? Colors.blueGrey[800] : Colors.grey[900], borderRadius: BorderRadius.circular(8), border: Border.all(color: isMyTurn ? Colors.yellow : Colors.white24)),
             child: const Icon(Icons.help_outline, color: Colors.white24),
           ),
         ),
         const SizedBox(width: 20),
-        fieldNumber == -1 
-          ? Container(width: 60, height: 90, decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(8))) 
-          : CardWidget(suit: fieldSuit, number: fieldNumber),
+        fieldNumber == -1 ? Container(width: 60, height: 90, decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(8))) : CardWidget(suit: fieldSuit, number: fieldNumber),
       ]),
     ]);
   }
@@ -190,45 +152,23 @@ class GameBoardView extends StatelessWidget {
       children: playerIds.asMap().entries.where((e) => e.value != myId).map((e) {
         bool isHisTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == e.key);
         return Container(
-          padding: const EdgeInsets.all(8),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            border: isHisTurn ? Border.all(color: Colors.yellow, width: 2) : null,
-            borderRadius: BorderRadius.circular(8)
-          ),
-          child: Column(children: [
-            const Icon(Icons.person, color: Colors.white), 
-            Text('${handCounts[e.value] ?? 0}枚', style: const TextStyle(color: Colors.white))
-          ]),
+          padding: const EdgeInsets.all(8), margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(border: isHisTurn ? Border.all(color: Colors.yellow, width: 2) : null, borderRadius: BorderRadius.circular(8)),
+          child: Column(children: [const Icon(Icons.person, color: Colors.white), Text('${handCounts[e.value] ?? 0}枚', style: const TextStyle(color: Colors.white))]),
         );
       }).toList()
     );
   }
-  
-  Widget _buildMyHandSection() {
+
+  Widget _buildMyHandSection(bool isMyTurn) {
     bool isBurstWarning = myHand.length >= 6;
     return Container(
-      padding: const EdgeInsets.all(10), 
-      color: Colors.black26, 
+      padding: const EdgeInsets.all(10), color: Colors.black26,
       child: Column(children: [
-        Text("手札: ${myHand.length} / 7", style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold)), 
+        Text("手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}", style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold)),
         const SizedBox(height: 5),
-        SizedBox(
-          height: 100, 
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal, 
-            itemCount: myHand.length, 
-            itemBuilder: (c, i) => Padding(
-              padding: const EdgeInsets.all(4), 
-              child: CardWidget(
-                number: myHand[i].number, 
-                suit: myHand[i].suit, 
-                onTap: () => onCardTap(i) 
-              )
-            )
-          )
-        )
-      ])
+        SizedBox(height: 100, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: myHand.length, itemBuilder: (c, i) => Padding(padding: const EdgeInsets.all(4), child: CardWidget(number: myHand[i].number, suit: myHand[i].suit, onTap: () => onCardTap(i))))),
+      ]),
     );
   }
 }
