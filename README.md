@@ -1,7 +1,9 @@
 # Mori_game
 ## 更新後のビルド手順
-  - `flutter build web`
-  - `firebase deploy --only hosting`
+- `flutter build web`
+- `firebase deploy --only hosting`
+## ローカルでの動作確認
+- `flutter run -d chrome`
 ## 環境構築
 1. 開発環境のインストール
 - まずは自分のPCに道具を揃えます。
