@@ -37,7 +37,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
 
-  // 直前にカードを引いたプレイヤーのIDを管理
   String? lastDrawerId;
 
   bool get isHost => myId == hostId;
@@ -115,14 +114,33 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       lastMoriPlayerId = data['lastMoriPlayerId'];
       loserPlayerId = data['loserPlayerId'];
       if (moriPhase == 'none') hasDeclaredMori = false;
-      if (roomStatus == 'closed' && !isHost && !_isClosedDialogShown) { _isClosedDialogShown = true; _sub?.cancel(); _showGameOver("ホスト不在のため閉鎖されました"); }
+      
+      if (roomStatus == 'closed' && !isHost && !_isClosedDialogShown) { 
+        _isClosedDialogShown = true; 
+        _sub?.cancel(); 
+        _showGameOver("ホスト不在のため閉鎖されました"); 
+      }
+      
       if (isHost && moriPhase == 'mori_declared' && _lastTrackedMoriPlayer != lastMoriPlayerId) {
         _lastTrackedMoriPlayer = lastMoriPlayerId ?? '';
         _moriTimer?.cancel();
         _moriTimer = Timer(const Duration(seconds: 5), () => _db.updateGameStatus({'moriPhase': 'finished'}));
       }
-      if (moriPhase == 'finished' && lastMoriPlayerId != null) { _moriTimer?.cancel(); _showGameOver(lastMoriPlayerId == myId ? "勝利！(もり成功)" : (loserPlayerId == myId ? "敗北...(もりを宣言されました)" : "ゲーム終了")); }
-      if (data['winnerId'] != null) _showGameOver(data['winnerId'] == myId ? "勝利！" : "敗北...");
+      
+      if (moriPhase == 'finished' && lastMoriPlayerId != null) { 
+        _moriTimer?.cancel(); 
+        _showGameOver(lastMoriPlayerId == myId ? "勝利！(もり成功)" : (loserPlayerId == myId ? "敗北...(もりを宣言されました)" : "ゲーム終了")); 
+      }
+
+      // 【追加・修正】バーストした人がいるかどうかの判定
+      String? burstPlayerId = data['burstPlayerId'];
+      if (burstPlayerId != null) {
+        if (burstPlayerId == myId) {
+          _showGameOver("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。");
+        } else {
+          _showGameOver("ゲーム終了\n（他プレイヤーがバーストしたため、勝者はありません）");
+        }
+      }
     });
   }
 
@@ -153,9 +171,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     List<CardWidget> tempHand = List.from(myHand)..add(drawn);
     bool hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
 
+    // 【修正】バースト時は誰がバーストしたかをFirebaseに記録する
     if (tempHand.length >= 7 && !hasPlayableCard) { 
-      _db.updateGameStatus({'winnerId': 'other_players'}); 
-      _showGameOver("バースト！手札が7枚になり、出せるカードがありません。");
+      _db.updateGameStatus({'burstPlayerId': myId}); 
       return; 
     }
 
@@ -183,9 +201,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'isInitialPhase': false, 
       'gameStarted': true,
     });
-    
-    // 【修正箇所】 手札が0枚になった場合の自動勝利判定（winnerIdの更新）を削除しました。
-    // 手札が0枚になっても、勝つためには「もり」の宣言が必須となります。
   }
 
   void _onMori() {
