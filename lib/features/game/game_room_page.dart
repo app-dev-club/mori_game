@@ -36,6 +36,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool hasDeclaredMori = false;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
+  bool _gameOverDialogShown = false;
+  bool _gameOverRouteOpen = false;
+  int _lastRematchGeneration = 0;
+  bool _rematchRestartInProgress = false;
+  int _rematchReadyCount = 0;
 
   String? lastDrawerId;
   bool _hasPlayedThisTurn = false;
@@ -138,17 +143,41 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       
       if (moriPhase == 'finished' && lastMoriPlayerId != null) { 
         _moriTimer?.cancel(); 
-        _showGameOver(lastMoriPlayerId == myId ? "勝利！(もり成功)" : (loserPlayerId == myId ? "敗北...(もりを宣言されました)" : "ゲーム終了")); 
+        _showGameOver(
+          lastMoriPlayerId == myId ? "勝利！(もり成功)" : (loserPlayerId == myId ? "敗北...(もりを宣言されました)" : "ゲーム終了"),
+          allowRematch: true,
+        ); 
       }
 
-      // 【追加・修正】バーストした人がいるかどうかの判定
       String? burstPlayerId = data['burstPlayerId'];
       if (burstPlayerId != null) {
         if (burstPlayerId == myId) {
-          _showGameOver("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。");
+          _showGameOver("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。", allowRematch: true);
         } else {
-          _showGameOver("ゲーム終了\n（他プレイヤーがバーストしたため、勝者はありません）");
+          _showGameOver("ゲーム終了\n（他プレイヤーがバーストしたため、勝者はありません）", allowRematch: true);
         }
+      }
+
+      _rematchReadyCount = _countRematchReady(data, playerIds);
+      final int rematchGen = data['rematchGeneration'] as int? ?? 0;
+      if (rematchGen > _lastRematchGeneration) {
+        _lastRematchGeneration = rematchGen;
+        _applyRematchHands(data);
+        _gameOverDialogShown = false;
+        _rematchRestartInProgress = false;
+        if (_gameOverRouteOpen) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _gameOverRouteOpen) {
+              Navigator.of(context).pop();
+              _gameOverRouteOpen = false;
+            }
+          });
+        }
+      }
+
+      if (isHost && !_rematchRestartInProgress && _allRematchReady(data, playerIds)) {
+        _rematchRestartInProgress = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _hostRestartGame(List<String>.from(playerIds)));
       }
     });
   }
@@ -258,7 +287,118 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   List<CardWidget> _generateDeck() { return [for (var s in Suit.values) if (s != Suit.joker) for (var i = 1; i <= 13; i++) CardWidget(number: i, suit: s), const CardWidget(number: 0, suit: Suit.joker)]; }
 
-  void _showGameOver(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: Text(msg), actions: [TextButton(onPressed: () => Navigator.popUntil(context, (r) => r.isFirst), child: const Text("ロビーへ"))])); }
+  int _countRematchReady(Map data, List<String> players) {
+    if (players.isEmpty) return 0;
+    final ready = data['rematchReady'];
+    if (ready == null) return 0;
+    final readyMap = Map<String, dynamic>.from(ready as Map);
+    return players.where((p) => readyMap[p] == true).length;
+  }
+
+  bool _allRematchReady(Map data, List<String> players) {
+    if (players.isEmpty) return false;
+    return _countRematchReady(data, players) >= players.length;
+  }
+
+  void _applyRematchHands(Map data) {
+    final raw = data['rematchHands'];
+    if (raw is! Map || raw[myId] == null) return;
+    myHand = (raw[myId] as List)
+        .map((i) => CardWidget(
+              number: i['number'] as int,
+              suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+            ))
+        .toList();
+    _hasPlayedThisTurn = false;
+    _lastTrackedMoriPlayer = '';
+    hasDeclaredMori = false;
+  }
+
+  Future<void> _hostRestartGame(List<String> players) async {
+    if (players.isEmpty) {
+      _rematchRestartInProgress = false;
+      return;
+    }
+    final snap = await _db.getSnapshot();
+    final nextGen = (snap.child('rematchGeneration').value as int? ?? 0) + 1;
+
+    List<CardWidget> deck = _generateDeck()..shuffle();
+    final rematchHands = <String, List<Map<String, dynamic>>>{};
+    for (final pid in players) {
+      final hand = <CardWidget>[];
+      for (int i = 0; i < 5; i++) {
+        if (deck.isNotEmpty) hand.add(deck.removeLast());
+      }
+      rematchHands[pid] = hand.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    }
+    final remainingDeck = deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+
+    await _db.restartGame(
+      players: players,
+      rematchHands: rematchHands,
+      remainingDeck: remainingDeck,
+      rematchGeneration: nextGen,
+    );
+    if (mounted) {
+      setState(() {
+        myHand = (rematchHands[myId] ?? [])
+            .map((i) => CardWidget(
+                  number: i['number'] as int,
+                  suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+                ))
+            .toList();
+      });
+    }
+    _rematchRestartInProgress = false;
+  }
+
+  Future<void> _onRematchRequest() async {
+    await _db.setRematchReady(myId);
+    if (!mounted) return;
+    if (_gameOverRouteOpen) {
+      Navigator.of(context).pop();
+      _gameOverRouteOpen = false;
+    }
+    _gameOverDialogShown = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('再戦の準備ができました。他のプレイヤーを待っています…')),
+    );
+  }
+
+  void _showGameOver(String msg, {bool allowRematch = false}) {
+    if (_gameOverDialogShown) return;
+    _gameOverDialogShown = true;
+    _gameOverRouteOpen = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(msg),
+        content: allowRematch
+            ? Text('再戦: $_rematchReadyCount / ${playerIds.length} 人が準備完了')
+            : null,
+        actions: [
+          if (allowRematch)
+            TextButton(
+              onPressed: () => _onRematchRequest(),
+              child: const Text('もう一度遊ぶ'),
+            ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _gameOverRouteOpen = false;
+              _gameOverDialogShown = false;
+              Navigator.popUntil(context, (r) => r.isFirst);
+            },
+            child: const Text('ロビーへ'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      _gameOverRouteOpen = false;
+      _gameOverDialogShown = false;
+    });
+  }
 
   void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
 
@@ -268,6 +408,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId,
+      rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }
