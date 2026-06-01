@@ -13,11 +13,10 @@ void main() async {
   try {
     await FirebaseAuth.instance.signInAnonymously();
     print("匿名ログインに成功しました！");
+    runApp(const MoriGameApp());
   } catch (e) {
     print("ログインエラー: $e");
   }
-
-  runApp(const MoriGameApp());
 }
 
 class MoriGameApp extends StatelessWidget {
