@@ -65,14 +65,14 @@ class GameBoardView extends StatelessWidget {
   final List<String> playerIds;
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
-  final String? lastPlayerId;
+  final String? lastPlayerId, lastDrawerId;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
   const GameBoardView({
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
     required this.myHand, required this.playerIds, required this.myId, required this.handCounts,
-    required this.currentTurnIndex, required this.isHost, this.lastPlayerId,
+    required this.currentTurnIndex, required this.isHost, this.lastPlayerId, this.lastDrawerId,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
@@ -85,6 +85,7 @@ class GameBoardView extends StatelessWidget {
 
     int myIdx = playerIds.indexOf(myId);
     bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);
+    bool canDraw = isMyTurn && GameRules.canDraw(myHand.length, lastDrawerId, myId);
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
@@ -93,7 +94,7 @@ class GameBoardView extends StatelessWidget {
         children: [
           _buildOthersStatus(),
           const Spacer(),
-          _buildFieldArea(isMyTurn),
+          _buildFieldArea(isMyTurn: isMyTurn, canDraw: canDraw),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
@@ -121,7 +122,7 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
-  Widget _buildFieldArea(bool isMyTurn) {
+  Widget _buildFieldArea({required bool isMyTurn, required bool canDraw}) {
     return Column(children: [
       if (isInitialPhase && isHost)
         Padding(
@@ -133,10 +134,10 @@ class GameBoardView extends StatelessWidget {
       const SizedBox(height: 10),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         GestureDetector(
-          onTap: (isMyTurn && !isInitialPhase && moriPhase == 'none') ? onDraw : null,
+          onTap: (canDraw && !isInitialPhase && moriPhase == 'none') ? onDraw : null,
           child: Container(
             width: 60, height: 90, 
-            decoration: BoxDecoration(color: isMyTurn ? Colors.blueGrey[800] : Colors.grey[900], borderRadius: BorderRadius.circular(8), border: Border.all(color: isMyTurn ? Colors.yellow : Colors.white24)),
+            decoration: BoxDecoration(color: canDraw ? Colors.blueGrey[800] : Colors.grey[900], borderRadius: BorderRadius.circular(8), border: Border.all(color: canDraw ? Colors.yellow : Colors.white24)),
             child: const Icon(Icons.help_outline, color: Colors.white24),
           ),
         ),
