@@ -43,6 +43,37 @@ class FirebaseDB {
   Future<DataSnapshot> getSnapshot() => _roomRef.get();
   Future<void> deleteRoom() => _roomRef.remove();
 
+  Future<void> setRematchReady(String playerId) =>
+      _roomRef.child('rematchReady/$playerId').set(true);
+
+  /// 全員の準備が揃ったらホストが呼び、同じメンバーでゲームを初期化する。
+  Future<void> restartGame({
+    required List<String> players,
+    required Map<String, List<Map<String, dynamic>>> rematchHands,
+    required List<Map<String, dynamic>> remainingDeck,
+    required int rematchGeneration,
+  }) async {
+    await _roomRef.update({
+      'players': players,
+      'playerHands': {for (final p in players) p: 5},
+      'deck': remainingDeck,
+      'rematchHands': rematchHands,
+      'rematchGeneration': rematchGeneration,
+      'field': {'number': -1, 'suit': 'joker'},
+      'isInitialPhase': true,
+      'currentTurnIndex': 0,
+      'gameStarted': true,
+      'moriPhase': 'none',
+      'lastMoriPlayerId': null,
+      'loserPlayerId': null,
+      'burstPlayerId': null,
+      'lastDrawerId': null,
+      'lastPlayerId': null,
+      'rematchReady': null,
+      'roomStatus': 'open',
+    });
+  }
+
   // --- 追加：ホスト不在や古いルームの一括クリーンアップ処理 ---
   // インスタンス化せずに呼べるように static メソッドとして定義します
   static Future<void> cleanupOldRooms() async {

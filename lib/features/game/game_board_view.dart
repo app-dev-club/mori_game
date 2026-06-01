@@ -66,6 +66,7 @@ class GameBoardView extends StatelessWidget {
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
   final String? lastPlayerId, lastDrawerId;
+  final int rematchReadyCount, playerCount;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
@@ -74,6 +75,7 @@ class GameBoardView extends StatelessWidget {
     required this.myHand, required this.playerIds, required this.myId, required this.handCounts,
     required this.currentTurnIndex, required this.isHost, this.lastPlayerId, this.lastDrawerId,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
+    required this.rematchReadyCount, required this.playerCount,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
 
@@ -92,6 +94,17 @@ class GameBoardView extends StatelessWidget {
       appBar: AppBar(title: Text('ルーム: $roomId'), backgroundColor: Colors.transparent, elevation: 0),
       body: Column(
         children: [
+          if (rematchReadyCount > 0 && rematchReadyCount < playerCount)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.amber.shade800,
+              child: Text(
+                '再戦待機中… $rematchReadyCount / $playerCount 人が準備完了',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
           _buildOthersStatus(),
           const Spacer(),
           _buildFieldArea(isMyTurn: isMyTurn, canDraw: canDraw),
