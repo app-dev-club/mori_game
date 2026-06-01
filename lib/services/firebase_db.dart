@@ -71,6 +71,7 @@ class FirebaseDB {
       'burstPlayerId': null,
       'lastDrawerId': null,
       'lastPlayerId': null,
+      'isDrawCompetitive': false,
       'rematchReady': null,
       'roomStatus': 'open',
     });

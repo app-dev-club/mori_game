@@ -13,6 +13,43 @@ class GameRules {
     return handCount < maxHandSize && lastDrawerId != myId;
   }
 
+  /// ドロー競合フェーズ（手札6枚以下でドロー後）が有効か
+  static bool isDrawCompetitivePhase(bool isDrawCompetitive, String? lastDrawerId) {
+    return isDrawCompetitive && lastDrawerId != null;
+  }
+
+  /// ドローした直後の「次のプレイヤー」か
+  static bool isPlayerAfterDrawer(String? lastDrawerId, List<String> players, String myId) {
+    if (lastDrawerId == null || players.isEmpty) return false;
+    final drawerIdx = players.indexOf(lastDrawerId);
+    if (drawerIdx < 0) return false;
+    return players[(drawerIdx + 1) % players.length] == myId;
+  }
+
+  /// ドロー競合中にカードを出せるか（ドローした人 or 次のプレイヤー）
+  static bool canPlayInDrawCompetition({
+    required bool isDrawCompetitive,
+    required String? lastDrawerId,
+    required List<String> players,
+    required String myId,
+  }) {
+    if (!isDrawCompetitivePhase(isDrawCompetitive, lastDrawerId)) return false;
+    return lastDrawerId == myId || isPlayerAfterDrawer(lastDrawerId, players, myId);
+  }
+
+  /// ドロー競合中に山札から引けるか
+  static bool canDrawInCompetition({
+    required bool isDrawCompetitive,
+    required String? lastDrawerId,
+    required List<String> players,
+    required String myId,
+    required int handCount,
+  }) {
+    if (!isDrawCompetitivePhase(isDrawCompetitive, lastDrawerId)) return false;
+    if (!isPlayerAfterDrawer(lastDrawerId, players, myId)) return false;
+    return canDraw(handCount, lastDrawerId, myId);
+  }
+
   /// もり判定ロジック（手札全体で計算、JQK対応、ジョーカー除外）
   static bool isValidMori(int fieldNumber, List<CardWidget> hand) {
     if (fieldNumber == -1 || hand.isEmpty) return false;

@@ -45,6 +45,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int _rematchReadyCount = 0;
 
   String? lastDrawerId;
+  bool isDrawCompetitive = false;
   bool _hasPlayedThisTurn = false;
 
   bool get isHost => myId == hostId;
@@ -110,10 +111,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       roomStatus = data['roomStatus'] ?? 'open';
       
       lastDrawerId = data['lastDrawerId'];
+      isDrawCompetitive = data['isDrawCompetitive'] == true;
 
       final int myIdx = playerIds.indexOf(myId);
       final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
-      if (lastDrawerId == myId) {
+      final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
+        isDrawCompetitive: isDrawCompetitive,
+        lastDrawerId: lastDrawerId,
+        players: playerIds,
+        myId: myId,
+      );
+      if (inDrawCompetition) {
+        _hasPlayedThisTurn = false;
+      } else if (lastDrawerId == myId) {
         _hasPlayedThisTurn = false;
       } else if (isMyTurn && lastPlayerId != myId) {
         _hasPlayedThisTurn = false;
@@ -196,13 +206,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     int myIdx = playerIds.indexOf(myId);
     
     bool isServerTurn = (currentTurn % playerIds.length == myIdx);
-    bool isLastDrawer = (lastDrawerId == myId); 
+    bool isLastDrawer = (lastDrawerId == myId);
+    bool isCompetitiveParticipant = GameRules.canPlayInDrawCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: playerIds,
+      myId: myId,
+    );
     bool isInterrupt = (card.number == fieldNumber && fieldNumber != -1);
     bool isJokerField = (fieldSuit == Suit.joker);
+    final bool usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
 
-    if ((isServerTurn || isLastDrawer) && _hasPlayedThisTurn && !isInterrupt && !isJokerField) return;
+    if (usesTurnPlayLimit && _hasPlayedThisTurn && !isInterrupt && !isJokerField) return;
 
-    if (isServerTurn || isLastDrawer || isInterrupt || isJokerField) {
+    if (isServerTurn || isLastDrawer || isCompetitiveParticipant || isInterrupt || isJokerField) {
       if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField) {
         _executePlay([card]);
       }
@@ -212,7 +229,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _onDraw() {
     if (deck.isEmpty || moriPhase != 'none' || isInitialPhase) return;
     int myIdx = playerIds.indexOf(myId);
-    if (currentTurn % playerIds.length != myIdx) return;
+    final bool isScheduledTurn = currentTurn % playerIds.length == myIdx;
+    final bool canDrawInCompetition = GameRules.canDrawInCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: playerIds,
+      myId: myId,
+      handCount: myHand.length,
+    );
+    if (!isScheduledTurn && !canDrawInCompetition) return;
     if (!GameRules.canDraw(myHand.length, lastDrawerId, myId)) return;
 
     final drawn = deck.last;
@@ -232,22 +257,26 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'playerHands/$myId': myHand.length,
         'currentTurnIndex': myIdx,
         'lastDrawerId': null,
+        'isDrawCompetitive': false,
       });
       return;
     }
 
     setState(() => myHand.add(drawn));
 
-    // 7枚目を引いた場合は次の人にターンを移さない（手札7枚のまま進行させない）
+    // 手札6枚以下: 次のプレイヤーも出す/引く権利（早い者勝ち）。7枚目は競合なし。
+    final bool enableDrawCompetition = !isSeventhDraw;
     _db.updateGameStatus({
       'deck': deckAfterDraw,
       'playerHands/$myId': myHand.length,
       if (isSeventhDraw) ...{
         'currentTurnIndex': myIdx,
         'lastDrawerId': myId,
+        'isDrawCompetitive': false,
       } else ...{
         'currentTurnIndex': (myIdx + 1) % playerIds.length,
         'lastDrawerId': myId,
+        'isDrawCompetitive': enableDrawCompetition,
       },
     });
   }
@@ -262,9 +291,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'field': {'number': cards.last.number, 'suit': cards.last.suit.name},
       'playerHands/$myId': myHand.length,
       'lastPlayerId': myId,
-      'currentTurnIndex': (myIdx + 1) % playerIds.length, 
-      'lastDrawerId': null, 
-      'isInitialPhase': false, 
+      'currentTurnIndex': (myIdx + 1) % playerIds.length,
+      'lastDrawerId': null,
+      'isDrawCompetitive': false,
+      'isInitialPhase': false,
       'gameStarted': true,
     });
   }
@@ -441,7 +471,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     return GameBoardView(
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
-      moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId,
+      moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
       rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,

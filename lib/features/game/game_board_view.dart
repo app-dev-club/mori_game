@@ -66,6 +66,7 @@ class GameBoardView extends StatelessWidget {
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
   final String? hostId, lastPlayerId, lastDrawerId, lastMoriPlayerId;
+  final bool isDrawCompetitive;
   final List<CardWidget> moriRevealedHand;
   final String? moriRevealedType;
   final int rematchReadyCount, playerCount;
@@ -76,6 +77,7 @@ class GameBoardView extends StatelessWidget {
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
     required this.myHand, required this.playerIds, required this.myId, required this.handCounts,
     required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
+    required this.isDrawCompetitive,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.rematchReadyCount, required this.playerCount,
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
@@ -90,7 +92,21 @@ class GameBoardView extends StatelessWidget {
 
     int myIdx = playerIds.indexOf(myId);
     bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);
-    bool canDraw = isMyTurn && GameRules.canDraw(myHand.length, lastDrawerId, myId);
+    final bool canDrawInCompetition = GameRules.canDrawInCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: playerIds,
+      myId: myId,
+      handCount: myHand.length,
+    );
+    bool canDraw =
+        (isMyTurn || canDrawInCompetition) && GameRules.canDraw(myHand.length, lastDrawerId, myId);
+    final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: playerIds,
+      myId: myId,
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
@@ -110,7 +126,7 @@ class GameBoardView extends StatelessWidget {
             ),
           _buildOthersStatus(),
           const Spacer(),
-          _buildFieldArea(isMyTurn: isMyTurn, canDraw: canDraw),
+          _buildFieldArea(isMyTurn: isMyTurn, canDraw: canDraw, inDrawCompetition: inDrawCompetition),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
@@ -134,7 +150,7 @@ class GameBoardView extends StatelessWidget {
             ),
           if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
             _buildMoriRevealedHandSection(),
-          _buildMyHandSection(isMyTurn),
+          _buildMyHandSection(isMyTurn, inDrawCompetition: inDrawCompetition),
         ],
       ),
     );
@@ -190,7 +206,11 @@ class GameBoardView extends StatelessWidget {
     return 'プレイヤー$n';
   }
 
-  Widget _buildFieldArea({required bool isMyTurn, required bool canDraw}) {
+  Widget _buildFieldArea({
+    required bool isMyTurn,
+    required bool canDraw,
+    required bool inDrawCompetition,
+  }) {
     final bool hasFieldCard = fieldNumber != -1;
     final String? fieldOwnerLabel =
         hasFieldCard && lastPlayerId != null ? _playerLabel(lastPlayerId) : null;
@@ -202,7 +222,17 @@ class GameBoardView extends StatelessWidget {
           child: ElevatedButton(onPressed: onFlip, style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]), child: const Text("山札をめくる", style: TextStyle(color: Colors.white))),
         ),
       if (fieldSuit == Suit.joker && !isInitialPhase) const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
-      if (!isMyTurn && fieldSuit != Suit.joker && fieldNumber != -1 && moriPhase == 'none') const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
+      if (inDrawCompetition)
+        const Text(
+          '⚡ ドロー直後！出すか引くか早い者勝ち',
+          style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      if (!isMyTurn &&
+          !inDrawCompetition &&
+          fieldSuit != Suit.joker &&
+          fieldNumber != -1 &&
+          moriPhase == 'none')
+        const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
       if (fieldOwnerLabel != null)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -264,7 +294,7 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
-  Widget _buildMyHandSection(bool isMyTurn) {
+  Widget _buildMyHandSection(bool isMyTurn, {required bool inDrawCompetition}) {
     bool isBurstWarning = myHand.length >= 6;
     final bool iPlayedField = fieldNumber != -1 && lastPlayerId == myId;
     return Container(
@@ -275,7 +305,7 @@ class GameBoardView extends StatelessWidget {
       ),
       child: Column(children: [
         Text(
-          "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${iPlayedField ? ' · 場に出した' : ''}",
+          "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}${iPlayedField ? ' · 場に出した' : ''}",
           style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 5),
