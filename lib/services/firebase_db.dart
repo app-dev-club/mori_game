@@ -66,6 +66,8 @@ class FirebaseDB {
       'moriPhase': 'none',
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
+      'moriRevealedHand': null,
+      'moriRevealedType': null,
       'burstPlayerId': null,
       'lastDrawerId': null,
       'lastPlayerId': null,
