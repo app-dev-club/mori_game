@@ -65,7 +65,7 @@ class GameBoardView extends StatelessWidget {
   final List<String> playerIds;
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
-  final String? lastPlayerId, lastDrawerId;
+  final String? hostId, lastPlayerId, lastDrawerId;
   final int rematchReadyCount, playerCount;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
@@ -73,7 +73,7 @@ class GameBoardView extends StatelessWidget {
   const GameBoardView({
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
     required this.myHand, required this.playerIds, required this.myId, required this.handCounts,
-    required this.currentTurnIndex, required this.isHost, this.lastPlayerId, this.lastDrawerId,
+    required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.rematchReadyCount, required this.playerCount,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
@@ -135,7 +135,22 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
+  String _playerLabel(String? playerId) {
+    if (playerId == null) return '';
+    if (playerId == 'system') return '山札';
+    if (playerId == myId) return 'あなた';
+    final idx = playerIds.indexOf(playerId);
+    if (idx < 0) return '不明';
+    final n = idx + 1;
+    if (hostId != null && playerId == hostId) return 'プレイヤー$n（ホスト）';
+    return 'プレイヤー$n';
+  }
+
   Widget _buildFieldArea({required bool isMyTurn, required bool canDraw}) {
+    final bool hasFieldCard = fieldNumber != -1;
+    final String? fieldOwnerLabel =
+        hasFieldCard && lastPlayerId != null ? _playerLabel(lastPlayerId) : null;
+
     return Column(children: [
       if (isInitialPhase && isHost)
         Padding(
@@ -144,6 +159,22 @@ class GameBoardView extends StatelessWidget {
         ),
       if (fieldSuit == Suit.joker && !isInitialPhase) const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
       if (!isMyTurn && fieldSuit != Suit.joker && fieldNumber != -1 && moriPhase == 'none') const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
+      if (fieldOwnerLabel != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black38,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.orangeAccent, width: 1),
+            ),
+            child: Text(
+              '$fieldOwnerLabel の出したカード',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ),
+        ),
       const SizedBox(height: 10),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         GestureDetector(
@@ -155,7 +186,9 @@ class GameBoardView extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 20),
-        fieldNumber == -1 ? Container(width: 60, height: 90, decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(8))) : CardWidget(suit: fieldSuit, number: fieldNumber),
+        fieldNumber == -1
+            ? Container(width: 60, height: 90, decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(8)))
+            : CardWidget(suit: fieldSuit, number: fieldNumber),
       ]),
     ]);
   }
@@ -165,10 +198,23 @@ class GameBoardView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center, 
       children: playerIds.asMap().entries.where((e) => e.value != myId).map((e) {
         bool isHisTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == e.key);
+        bool playedField = fieldNumber != -1 && lastPlayerId == e.value;
         return Container(
           padding: const EdgeInsets.all(8), margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(border: isHisTurn ? Border.all(color: Colors.yellow, width: 2) : null, borderRadius: BorderRadius.circular(8)),
-          child: Column(children: [const Icon(Icons.person, color: Colors.white), Text('${handCounts[e.value] ?? 0}枚', style: const TextStyle(color: Colors.white))]),
+          decoration: BoxDecoration(
+            border: isHisTurn
+                ? Border.all(color: Colors.yellow, width: 2)
+                : playedField
+                    ? Border.all(color: Colors.orangeAccent, width: 2)
+                    : null,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(children: [
+            const Icon(Icons.person, color: Colors.white),
+            Text(_playerLabel(e.value), style: const TextStyle(color: Colors.white70, fontSize: 10)),
+            Text('${handCounts[e.value] ?? 0}枚', style: const TextStyle(color: Colors.white)),
+            if (playedField) const Text('場に出した', style: TextStyle(color: Colors.orangeAccent, fontSize: 9)),
+          ]),
         );
       }).toList()
     );
@@ -176,10 +222,18 @@ class GameBoardView extends StatelessWidget {
 
   Widget _buildMyHandSection(bool isMyTurn) {
     bool isBurstWarning = myHand.length >= 6;
+    final bool iPlayedField = fieldNumber != -1 && lastPlayerId == myId;
     return Container(
-      padding: const EdgeInsets.all(10), color: Colors.black26,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        border: iPlayedField ? const Border(top: BorderSide(color: Colors.orangeAccent, width: 2)) : null,
+      ),
       child: Column(children: [
-        Text("手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}", style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold)),
+        Text(
+          "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${iPlayedField ? ' · 場に出した' : ''}",
+          style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 5),
         SizedBox(height: 100, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: myHand.length, itemBuilder: (c, i) => Padding(padding: const EdgeInsets.all(4), child: CardWidget(number: myHand[i].number, suit: myHand[i].suit, onTap: () => onCardTap(i))))),
       ]),

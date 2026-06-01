@@ -406,7 +406,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     return GameBoardView(
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
-      handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
+      handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId,
       rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
