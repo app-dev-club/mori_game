@@ -30,7 +30,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   List<CardWidget> deck = [];
 
   String moriPhase = 'none'; 
-  String? lastMoriPlayerId, loserPlayerId;     
+  String? lastMoriPlayerId, loserPlayerId;
+  List<CardWidget> moriRevealedHand = [];
+  String? moriRevealedType;
   Timer? _moriTimer;         
   String _lastTrackedMoriPlayer = ''; 
   bool hasDeclaredMori = false;
@@ -127,7 +129,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       moriPhase = data['moriPhase'] ?? 'none';
       lastMoriPlayerId = data['lastMoriPlayerId'];
       loserPlayerId = data['loserPlayerId'];
-      if (moriPhase == 'none') hasDeclaredMori = false;
+      moriRevealedHand = _parseHandFromFirebase(data['moriRevealedHand']);
+      moriRevealedType = data['moriRevealedType'] as String?;
+      if (moriPhase == 'none') {
+        hasDeclaredMori = false;
+        moriRevealedHand = [];
+        moriRevealedType = null;
+      }
       
       if (roomStatus == 'closed' && !isHost && !_isClosedDialogShown) { 
         _isClosedDialogShown = true; 
@@ -264,12 +272,37 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _onMori() {
     if (!GameRules.isValidMori(fieldNumber, myHand)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('計算が合いません！'))); return; }
     setState(() => hasDeclaredMori = true);
+    final revealedHand = _serializeHand(myHand);
     if (moriPhase == 'none') {
       if (lastPlayerId == myId) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('自滅はできません！'))); setState(() => hasDeclaredMori = false); return; }
-      _db.updateGameStatus({'moriPhase': 'mori_declared', 'lastMoriPlayerId': myId, 'loserPlayerId': lastPlayerId});
+      _db.updateGameStatus({
+        'moriPhase': 'mori_declared',
+        'lastMoriPlayerId': myId,
+        'loserPlayerId': lastPlayerId,
+        'moriRevealedHand': revealedHand,
+        'moriRevealedType': 'mori',
+      });
     } else {
-      _db.updateGameStatus({'lastMoriPlayerId': myId, 'loserPlayerId': lastMoriPlayerId});
+      _db.updateGameStatus({
+        'lastMoriPlayerId': myId,
+        'loserPlayerId': lastMoriPlayerId,
+        'moriRevealedHand': revealedHand,
+        'moriRevealedType': 'gaeshi',
+      });
     }
+  }
+
+  List<Map<String, dynamic>> _serializeHand(List<CardWidget> hand) =>
+      hand.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+
+  List<CardWidget> _parseHandFromFirebase(dynamic raw) {
+    if (raw == null) return [];
+    return (raw as List)
+        .map((i) => CardWidget(
+              number: i['number'] as int,
+              suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+            ))
+        .toList();
   }
 
   void _onFlip() {
@@ -279,8 +312,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _cleanupRoomOnLeave() {
-    if (isHost) _closeRoomForcefully();
-    else { List<String> p = List<String>.from(playerIds)..remove(myId); _db.updateGameStatus({'players': p, 'playerHands/$myId': null}); }
+    if (isHost) {
+      _closeRoomForcefully();
+    } else { List<String> p = List<String>.from(playerIds)..remove(myId); _db.updateGameStatus({'players': p, 'playerHands/$myId': null}); }
   }
 
   void _closeRoomForcefully() { _db.updateGameStatus({'roomStatus': 'closed'}); Timer(const Duration(seconds: 2), () => FirebaseDatabase.instance.ref('rooms/${widget.roomId}').remove()); }
@@ -408,6 +442,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId,
+      lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
       rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );

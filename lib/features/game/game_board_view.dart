@@ -65,7 +65,9 @@ class GameBoardView extends StatelessWidget {
   final List<String> playerIds;
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
-  final String? hostId, lastPlayerId, lastDrawerId;
+  final String? hostId, lastPlayerId, lastDrawerId, lastMoriPlayerId;
+  final List<CardWidget> moriRevealedHand;
+  final String? moriRevealedType;
   final int rematchReadyCount, playerCount;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
@@ -76,6 +78,7 @@ class GameBoardView extends StatelessWidget {
     required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.rematchReadyCount, required this.playerCount,
+    this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
 
@@ -129,7 +132,48 @@ class GameBoardView extends StatelessWidget {
               padding: EdgeInsets.only(bottom: 10),
               child: Text("🔥 もり返し受付中 (5秒) 🔥", style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold)),
             ),
+          if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
+            _buildMoriRevealedHandSection(),
           _buildMyHandSection(isMyTurn),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMoriRevealedHandSection() {
+    final declarerLabel = _playerLabel(lastMoriPlayerId);
+    final declarationLabel = moriRevealedType == 'gaeshi' ? 'もり返し' : 'もり';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.purpleAccent, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$declarerLabel の手札（$declarationLabel 宣言）',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 90,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: moriRevealedHand.length,
+              itemBuilder: (_, i) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: CardWidget(
+                  number: moriRevealedHand[i].number,
+                  suit: moriRevealedHand[i].suit,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
