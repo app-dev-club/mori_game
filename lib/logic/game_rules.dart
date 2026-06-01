@@ -1,9 +1,16 @@
 import '../features/game/game_board_view.dart';
 
 class GameRules {
+  static const int maxHandSize = 7;
+
   /// バースト判定
   static bool isBurst(int handCount, bool canPlayDrawnCard) {
-    return handCount >= 7 && !canPlayDrawnCard;
+    return handCount >= maxHandSize && !canPlayDrawnCard;
+  }
+
+  /// ターン中にドロー可能か（1ターン1回・手札上限7枚）
+  static bool canDraw(int handCount, String? lastDrawerId, String myId) {
+    return handCount < maxHandSize && lastDrawerId != myId;
   }
 
   /// もり判定ロジック（手札全体で計算、JQK対応、ジョーカー除外）

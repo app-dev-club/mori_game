@@ -38,6 +38,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool _isClosedDialogShown = false;
 
   String? lastDrawerId;
+  bool _hasPlayedThisTurn = false;
 
   bool get isHost => myId == hostId;
 
@@ -103,6 +104,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       
       lastDrawerId = data['lastDrawerId'];
 
+      final int myIdx = playerIds.indexOf(myId);
+      final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
+      if (lastDrawerId == myId) {
+        _hasPlayedThisTurn = false;
+      } else if (isMyTurn && lastPlayerId != myId) {
+        _hasPlayedThisTurn = false;
+      }
+
       if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
       if (data['field'] != null) {
         fieldNumber = data['field']['number'];
@@ -154,6 +163,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     bool isInterrupt = (card.number == fieldNumber && fieldNumber != -1);
     bool isJokerField = (fieldSuit == Suit.joker);
 
+    if ((isServerTurn || isLastDrawer) && _hasPlayedThisTurn && !isInterrupt && !isJokerField) return;
+
     if (isServerTurn || isLastDrawer || isInterrupt || isJokerField) {
       if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField) {
         _executePlay([card]);
@@ -165,31 +176,49 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (deck.isEmpty || moriPhase != 'none' || isInitialPhase) return;
     int myIdx = playerIds.indexOf(myId);
     if (currentTurn % playerIds.length != myIdx) return;
+    if (!GameRules.canDraw(myHand.length, lastDrawerId, myId)) return;
 
     final drawn = deck.last;
     
     List<CardWidget> tempHand = List.from(myHand)..add(drawn);
     bool hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
 
-    // 【修正】バースト時は誰がバーストしたかをFirebaseに記録する
-    if (tempHand.length >= 7 && !hasPlayableCard) { 
-      _db.updateGameStatus({'burstPlayerId': myId}); 
-      return; 
+    final deckAfterDraw = deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    final bool isSeventhDraw = tempHand.length >= 7;
+
+    // 7枚目で出せるカードがなければバースト
+    if (GameRules.isBurst(tempHand.length, hasPlayableCard)) {
+      setState(() => myHand.add(drawn));
+      _db.updateGameStatus({
+        'burstPlayerId': myId,
+        'deck': deckAfterDraw,
+        'playerHands/$myId': myHand.length,
+        'currentTurnIndex': myIdx,
+        'lastDrawerId': null,
+      });
+      return;
     }
 
-    setState(() { myHand.add(drawn); });
+    setState(() => myHand.add(drawn));
 
+    // 7枚目を引いた場合は次の人にターンを移さない（手札7枚のまま進行させない）
     _db.updateGameStatus({
-      'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deck': deckAfterDraw,
       'playerHands/$myId': myHand.length,
-      'currentTurnIndex': (myIdx + 1) % playerIds.length,
-      'lastDrawerId': myId,
+      if (isSeventhDraw) ...{
+        'currentTurnIndex': myIdx,
+        'lastDrawerId': myId,
+      } else ...{
+        'currentTurnIndex': (myIdx + 1) % playerIds.length,
+        'lastDrawerId': myId,
+      },
     });
   }
 
   void _executePlay(List<CardWidget> cards) {
     if (cards.isEmpty) return;
     int myIdx = playerIds.indexOf(myId);
+    _hasPlayedThisTurn = true;
     setState(() { for (var c in cards) { myHand.removeWhere((h) => h.number == c.number && h.suit == c.suit); } });
     
     _db.updateGameStatus({
@@ -238,7 +267,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     return GameBoardView(
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
-      moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
+      moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId,
+      onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }
 }
