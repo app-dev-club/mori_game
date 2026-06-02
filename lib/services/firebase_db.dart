@@ -12,19 +12,29 @@ class FirebaseDB {
 
   Stream<DatabaseEvent> get roomStream => _roomRef.onValue;
 
-  Future<void> setupRoom(String myId, List<CardWidget> deck, bool isPrivate) async {
+  Future<void> setupRoom(
+    String myId,
+    List<CardWidget> deck,
+    bool isPrivate, {
+    required List<Map<String, dynamic>> deckIndex,
+    required List<Map<String, dynamic>> initialHand,
+  }) async {
     await _roomRef.set({
       'host': myId,
       'players': [myId],
       'playerHands': {myId: 5},
+      'playerCards': {myId: initialHand},
       'deck': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deckIndex': deckIndex,
       'field': {'number': -1, 'suit': 'joker'},
       'isInitialPhase': true,
       'currentTurnIndex': 0,
       'isDrawCompetitive': false,
+      'deckResetAt': null,
       'gameStarted': false,
       'isPrivate': isPrivate,
       'roomStatus': 'open',
+      'fieldHistory': [],
       // 万が一の残存バグを防ぐため、作成日時をタイムスタンプで記録
       'createdAt': ServerValue.timestamp, 
     });
@@ -51,12 +61,15 @@ class FirebaseDB {
     required List<String> players,
     required Map<String, List<Map<String, dynamic>>> rematchHands,
     required List<Map<String, dynamic>> remainingDeck,
+    required List<Map<String, dynamic>> deckIndex,
     required int rematchGeneration,
   }) async {
     await _roomRef.update({
       'players': players,
       'playerHands': {for (final p in players) p: 5},
+      'playerCards': rematchHands,
       'deck': remainingDeck,
+      'deckIndex': deckIndex,
       'rematchHands': rematchHands,
       'rematchGeneration': rematchGeneration,
       'field': {'number': -1, 'suit': 'joker'},
@@ -72,6 +85,8 @@ class FirebaseDB {
       'lastDrawerId': null,
       'lastPlayerId': null,
       'isDrawCompetitive': false,
+      'deckResetAt': null,
+      'fieldHistory': [],
       'rematchReady': null,
       'roomStatus': 'open',
     });
