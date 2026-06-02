@@ -28,6 +28,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool isInitialPhase = true;
   String? lastPlayerId;
   List<CardWidget> deck = [];
+  List<CardWidget> fieldHistory = [];
 
   String moriPhase = 'none'; 
   String? lastMoriPlayerId, loserPlayerId;
@@ -47,6 +48,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String? lastDrawerId;
   bool isDrawCompetitive = false;
   bool _hasPlayedThisTurn = false;
+  int? _lastDeckResetAt;
 
   bool get isHost => myId == hostId;
 
@@ -78,7 +80,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       List<CardWidget> fullDeck = _generateDeck()..shuffle();
       final hand = fullDeck.sublist(0, 5);
       fullDeck.removeRange(0, 5);
-      await _db.setupRoom(myId, fullDeck, widget.isPrivate);
+      await _db.setupRoom(
+        myId,
+        fullDeck,
+        widget.isPrivate,
+        deckIndex: _serializeHand(fullDeck),
+        initialHand: _serializeHand(hand),
+      );
       FirebaseDatabase.instance.ref('rooms/${widget.roomId}').onDisconnect().update({'roomStatus': 'closed'});
       setState(() => myHand = hand);
     } else {
@@ -94,7 +102,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       List<CardWidget> cDeck = rawDeck.map((i) => CardWidget(number: i['number'], suit: Suit.values.firstWhere((e) => e.name == i['suit']))).toList();
       List<CardWidget> iHand = [];
       for (int i = 0; i < 5; i++) { if (cDeck.isNotEmpty) iHand.add(cDeck.removeLast()); }
-      await _db.updateGameStatus({'players': p, 'playerHands/$myId': iHand.length, 'deck': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList()});
+      await _db.updateGameStatus({
+        'players': p,
+        'playerHands/$myId': iHand.length,
+        'playerCards/$myId': _serializeHand(iHand),
+        'deck': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+        'deckIndex': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      });
       setState(() => myHand = iHand);
     }
     _sub = _db.roomStream.listen(_onData);
@@ -103,6 +117,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _onData(DatabaseEvent event) {
     final data = event.snapshot.value as Map?;
     if (data == null || !mounted) return;
+    final int? deckResetAt = data['deckResetAt'] as int?;
+    final bool shouldNotifyDeckReset =
+        deckResetAt != null && deckResetAt != _lastDeckResetAt;
     setState(() {
       hostId = data['host'];
       playerIds = List<String>.from(data['players'] ?? []);
@@ -112,6 +129,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       
       lastDrawerId = data['lastDrawerId'];
       isDrawCompetitive = data['isDrawCompetitive'] == true;
+      if (shouldNotifyDeckReset) _lastDeckResetAt = deckResetAt;
 
       final int myIdx = playerIds.indexOf(myId);
       final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
@@ -130,11 +148,51 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
 
       if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
+      if (data['playerCards'] != null) {
+        final playerCards = Map<String, dynamic>.from(data['playerCards'] as Map);
+        final countsFromCards = <String, int>{};
+        playerCards.forEach((pid, cards) {
+          if (cards is List) countsFromCards[pid] = cards.length;
+        });
+        handCounts = {...handCounts, ...countsFromCards};
+      }
       if (data['field'] != null) {
         fieldNumber = data['field']['number'];
         fieldSuit = Suit.values.firstWhere((e) => e.name == data['field']['suit'], orElse: () => Suit.joker);
       }
       if (data['deck'] != null) deck = (data['deck'] as List).map((i) => CardWidget(number: i['number'], suit: Suit.values.firstWhere((e) => e.name == i['suit']))).toList();
+
+      if (data['fieldHistory'] != null) {
+        fieldHistory = (data['fieldHistory'] as List)
+            .map((i) => CardWidget(
+                  number: i['number'],
+                  suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+                ))
+            .toList();
+      } else if (fieldNumber != -1) {
+        fieldHistory = [CardWidget(number: fieldNumber, suit: fieldSuit)];
+      } else {
+        fieldHistory = [];
+      }
+
+      // 既存ルーム互換: fieldHistory が無い場合、ホストが最小限の履歴をFirebaseへ作る
+      if (isHost && data['fieldHistory'] == null && fieldNumber != -1) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _db.updateGameStatus({
+            'fieldHistory': [
+              {'number': fieldNumber, 'suit': fieldSuit.name}
+            ],
+          });
+        });
+      }
+      if (isHost && data['deckIndex'] == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _db.updateGameStatus({
+            'deckIndex': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+          });
+        });
+      }
+
       isInitialPhase = data['isInitialPhase'] ?? true;
       moriPhase = data['moriPhase'] ?? 'none';
       lastMoriPlayerId = data['lastMoriPlayerId'];
@@ -198,6 +256,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         WidgetsBinding.instance.addPostFrameCallback((_) => _hostRestartGame(List<String>.from(playerIds)));
       }
     });
+
+    if (shouldNotifyDeckReset) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('山札が尽きたのでシャッフルして補充しました')),
+        );
+      });
+    }
   }
 
   void _onCardTap(int index) {
@@ -227,7 +294,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _onDraw() {
-    if (deck.isEmpty || moriPhase != 'none' || isInitialPhase) return;
+    if (moriPhase != 'none' || isInitialPhase) return;
     int myIdx = playerIds.indexOf(myId);
     final bool isScheduledTurn = currentTurn % playerIds.length == myIdx;
     final bool canDrawInCompetition = GameRules.canDrawInCompetition(
@@ -240,12 +307,32 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!isScheduledTurn && !canDrawInCompetition) return;
     if (!GameRules.canDraw(myHand.length, lastDrawerId, myId)) return;
 
+    // 山札が尽きた場合：場の最新カード以外を戻してシャッフル
+    if (deck.isEmpty) {
+      _replenishDeckFromFieldIfEmpty();
+      if (deck.isEmpty) return;
+    }
+
     final drawn = deck.last;
     
     List<CardWidget> tempHand = List.from(myHand)..add(drawn);
     bool hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
 
-    final deckAfterDraw = deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    List<CardWidget> deckAfterDrawCards = deck.sublist(0, deck.length - 1);
+    final resetMetaUpdates = <String, dynamic>{};
+    if (deckAfterDrawCards.isEmpty) {
+      final replenished = _rebuildDeckFromFieldHistoryWithoutLatest();
+      if (replenished.isNotEmpty) {
+        deckAfterDrawCards = replenished;
+        resetMetaUpdates.addAll({
+          'field': {'number': fieldNumber, 'suit': fieldSuit.name},
+          'fieldHistory': fieldHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+          'deckResetAt': ServerValue.timestamp,
+        });
+      }
+    }
+    final deckAfterDraw =
+        deckAfterDrawCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
     final bool isSeventhDraw = tempHand.length >= 7;
 
     // 7枚目で出せるカードがなければバースト
@@ -254,10 +341,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _db.updateGameStatus({
         'burstPlayerId': myId,
         'deck': deckAfterDraw,
+        'deckIndex': deckAfterDraw,
         'playerHands/$myId': myHand.length,
+        'playerCards/$myId': _serializeHand(myHand),
         'currentTurnIndex': myIdx,
         'lastDrawerId': null,
         'isDrawCompetitive': false,
+        ...resetMetaUpdates,
       });
       return;
     }
@@ -268,7 +358,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final bool enableDrawCompetition = !isSeventhDraw;
     _db.updateGameStatus({
       'deck': deckAfterDraw,
+      'deckIndex': deckAfterDraw,
       'playerHands/$myId': myHand.length,
+      'playerCards/$myId': _serializeHand(myHand),
       if (isSeventhDraw) ...{
         'currentTurnIndex': myIdx,
         'lastDrawerId': myId,
@@ -278,7 +370,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'lastDrawerId': myId,
         'isDrawCompetitive': enableDrawCompetition,
       },
+      ...resetMetaUpdates,
     });
+  }
+
+  List<CardWidget> _rebuildDeckFromFieldHistoryWithoutLatest() {
+    if (fieldHistory.length <= 2) return [];
+    final latest = fieldHistory.last;
+    final rebuilt = List<CardWidget>.from(fieldHistory)..removeLast();
+    rebuilt.shuffle();
+    fieldNumber = latest.number;
+    fieldSuit = latest.suit;
+    fieldHistory = [latest];
+    return rebuilt;
   }
 
   void _executePlay(List<CardWidget> cards) {
@@ -286,16 +390,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     int myIdx = playerIds.indexOf(myId);
     _hasPlayedThisTurn = true;
     setState(() { for (var c in cards) { myHand.removeWhere((h) => h.number == c.number && h.suit == c.suit); } });
-    
+
+    final CardWidget playedCard = cards.last;
+    final updatedHistory = List<CardWidget>.from(fieldHistory)..add(playedCard);
+    fieldHistory = updatedHistory;
+
     _db.updateGameStatus({
-      'field': {'number': cards.last.number, 'suit': cards.last.suit.name},
+      'field': {'number': playedCard.number, 'suit': playedCard.suit.name},
       'playerHands/$myId': myHand.length,
+      'playerCards/$myId': _serializeHand(myHand),
       'lastPlayerId': myId,
       'currentTurnIndex': (myIdx + 1) % playerIds.length,
       'lastDrawerId': null,
       'isDrawCompetitive': false,
       'isInitialPhase': false,
       'gameStarted': true,
+      'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
     });
   }
 
@@ -336,20 +446,87 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _onFlip() {
-    if (!isHost || deck.isEmpty) return;
+    if (!isHost) return;
+    if (deck.isEmpty) {
+      _replenishDeckFromFieldIfEmpty();
+      if (deck.isEmpty) return;
+    }
     final card = deck.last;
-    _db.updateGameStatus({'field': {'number': card.number, 'suit': card.suit.name}, 'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(), 'isInitialPhase': true, 'lastPlayerId': 'system', 'gameStarted': true});
+    final updatedHistory = List<CardWidget>.from(fieldHistory)..add(card);
+    fieldHistory = updatedHistory;
+    _db.updateGameStatus({
+      'field': {'number': card.number, 'suit': card.suit.name},
+      'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deckIndex': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'isInitialPhase': true,
+      'lastPlayerId': 'system',
+      'gameStarted': true,
+    });
+  }
+
+  /// 山札が空のときだけ、場の履歴から「最新カード以外」を山札に戻してシャッフルします。
+  void _replenishDeckFromFieldIfEmpty() {
+    if (deck.isNotEmpty) return;
+
+    // fieldHistory が無い/不足している状態で全54枚を再生成すると、手札にあるカードまで復活して重複する。
+    // そのため、履歴が揃っていない場合は補充しない（ホストが履歴を作ってから再試行）。
+    // 山札化できる捨て札が1枚以下だと同じカードをループしやすいため、補充しない。
+    if (fieldHistory.length <= 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('山札を補充できません（捨て札が不足しています）')),
+        );
+      });
+      return;
+    }
+
+    final CardWidget latest = fieldHistory.last;
+    final discardPile = List<CardWidget>.from(fieldHistory)..removeLast();
+    discardPile.shuffle();
+
+    deck = discardPile;
+    fieldNumber = latest.number;
+    fieldSuit = latest.suit;
+    fieldHistory = [latest];
+
+    _db.updateGameStatus({
+      'deck': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deckIndex': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'field': {'number': latest.number, 'suit': latest.suit.name},
+      'fieldHistory': [
+        {'number': latest.number, 'suit': latest.suit.name},
+      ],
+      'deckResetAt': ServerValue.timestamp,
+    });
   }
 
   void _cleanupRoomOnLeave() {
     if (isHost) {
       _closeRoomForcefully();
-    } else { List<String> p = List<String>.from(playerIds)..remove(myId); _db.updateGameStatus({'players': p, 'playerHands/$myId': null}); }
+    } else {
+      List<String> p = List<String>.from(playerIds)..remove(myId);
+      _db.updateGameStatus({
+        'players': p,
+        'playerHands/$myId': null,
+        'playerCards/$myId': null,
+      });
+    }
   }
 
   void _closeRoomForcefully() { _db.updateGameStatus({'roomStatus': 'closed'}); Timer(const Duration(seconds: 2), () => FirebaseDatabase.instance.ref('rooms/${widget.roomId}').remove()); }
 
-  List<CardWidget> _generateDeck() { return [for (var s in Suit.values) if (s != Suit.joker) for (var i = 1; i <= 13; i++) CardWidget(number: i, suit: s), const CardWidget(number: 0, suit: Suit.joker)]; }
+  /// 各スート(♠♥♦♣)で1-13が各1枚ずつ(52枚) + ジョーカー2枚 = 54枚
+  List<CardWidget> _generateDeck() {
+    const nonJokerSuits = <Suit>[Suit.spade, Suit.heart, Suit.diamond, Suit.club];
+    return [
+      for (final s in nonJokerSuits)
+        for (var i = 1; i <= 13; i++) CardWidget(number: i, suit: s),
+      const CardWidget(number: 0, suit: Suit.joker),
+      const CardWidget(number: 0, suit: Suit.joker),
+    ];
+  }
 
   int _countRematchReady(Map data, List<String> players) {
     if (players.isEmpty) return 0;
@@ -401,6 +578,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       players: players,
       rematchHands: rematchHands,
       remainingDeck: remainingDeck,
+      deckIndex: remainingDeck,
       rematchGeneration: nextGen,
     );
     if (mounted) {
