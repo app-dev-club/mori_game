@@ -5,6 +5,20 @@
 ## ローカルでの動作確認
 - `flutter run -d chrome`
 ## 環境構築
+### Git関係のインストール
+- GitHubアカウントの作成
+- GitBash等をインストール
+- PowerShellで以下を実行
+  - `ssh-keygen -t ed25519 -C "あなたのGitHubメール"`
+  - `Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub`
+    - でてきた文字をコピー（あとで貼る）
+- GitHubのSettings → SSH and GPG keys → New SSH key に貼り付ける
+- ふたたびPowerShellで以下を実行
+  - `ssh -T git@github.com`
+- その後Gitbashで
+  - `git clone git@github.com:app-dev-club/mori_game.git`
+  - これでプロジェクトがコピーされる。
+### Flutterのインストール
 1. 開発環境のインストール
 - まずは自分のPCに道具を揃えます。
   - Flutter SDK: [公式サイトから](https://docs.flutter.dev/install)自分のOS（WindowsかMacか）に合わせてダウンロードします。
