@@ -18,6 +18,8 @@
 - その後Gitbashで
   - `git clone git@github.com:app-dev-club/mori_game.git`
   - これでプロジェクトがコピーされる。
+### 必要なファイルの準備
+- セキュリティの問題上GitHubに上げていないファイルを準備する
 ### Flutterのインストール
 1. 開発環境のインストール
 - まずは自分のPCに道具を揃えます。
@@ -28,7 +30,7 @@
       - Android SDKのSDK ToolsタブからCommand-line Tools (latest)を探してチェック入れる
     - flutter config --android-sdk "コピーしたパス"
     - flutter doctor --android-licenses
-  - XCode 将来的に使用予定
+  - XCode 将来的に使用予定（Macのみ）
     - sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
     - sudo xcodebuild -runFirstLaunch
     - cocoapadsインストール
@@ -59,3 +61,6 @@
   - flutter pub add firebase_core
 5. 動作確認
   - flutter run -d chrome
+### Cursorのインストール
+- AIとプログラムを書くならCursor等インストールする
+  - Claude Codeなど、他にも色々あるのでお金と機能を考えながらインストール
