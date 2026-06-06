@@ -1,9 +1,4 @@
 # Mori_game
-## 更新後のビルド手順
-- `flutter build web`
-- `firebase deploy --only hosting`
-## ローカルでの動作確認
-- `flutter run -d chrome`
 ## 環境構築
 ### Git関係のインストール
 - GitHubアカウントの作成
@@ -24,6 +19,8 @@
 1. 開発環境のインストール
 - まずは自分のPCに道具を揃えます。
   - Flutter SDK: [公式サイトから](https://docs.flutter.dev/install)自分のOS（WindowsかMacか）に合わせてダウンロードします。
+    - [クイックスタート](https://docs.flutter.dev/install/quick)からダウンロード
+    - 基本的にここの手順に従う
   - Editor: VS Code (Visual Studio Code) が最も軽量でおすすめです。「Flutter」と「Dart」の拡張機能をインストールしてください。
   - Android Studio: Androidアプリをビルドするために必要です。インストール後、Android SDK と Command-line Tools をセットアップします。
     - 起動画面からMore Antions > SDK Managerを選択
@@ -64,3 +61,8 @@
 ### Cursorのインストール
 - AIとプログラムを書くならCursor等インストールする
   - Claude Codeなど、他にも色々あるのでお金と機能を考えながらインストール
+## 更新後のビルド手順
+- `flutter build web`
+- `firebase deploy --only hosting`
+## ローカルでの動作確認
+- `flutter run -d chrome`
