@@ -87,10 +87,22 @@ class GameRules {
     return false;
   }
 
+  /// 場に実際のジョーカーが出ているか（未めくりのプレースホルダー `-1/joker` は除く）
+  static bool isJokerOnField(int fieldNumber, Suit fieldSuit) {
+    return fieldSuit == Suit.joker && fieldNumber != -1;
+  }
+
   /// 通常プレイ判定
-  static bool canPlayNormal(int fieldNumber, Suit fieldSuit, CardWidget card) {
-    if (fieldNumber == -1) return true; // 初期状態
-    if (fieldSuit == Suit.joker) return true; // ジョーカー場
+  /// [isInitialPhase] が true のときは同じ数字のみ（ジョーカー場は例外で任意のカード可）
+  static bool canPlayNormal(
+    int fieldNumber,
+    Suit fieldSuit,
+    CardWidget card, {
+    bool isInitialPhase = false,
+  }) {
+    if (fieldNumber == -1) return false;
+    if (isJokerOnField(fieldNumber, fieldSuit)) return true;
+    if (isInitialPhase) return card.number == fieldNumber;
     return card.number == fieldNumber || card.suit == fieldSuit;
   }
 }
