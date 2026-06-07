@@ -63,6 +63,35 @@
   - flutter pub add firebase_core
 - 動作確認
   - flutter run -d chrome
+## ファイル編集の仕方
+- 最新版のインストール
+  - 他の誰かが編集して最新版が変わっているかもしれないので、インストールする
+  - Git bashなどで以下のコマンドを叩く
+    - `git checkout main`
+    - `git pull origin main`
+- 直したいissueを見つける
+  - [mori_gameのissue](https://github.com/app-dev-club/mori_game/issues)から修正したいものを見つける
+    - なければ自分で作成してもいい。
+- ブランチを切る
+  - 直接本体(main)を編集するのは危険なので、別のブランチに切り替える
+    - `git checkout -b fix-issue-[issue番号]`
+      - `-b`の後ろの内容は任意だが、`fix-issue-[issue番号]`にするとわかりやすい。
+- ファイルを編集する
+  - VS CodeなどのEditorを使って、編集する。
+- 動作確認
+  - パワーシェルで `flutter run -d chrome`を叩くとローカルで動作確認ができる
+  - 一通りプレーして変なところがないか確認しよう
+- リモートリポジトリの更新
+  - GiHub側に修正内容を伝える
+    - `git add .`
+    - `git commit -m "コメント"`
+    - `git push origin [作ったブランチ名]`
+- プルリクエスト
+  - ブランチを切り替えているので、自分の修正をmainブランチに反映してもらう
+  - [プルリクエストのページ](https://github.com/app-dev-club/mori_game/pulls)に行くと、自分が編集したブランチのプルリクエストが出てくるはず
+  - 題名と、内容を記入して、プルリクエストを出す
+    - 本文の方に`fix #[issue番号]`を入れておくと、プルリクエスト完了後に対応するissueが消えるようになっているので、入れてみよう。
+  - hirotakasuzuki1219らがプルリクエストを確認して、問題なければmainの方に統合（マージ）します。
 ## 共同開発では必須ではない手順のメモ
 ## 更新後のビルド手順
 - ビルドは基本hirotakasuzuki1219が実行する
