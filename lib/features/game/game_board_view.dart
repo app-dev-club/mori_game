@@ -221,7 +221,10 @@ class GameBoardView extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 20),
           child: ElevatedButton(onPressed: onFlip, style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]), child: const Text("山札をめくる", style: TextStyle(color: Colors.white))),
         ),
-      if (fieldSuit == Suit.joker && !isInitialPhase) const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+      if (GameRules.isJokerOnField(fieldNumber, fieldSuit))
+        const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+      if (isInitialPhase && fieldNumber != -1 && !GameRules.isJokerOnField(fieldNumber, fieldSuit))
+        const Text("同じ数字なら誰でも出せます（早い者勝ち）", style: TextStyle(color: Colors.white70, fontSize: 10)),
       if (inDrawCompetition)
         const Text(
           '⚡ ドロー直後！出すか引くか早い者勝ち',
@@ -229,7 +232,8 @@ class GameBoardView extends StatelessWidget {
         ),
       if (!isMyTurn &&
           !inDrawCompetition &&
-          fieldSuit != Suit.joker &&
+          !isInitialPhase &&
+          !GameRules.isJokerOnField(fieldNumber, fieldSuit) &&
           fieldNumber != -1 &&
           moriPhase == 'none')
         const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),

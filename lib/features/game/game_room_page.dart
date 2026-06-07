@@ -269,9 +269,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onCardTap(int index) {
     if (moriPhase == 'mori_declared') return;
+    if (fieldNumber == -1) return;
+
     final card = myHand[index];
     int myIdx = playerIds.indexOf(myId);
-    
+
+    final bool isJokerField = GameRules.isJokerOnField(fieldNumber, fieldSuit);
+
+    if (isInitialPhase) {
+      if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card, isInitialPhase: true)) {
+        _executePlay([card]);
+      }
+      return;
+    }
+
     bool isServerTurn = (currentTurn % playerIds.length == myIdx);
     bool isLastDrawer = (lastDrawerId == myId);
     bool isCompetitiveParticipant = GameRules.canPlayInDrawCompetition(
@@ -280,8 +291,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       players: playerIds,
       myId: myId,
     );
-    bool isInterrupt = (card.number == fieldNumber && fieldNumber != -1);
-    bool isJokerField = (fieldSuit == Suit.joker);
+    bool isInterrupt = (card.number == fieldNumber);
     final bool usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
 
     if (usesTurnPlayLimit && _hasPlayedThisTurn && !isInterrupt && !isJokerField) return;
