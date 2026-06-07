@@ -47,10 +47,14 @@
 - 開発者モードをオン
   - start ms-settings:developers
 ### Firebase関連のインストール
+- 自分のGoogleアカウントにFirebaseの編集権を付与してもらう
+  - 通知メールから招待に応じる
 - Firebase CLIをインストール:
     - npm install -g firebase-tools （Node.jsが入っている場合）
 - Firebaseにログイン:
   - firebase login
+  - 質問には`y`でEnterして大丈夫
+  - 編集権を付与してもらったアカウントにログイン
 - FlutterFire CLIをアクティベート:
   - dart pub global run flutterfire_cli:flutterfire configure
     - 最初の質問で`n`を押す
