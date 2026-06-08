@@ -18,7 +18,6 @@ class _EntrancePageState extends State<EntrancePage> {
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
 
   static const int _maxNameLength = 12;
-  int _maxPlayers = RoomConfig.defaultMaxPlayers;
 
   @override
   void initState() {
@@ -64,9 +63,56 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
-  void _createRoom({required bool isPrivate}) {
+  Future<void> _createRoom({required bool isPrivate}) async {
+    if (_validatedPlayerName() == null) return;
+
+    final maxPlayers = await _showMaxPlayersDialog(isPrivate: isPrivate);
+    if (maxPlayers == null || !mounted) return;
+
     final newRoomId = (Random().nextInt(9000) + 1000).toString();
-    _openRoom(newRoomId, isPrivate: isPrivate, maxPlayers: _maxPlayers);
+    _openRoom(newRoomId, isPrivate: isPrivate, maxPlayers: maxPlayers);
+  }
+
+  Future<int?> _showMaxPlayersDialog({required bool isPrivate}) {
+    int selected = RoomConfig.defaultMaxPlayers;
+    final label = isPrivate ? '非公開ルーム' : '公開ルーム';
+
+    return showDialog<int>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('$labelを作成'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('最大入室人数を選んでください'),
+              const SizedBox(height: 16),
+              DropdownButton<int>(
+                isExpanded: true,
+                value: selected,
+                items: RoomConfig.maxPlayerOptions
+                    .map((n) => DropdownMenuItem(value: n, child: Text('$n 人')))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selected = value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(selected),
+              child: const Text('ルームを作成'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _joinRoom(String roomId) async {
@@ -167,37 +213,6 @@ class _EntrancePageState extends State<EntrancePage> {
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: Colors.orangeAccent),
                 ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.groups, color: Colors.white70, size: 20),
-                  const SizedBox(width: 8),
-                  const Text('最大人数', style: TextStyle(color: Colors.white70)),
-                  const Spacer(),
-                  DropdownButton<int>(
-                    value: _maxPlayers,
-                    dropdownColor: const Color(0xFF2E7D32),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    underline: const SizedBox.shrink(),
-                    items: RoomConfig.maxPlayerOptions
-                        .map((n) => DropdownMenuItem(value: n, child: Text('$n 人')))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) setState(() => _maxPlayers = value);
-                    },
-                  ),
-                ],
               ),
             ),
           ),
