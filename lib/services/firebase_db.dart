@@ -17,12 +17,14 @@ class FirebaseDB {
     List<CardWidget> deck,
     bool isPrivate, {
     required String playerName,
+    required int maxPlayers,
     required List<Map<String, dynamic>> deckIndex,
     required List<Map<String, dynamic>> initialHand,
   }) async {
     await _roomRef.set({
       'host': myId,
       'players': [myId],
+      'maxPlayers': maxPlayers,
       'playerNames': {myId: playerName},
       'playerHands': {myId: 5},
       'playerCards': {myId: initialHand},

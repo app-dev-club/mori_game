@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
+import '../../logic/room_config.dart';
 
 enum Suit { spade, heart, diamond, club, joker }
 
@@ -183,6 +184,8 @@ class GameBoardView extends StatelessWidget {
   final List<CardWidget> moriRevealedHand;
   final String? moriRevealedType;
   final int rematchReadyCount, playerCount;
+  final int maxPlayers;
+  final bool gameStarted;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
@@ -193,6 +196,7 @@ class GameBoardView extends StatelessWidget {
     required this.isDrawCompetitive,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.rematchReadyCount, required this.playerCount,
+    required this.maxPlayers, required this.gameStarted,
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
@@ -223,9 +227,26 @@ class GameBoardView extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
-      appBar: AppBar(title: Text('ルーム: $roomId'), backgroundColor: Colors.transparent, elevation: 0),
+      appBar: AppBar(
+        title: Text(gameStarted ? 'ルーム: $roomId' : 'ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: Column(
         children: [
+          if (!gameStarted)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.teal.shade900,
+              child: Text(
+                RoomConfig.isRoomFull(playerCount, maxPlayers)
+                    ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
+                    : '参加者を待っています… $playerCount / $maxPlayers 人',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
           if (rematchReadyCount > 0 && rematchReadyCount < playerCount)
             Container(
               width: double.infinity,

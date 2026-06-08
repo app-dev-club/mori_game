@@ -3,17 +3,20 @@ import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import '../../services/firebase_db.dart';
 import '../../logic/game_rules.dart';
+import '../../logic/room_config.dart';
 import 'game_board_view.dart';
 
 class GameRoomPage extends StatefulWidget {
   final String roomId;
   final bool isPrivate;
   final String playerName;
+  final int? maxPlayers;
   const GameRoomPage({
     super.key,
     required this.roomId,
     this.isPrivate = false,
     required this.playerName,
+    this.maxPlayers,
   });
   @override
   State<GameRoomPage> createState() => _GameRoomPageState();
@@ -51,6 +54,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int _lastRematchGeneration = 0;
   bool _rematchRestartInProgress = false;
   int _rematchReadyCount = 0;
+  int maxPlayers = RoomConfig.defaultMaxPlayers;
+  bool gameStarted = false;
 
   String? lastDrawerId;
   bool isDrawCompetitive = false;
@@ -92,9 +97,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         fullDeck,
         widget.isPrivate,
         playerName: widget.playerName,
+        maxPlayers: widget.maxPlayers ?? RoomConfig.defaultMaxPlayers,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
+      maxPlayers = widget.maxPlayers ?? RoomConfig.defaultMaxPlayers;
       FirebaseDatabase.instance.ref('rooms/${widget.roomId}').onDisconnect().update({'roomStatus': 'closed'});
       setState(() => myHand = hand);
     } else {
@@ -105,7 +112,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
       List<String> p = snap.child('players').exists ? List<String>.from(snap.child('players').value as List) : [];
-      if (!p.contains(myId)) p.add(myId);
+      maxPlayers = RoomConfig.resolveMaxPlayers(snap.child('maxPlayers').value);
+      if (!p.contains(myId)) {
+        if (RoomConfig.isRoomFull(p.length, maxPlayers)) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _showErrorDialog('このルームは定員（$maxPlayers人）に達しているため入室できません。'),
+          );
+          return;
+        }
+        p.add(myId);
+      }
       List<dynamic> rawDeck = snap.child('deck').value as List<dynamic>? ?? [];
       List<CardWidget> cDeck = rawDeck.map((i) => CardWidget(number: i['number'], suit: Suit.values.firstWhere((e) => e.name == i['suit']))).toList();
       List<CardWidget> iHand = [];
@@ -132,6 +148,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     setState(() {
       hostId = data['host'];
       playerIds = List<String>.from(data['players'] ?? []);
+      maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+      gameStarted = data['gameStarted'] == true;
       if (data['playerNames'] != null) {
         playerNames = Map<String, String>.from(
           (data['playerNames'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
@@ -694,6 +712,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
       rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
+      maxPlayers: maxPlayers, gameStarted: gameStarted,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }
