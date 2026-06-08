@@ -12,39 +12,69 @@ class EntrancePage extends StatefulWidget {
 }
 
 class _EntrancePageState extends State<EntrancePage> {
-  final TextEditingController _controller = TextEditingController();
+  final TextEditingController _roomIdController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
+
+  static const int _maxNameLength = 12;
 
   @override
   void initState() {
     super.initState();
-    // 画面を開いた瞬間に、誰もいない部屋や古い部屋を一掃する
     FirebaseDB.cleanupOldRooms();
   }
 
-  // ルーム作成処理
-  void _createRoom({required bool isPrivate}) {
-    String newRoomId = (Random().nextInt(9000) + 1000).toString();
-    
+  @override
+  void dispose() {
+    _roomIdController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  String? _validatedPlayerName() {
+    final trimmed = _nameController.text.trim();
+    if (trimmed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('プレイヤー名を入力してください')),
+      );
+      return null;
+    }
+    if (trimmed.length > _maxNameLength) {
+      return trimmed.substring(0, _maxNameLength);
+    }
+    return trimmed;
+  }
+
+  void _openRoom(String roomId, {required bool isPrivate}) {
+    final playerName = _validatedPlayerName();
+    if (playerName == null) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => GameRoomPage(
-          roomId: newRoomId,
+          roomId: roomId,
           isPrivate: isPrivate,
+          playerName: playerName,
         ),
       ),
     );
   }
 
-  // ルーム入室処理
-  void _joinRoom(String roomId) async {
+  void _createRoom({required bool isPrivate}) {
+    final newRoomId = (Random().nextInt(9000) + 1000).toString();
+    _openRoom(newRoomId, isPrivate: isPrivate);
+  }
+
+  Future<void> _joinRoom(String roomId) async {
     if (roomId.isEmpty) return;
+
+    final playerName = _validatedPlayerName();
+    if (playerName == null) return;
 
     final db = FirebaseDB(roomId);
     final snapshot = await db.getSnapshot();
-    
-    // 入室前のバリデーション
+
     if (snapshot.exists) {
       bool isStarted = snapshot.child('gameStarted').value == true;
       String status = snapshot.child('roomStatus').value as String? ?? 'open';
@@ -62,9 +92,28 @@ class _EntrancePageState extends State<EntrancePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => GameRoomPage(roomId: roomId),
+        builder: (context) => GameRoomPage(
+          roomId: roomId,
+          playerName: playerName,
+        ),
       ),
     );
+  }
+
+  String _formatRoomPlayers(Map data) {
+    final players = data['players'] as List?;
+    if (players == null || players.isEmpty) return '待機中: 0 人';
+
+    final namesRaw = data['playerNames'];
+    if (namesRaw is! Map) return '待機中: ${players.length} 人';
+
+    final names = namesRaw.map((k, v) => MapEntry(k.toString(), v.toString()));
+    final labels = players.map((id) {
+      final name = names[id.toString()];
+      return (name != null && name.isNotEmpty) ? name : 'プレイヤー';
+    }).join('、');
+
+    return '待機中: ${players.length} 人（$labels）';
   }
 
   @override
@@ -79,8 +128,33 @@ class _EntrancePageState extends State<EntrancePage> {
       ),
       body: Column(
         children: [
-          const SizedBox(height: 20),
-          // --- 新規作成ボタン ---
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: TextField(
+              controller: _nameController,
+              maxLength: _maxNameLength,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                counterStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: Colors.black26,
+                labelText: 'プレイヤー名',
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintText: '例: もり太郎',
+                hintStyle: const TextStyle(color: Colors.white38),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.white24),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.orangeAccent),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -95,8 +169,6 @@ class _EntrancePageState extends State<EntrancePage> {
             padding: EdgeInsets.symmetric(vertical: 10),
             child: Text('募集中（公開ルーム）', style: TextStyle(color: Colors.white70, fontSize: 16)),
           ),
-          
-          // --- 公開ルーム一覧 (リアルタイム更新) ---
           Expanded(
             child: StreamBuilder(
               stream: _roomsRef.onValue,
@@ -106,15 +178,14 @@ class _EntrancePageState extends State<EntrancePage> {
                 }
 
                 Map rooms = snapshot.data!.snapshot.value as Map;
-                
-                // フィルタリングを強化: 公開中 かつ 未開始 かつ プレイヤーが存在 かつ closedではない
+
                 List<MapEntry> activeRooms = rooms.entries.where((e) {
                   final data = e.value as Map;
                   bool isPrivate = data['isPrivate'] == true;
                   bool isStarted = data['gameStarted'] == true;
                   bool isClosed = data['roomStatus'] == 'closed';
                   bool hasPlayers = data['players'] != null && (data['players'] as List).isNotEmpty;
-                  
+
                   return !isPrivate && !isStarted && !isClosed && hasPlayers;
                 }).toList();
 
@@ -125,8 +196,9 @@ class _EntrancePageState extends State<EntrancePage> {
                 return ListView.builder(
                   itemCount: activeRooms.length,
                   itemBuilder: (context, index) {
-                    String rid = activeRooms[index].key.toString();
-                    int count = (activeRooms[index].value['players'] as List).length;
+                    final entry = activeRooms[index];
+                    String rid = entry.key.toString();
+                    final data = entry.value as Map;
 
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -134,7 +206,7 @@ class _EntrancePageState extends State<EntrancePage> {
                       child: ListTile(
                         leading: const Icon(Icons.meeting_room, color: Colors.orangeAccent),
                         title: Text('ルームID: $rid', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        subtitle: Text('待機中: $count 人', style: const TextStyle(color: Colors.white70)),
+                        subtitle: Text(_formatRoomPlayers(data), style: const TextStyle(color: Colors.white70)),
                         trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
                         onTap: () => _joinRoom(rid),
                       ),
@@ -144,8 +216,6 @@ class _EntrancePageState extends State<EntrancePage> {
               },
             ),
           ),
-          
-          // --- ID直接入力エリア ---
           _buildBottomBar(),
         ],
       ),
@@ -176,7 +246,7 @@ class _EntrancePageState extends State<EntrancePage> {
         children: [
           Expanded(
             child: TextField(
-              controller: _controller,
+              controller: _roomIdController,
               keyboardType: TextInputType.number,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
@@ -188,7 +258,7 @@ class _EntrancePageState extends State<EntrancePage> {
           ),
           const SizedBox(width: 10),
           ElevatedButton(
-            onPressed: () => _joinRoom(_controller.text),
+            onPressed: () => _joinRoom(_roomIdController.text),
             child: const Text('合流'),
           ),
         ],

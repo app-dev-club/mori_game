@@ -63,6 +63,7 @@ class GameBoardView extends StatelessWidget {
   final Suit fieldSuit;
   final List<CardWidget> myHand;
   final List<String> playerIds;
+  final Map<String, String> playerNames;
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
   final String? hostId, lastPlayerId, lastDrawerId, lastMoriPlayerId;
@@ -75,7 +76,7 @@ class GameBoardView extends StatelessWidget {
 
   const GameBoardView({
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
-    required this.myHand, required this.playerIds, required this.myId, required this.handCounts,
+    required this.myHand, required this.playerIds, required this.playerNames, required this.myId, required this.handCounts,
     required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
     required this.isDrawCompetitive,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
@@ -198,12 +199,17 @@ class GameBoardView extends StatelessWidget {
   String _playerLabel(String? playerId) {
     if (playerId == null) return '';
     if (playerId == 'system') return '山札';
-    if (playerId == myId) return 'あなた';
+    if (playerId == myId) {
+      final myName = playerNames[myId];
+      if (myName != null && myName.isNotEmpty) return 'あなた（$myName）';
+      return 'あなた';
+    }
     final idx = playerIds.indexOf(playerId);
     if (idx < 0) return '不明';
-    final n = idx + 1;
-    if (hostId != null && playerId == hostId) return 'プレイヤー$n（ホスト）';
-    return 'プレイヤー$n';
+    final name = playerNames[playerId];
+    final displayName = (name != null && name.isNotEmpty) ? name : 'プレイヤー${idx + 1}';
+    if (hostId != null && playerId == hostId) return '$displayName（ホスト）';
+    return displayName;
   }
 
   Widget _buildFieldArea({
