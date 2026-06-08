@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
+import '../../logic/room_config.dart';
 import '../../services/firebase_db.dart';
 import '../game/game_room_page.dart';
 
@@ -17,6 +18,7 @@ class _EntrancePageState extends State<EntrancePage> {
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
 
   static const int _maxNameLength = 12;
+  int _maxPlayers = RoomConfig.defaultMaxPlayers;
 
   @override
   void initState() {
@@ -45,7 +47,7 @@ class _EntrancePageState extends State<EntrancePage> {
     return trimmed;
   }
 
-  void _openRoom(String roomId, {required bool isPrivate}) {
+  void _openRoom(String roomId, {required bool isPrivate, int? maxPlayers}) {
     final playerName = _validatedPlayerName();
     if (playerName == null) return;
 
@@ -56,6 +58,7 @@ class _EntrancePageState extends State<EntrancePage> {
           roomId: roomId,
           isPrivate: isPrivate,
           playerName: playerName,
+          maxPlayers: maxPlayers,
         ),
       ),
     );
@@ -63,7 +66,7 @@ class _EntrancePageState extends State<EntrancePage> {
 
   void _createRoom({required bool isPrivate}) {
     final newRoomId = (Random().nextInt(9000) + 1000).toString();
-    _openRoom(newRoomId, isPrivate: isPrivate);
+    _openRoom(newRoomId, isPrivate: isPrivate, maxPlayers: _maxPlayers);
   }
 
   Future<void> _joinRoom(String roomId) async {
@@ -86,6 +89,16 @@ class _EntrancePageState extends State<EntrancePage> {
         );
         return;
       }
+
+      final players = snapshot.child('players').value as List? ?? [];
+      final maxPlayers = RoomConfig.resolveMaxPlayers(snapshot.child('maxPlayers').value);
+      if (RoomConfig.isRoomFull(players.length, maxPlayers)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('その部屋は定員（$maxPlayers人）に達しています')),
+        );
+        return;
+      }
     }
 
     if (!mounted) return;
@@ -104,8 +117,11 @@ class _EntrancePageState extends State<EntrancePage> {
     final players = data['players'] as List?;
     if (players == null || players.isEmpty) return '待機中: 0 人';
 
+    final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+    final countLabel = '${players.length}/$maxPlayers 人';
+
     final namesRaw = data['playerNames'];
-    if (namesRaw is! Map) return '待機中: ${players.length} 人';
+    if (namesRaw is! Map) return '待機中: $countLabel';
 
     final names = namesRaw.map((k, v) => MapEntry(k.toString(), v.toString()));
     final labels = players.map((id) {
@@ -113,7 +129,7 @@ class _EntrancePageState extends State<EntrancePage> {
       return (name != null && name.isNotEmpty) ? name : 'プレイヤー';
     }).join('、');
 
-    return '待機中: ${players.length} 人（$labels）';
+    return '待機中: $countLabel（$labels）';
   }
 
   @override
@@ -151,6 +167,37 @@ class _EntrancePageState extends State<EntrancePage> {
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: Colors.orangeAccent),
                 ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.groups, color: Colors.white70, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('最大人数', style: TextStyle(color: Colors.white70)),
+                  const Spacer(),
+                  DropdownButton<int>(
+                    value: _maxPlayers,
+                    dropdownColor: const Color(0xFF2E7D32),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    underline: const SizedBox.shrink(),
+                    items: RoomConfig.maxPlayerOptions
+                        .map((n) => DropdownMenuItem(value: n, child: Text('$n 人')))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) setState(() => _maxPlayers = value);
+                    },
+                  ),
+                ],
               ),
             ),
           ),
@@ -199,16 +246,36 @@ class _EntrancePageState extends State<EntrancePage> {
                     final entry = activeRooms[index];
                     String rid = entry.key.toString();
                     final data = entry.value as Map;
+                    final players = data['players'] as List? ?? [];
+                    final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+                    final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                      color: Colors.white.withOpacity(0.1),
+                      color: Colors.white.withValues(alpha: isFull ? 0.05 : 0.1),
                       child: ListTile(
-                        leading: const Icon(Icons.meeting_room, color: Colors.orangeAccent),
-                        title: Text('ルームID: $rid', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        subtitle: Text(_formatRoomPlayers(data), style: const TextStyle(color: Colors.white70)),
-                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
-                        onTap: () => _joinRoom(rid),
+                        leading: Icon(
+                          isFull ? Icons.block : Icons.meeting_room,
+                          color: isFull ? Colors.white38 : Colors.orangeAccent,
+                        ),
+                        title: Text(
+                          'ルームID: $rid',
+                          style: TextStyle(
+                            color: isFull ? Colors.white38 : Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: Text(
+                          isFull ? '満員（${players.length}/$maxPlayers 人）' : _formatRoomPlayers(data),
+                          style: TextStyle(color: isFull ? Colors.white38 : Colors.white70),
+                        ),
+                        trailing: Icon(
+                          isFull ? Icons.person_off : Icons.arrow_forward_ios,
+                          color: isFull ? Colors.white38 : Colors.white,
+                          size: 16,
+                        ),
+                        enabled: !isFull,
+                        onTap: isFull ? null : () => _joinRoom(rid),
                       ),
                     );
                   },
