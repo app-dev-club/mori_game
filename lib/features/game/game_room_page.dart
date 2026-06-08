@@ -8,7 +8,13 @@ import 'game_board_view.dart';
 class GameRoomPage extends StatefulWidget {
   final String roomId;
   final bool isPrivate;
-  const GameRoomPage({super.key, required this.roomId, this.isPrivate = false});
+  final String playerName;
+  const GameRoomPage({
+    super.key,
+    required this.roomId,
+    this.isPrivate = false,
+    required this.playerName,
+  });
   @override
   State<GameRoomPage> createState() => _GameRoomPageState();
 }
@@ -21,6 +27,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   List<CardWidget> myHand = [];
   String? hostId;
   List<String> playerIds = [];
+  Map<String, String> playerNames = {};
   Map<String, int> handCounts = {};
   int fieldNumber = -1;
   Suit fieldSuit = Suit.joker;
@@ -84,6 +91,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         myId,
         fullDeck,
         widget.isPrivate,
+        playerName: widget.playerName,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
@@ -106,6 +114,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'players': p,
         'playerHands/$myId': iHand.length,
         'playerCards/$myId': _serializeHand(iHand),
+        'playerNames/$myId': widget.playerName,
         'deck': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
         'deckIndex': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       });
@@ -123,6 +132,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     setState(() {
       hostId = data['host'];
       playerIds = List<String>.from(data['players'] ?? []);
+      if (data['playerNames'] != null) {
+        playerNames = Map<String, String>.from(
+          (data['playerNames'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
+        );
+      }
       currentTurn = data['currentTurnIndex'] ?? 0;
       lastPlayerId = data['lastPlayerId'];
       roomStatus = data['roomStatus'] ?? 'open';
@@ -220,7 +234,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (moriPhase == 'finished' && lastMoriPlayerId != null) { 
         _moriTimer?.cancel(); 
         _showGameOver(
-          lastMoriPlayerId == myId ? "勝利！(もり成功)" : (loserPlayerId == myId ? "敗北...(もりを宣言されました)" : "ゲーム終了"),
+          lastMoriPlayerId == myId
+              ? "勝利！(もり成功)"
+              : (loserPlayerId == myId
+                  ? "敗北...（${_displayName(lastMoriPlayerId)}にもりを宣言されました）"
+                  : "ゲーム終了"),
           allowRematch: true,
         ); 
       }
@@ -230,7 +248,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (burstPlayerId == myId) {
           _showGameOver("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。", allowRematch: true);
         } else {
-          _showGameOver("ゲーム終了\n（他プレイヤーがバーストしたため、勝者はありません）", allowRematch: true);
+          _showGameOver(
+            "ゲーム終了\n（${_displayName(burstPlayerId)}がバーストしたため、勝者はありません）",
+            allowRematch: true,
+          );
         }
       }
 
@@ -521,6 +542,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'players': p,
         'playerHands/$myId': null,
         'playerCards/$myId': null,
+        'playerNames/$myId': null,
       });
     }
   }
@@ -652,12 +674,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     });
   }
 
+  String _displayName(String? playerId) {
+    if (playerId == null) return '不明';
+    if (playerId == myId) return 'あなた';
+    final name = playerNames[playerId];
+    if (name != null && name.isNotEmpty) return name;
+    final idx = playerIds.indexOf(playerId);
+    return idx >= 0 ? 'プレイヤー${idx + 1}' : '不明';
+  }
+
   void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
 
   @override
   Widget build(BuildContext context) {
     return GameBoardView(
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
+      playerNames: playerNames,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
