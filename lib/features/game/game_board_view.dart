@@ -57,6 +57,118 @@ class CardWidget extends StatelessWidget {
   }
 }
 
+/// 裏向きのトランプ（他プレイヤーの手札枚数表示用）
+class CardBackWidget extends StatelessWidget {
+  final double width;
+  final double height;
+
+  const CardBackWidget({super.key, this.width = 60, this.height = 90});
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = width * 0.12;
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+        ),
+        border: Border.all(color: Colors.white70, width: 0.8),
+        boxShadow: const [
+          BoxShadow(color: Colors.black38, blurRadius: 2, offset: Offset(1, 1)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: CustomPaint(
+          painter: _CardBackPatternPainter(),
+          child: Center(
+            child: Icon(Icons.style, color: Colors.white.withValues(alpha: 0.3), size: width * 0.4),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardBackPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final borderPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.25)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final inset = size.shortestSide * 0.12;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(inset, inset, size.width - inset * 2, size.height - inset * 2),
+        Radius.circular(size.shortestSide * 0.06),
+      ),
+      borderPaint,
+    );
+
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 0.8;
+    const step = 6.0;
+    for (double x = -size.height; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x + size.height, size.height), linePaint);
+      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), linePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// 枚数分の裏向きカードを扇状に重ねて表示
+class OpponentHandVisual extends StatelessWidget {
+  final int count;
+  final bool isBurstWarning;
+
+  const OpponentHandVisual({
+    super.key,
+    required this.count,
+    this.isBurstWarning = false,
+  });
+
+  static const double _cardWidth = 22;
+  static const double _cardHeight = 33;
+  static const double _overlap = 9;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) {
+      return SizedBox(width: _cardWidth, height: _cardHeight);
+    }
+
+    final totalWidth = _cardWidth + (count - 1) * _overlap;
+    return SizedBox(
+      width: totalWidth,
+      height: _cardHeight + 2,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: List.generate(count, (i) {
+          final card = CardBackWidget(width: _cardWidth, height: _cardHeight);
+          return Positioned(
+            left: i * _overlap,
+            child: isBurstWarning
+                ? ColorFiltered(
+                    colorFilter: const ColorFilter.mode(Color(0x66FF5252), BlendMode.srcATop),
+                    child: card,
+                  )
+                : card,
+          );
+        }),
+      ),
+    );
+  }
+}
+
 class GameBoardView extends StatelessWidget {
   final String roomId, myId, moriPhase;
   final int fieldNumber, currentTurnIndex;
@@ -278,29 +390,52 @@ class GameBoardView extends StatelessWidget {
   }
 
   Widget _buildOthersStatus() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center, 
-      children: playerIds.asMap().entries.where((e) => e.value != myId).map((e) {
-        bool isHisTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == e.key);
-        bool playedField = fieldNumber != -1 && lastPlayerId == e.value;
-        return Container(
-          padding: const EdgeInsets.all(8), margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            border: isHisTurn
-                ? Border.all(color: Colors.yellow, width: 2)
-                : playedField
-                    ? Border.all(color: Colors.orangeAccent, width: 2)
-                    : null,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(children: [
-            const Icon(Icons.person, color: Colors.white),
-            Text(_playerLabel(e.value), style: const TextStyle(color: Colors.white70, fontSize: 10)),
-            Text('${handCounts[e.value] ?? 0}枚', style: const TextStyle(color: Colors.white)),
-            if (playedField) const Text('場に出した', style: TextStyle(color: Colors.orangeAccent, fontSize: 9)),
-          ]),
-        );
-      }).toList()
+    final others = playerIds.asMap().entries.where((e) => e.value != myId).toList();
+    if (others.isEmpty) return const SizedBox.shrink();
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: others.map((e) {
+          final handCount = handCounts[e.value] ?? 0;
+          final isHisTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == e.key);
+          final playedField = fieldNumber != -1 && lastPlayerId == e.value;
+          final isBurstWarning = handCount >= 6;
+
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              border: isHisTurn
+                  ? Border.all(color: Colors.yellow, width: 2)
+                  : playedField
+                      ? Border.all(color: Colors.orangeAccent, width: 2)
+                      : Border.all(color: Colors.white12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _playerLabel(e.value),
+                  style: const TextStyle(color: Colors.white70, fontSize: 10),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                OpponentHandVisual(count: handCount, isBurstWarning: isBurstWarning),
+                if (playedField)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text('場に出した', style: TextStyle(color: Colors.orangeAccent, fontSize: 9)),
+                  ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
