@@ -61,8 +61,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool isDrawCompetitive = false;
   bool _hasPlayedThisTurn = false;
   int? _lastDeckResetAt;
+  String? _statusMessage;
+  Timer? _statusMessageTimer;
 
   bool get isHost => myId == hostId;
+
+  void _showGameMessage(String message) {
+    _statusMessageTimer?.cancel();
+    setState(() => _statusMessage = message);
+    _statusMessageTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _statusMessage = null);
+    });
+  }
 
   @override
   void initState() {
@@ -78,6 +88,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this); 
     _sub?.cancel();
     _moriTimer?.cancel();
+    _statusMessageTimer?.cancel();
     super.dispose();
   }
 
@@ -299,9 +310,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (shouldNotifyDeckReset) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('山札が尽きたのでシャッフルして補充しました')),
-        );
+        _showGameMessage('山札が尽きたのでシャッフルして補充しました');
       });
     }
   }
@@ -459,11 +468,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _onMori() {
-    if (!GameRules.isValidMori(fieldNumber, myHand)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('計算が合いません！'))); return; }
+    if (!GameRules.isValidMori(fieldNumber, myHand)) { _showGameMessage('計算が合いません！'); return; }
     setState(() => hasDeclaredMori = true);
     final revealedHand = _serializeHand(myHand);
     if (moriPhase == 'none') {
-      if (lastPlayerId == myId) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('自滅はできません！'))); setState(() => hasDeclaredMori = false); return; }
+      if (lastPlayerId == myId) { _showGameMessage('自滅はできません！'); setState(() => hasDeclaredMori = false); return; }
       _db.updateGameStatus({
         'moriPhase': 'mori_declared',
         'lastMoriPlayerId': myId,
@@ -524,9 +533,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (fieldHistory.length <= 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('山札を補充できません（捨て札が不足しています）')),
-        );
+        _showGameMessage('山札を補充できません（捨て札が不足しています）');
       });
       return;
     }
@@ -652,9 +659,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _gameOverRouteOpen = false;
     }
     _gameOverDialogShown = false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('再戦の準備ができました。他のプレイヤーを待っています…')),
-    );
+    _showGameMessage('再戦の準備ができました。他のプレイヤーを待っています…');
   }
 
   void _showGameOver(String msg, {bool allowRematch = false}) {
@@ -713,6 +718,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
       rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
       maxPlayers: maxPlayers, gameStarted: gameStarted,
+      statusMessage: _statusMessage,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }
