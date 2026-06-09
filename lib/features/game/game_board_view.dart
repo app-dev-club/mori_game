@@ -186,6 +186,7 @@ class GameBoardView extends StatelessWidget {
   final int rematchReadyCount, playerCount;
   final int maxPlayers;
   final bool gameStarted;
+  final String? statusMessage;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
@@ -197,6 +198,7 @@ class GameBoardView extends StatelessWidget {
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.rematchReadyCount, required this.playerCount,
     required this.maxPlayers, required this.gameStarted,
+    this.statusMessage,
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
@@ -284,6 +286,7 @@ class GameBoardView extends StatelessWidget {
             ),
           if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
             _buildMoriRevealedHandSection(),
+          if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
           _buildMyHandSection(isMyTurn, inDrawCompetition: inDrawCompetition),
         ],
       ),
@@ -456,6 +459,32 @@ class GameBoardView extends StatelessWidget {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildStatusMessageBanner(String message) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amberAccent, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, color: Colors.amberAccent, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.3),
+            ),
+          ),
+        ],
       ),
     );
   }
