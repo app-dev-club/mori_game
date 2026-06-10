@@ -184,10 +184,23 @@ class GameBoardView extends StatelessWidget {
   final bool isDrawCompetitive;
   final List<CardWidget> moriRevealedHand;
   final String? moriRevealedType;
-  final int rematchReadyCount, playerCount;
+  final int playerCount;
   final int maxPlayers;
   final bool gameStarted;
   final String? statusMessage;
+  final bool postGameVisible;
+  final String postGameMessage;
+  final int? postGameCountdownSeconds;
+  final bool awaitingGuestStayResponses;
+  final int guestStayReadyCount;
+  final int guestStayTotalCount;
+  final int? guestCountdownSeconds;
+  final bool mustRespondToStay;
+  final bool myStayResponseSubmitted;
+  final VoidCallback onHostRematch;
+  final VoidCallback onHostReturnToLobby;
+  final VoidCallback onGuestStayInRoom;
+  final VoidCallback onLeaveToLobby;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
@@ -197,9 +210,22 @@ class GameBoardView extends StatelessWidget {
     required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
     required this.isDrawCompetitive,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
-    required this.rematchReadyCount, required this.playerCount,
+    required this.playerCount,
     required this.maxPlayers, required this.gameStarted,
     this.statusMessage,
+    required this.postGameVisible,
+    required this.postGameMessage,
+    this.postGameCountdownSeconds,
+    required this.awaitingGuestStayResponses,
+    required this.guestStayReadyCount,
+    required this.guestStayTotalCount,
+    this.guestCountdownSeconds,
+    required this.mustRespondToStay,
+    required this.myStayResponseSubmitted,
+    required this.onHostRematch,
+    required this.onHostReturnToLobby,
+    required this.onGuestStayInRoom,
+    required this.onLeaveToLobby,
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
@@ -235,7 +261,9 @@ class GameBoardView extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: PlayArrowOverlay(
+      body: Stack(
+        children: [
+          PlayArrowOverlay(
         lastPlayerId: lastPlayerId,
         myId: myId,
         playerIds: playerIds,
@@ -258,17 +286,6 @@ class GameBoardView extends StatelessWidget {
                 RoomConfig.isRoomFull(playerCount, maxPlayers)
                     ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
                     : '参加者を待っています… $playerCount / $maxPlayers 人',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-          if (rematchReadyCount > 0 && rematchReadyCount < playerCount)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.amber.shade800,
-              child: Text(
-                '再戦待機中… $rematchReadyCount / $playerCount 人が準備完了',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
@@ -312,6 +329,24 @@ class GameBoardView extends StatelessWidget {
           ),
         ],
       ),
+          ),
+          if (postGameVisible)
+            PostGameOverlay(
+              message: postGameMessage,
+              isHost: isHost,
+              countdownSeconds: postGameCountdownSeconds,
+              awaitingGuestStayResponses: awaitingGuestStayResponses,
+              guestStayReadyCount: guestStayReadyCount,
+              guestStayTotalCount: guestStayTotalCount,
+              guestCountdownSeconds: guestCountdownSeconds,
+              mustRespondToStay: mustRespondToStay,
+              myStayResponseSubmitted: myStayResponseSubmitted,
+              onHostRematch: onHostRematch,
+              onHostReturnToLobby: onHostReturnToLobby,
+              onGuestStayInRoom: onGuestStayInRoom,
+              onLeaveToLobby: onLeaveToLobby,
+            ),
+        ],
       ),
     );
   }
@@ -508,6 +543,164 @@ class GameBoardView extends StatelessWidget {
         const SizedBox(height: 5),
         SizedBox(height: 100, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: myHand.length, itemBuilder: (c, i) => Padding(padding: const EdgeInsets.all(4), child: CardWidget(number: myHand[i].number, suit: myHand[i].suit, onTap: () => onCardTap(i))))),
       ]),
+    );
+  }
+}
+
+/// ゲーム終了後の再戦・退室UI
+class PostGameOverlay extends StatelessWidget {
+  final String message;
+  final bool isHost;
+  final int? countdownSeconds;
+  final bool awaitingGuestStayResponses;
+  final int guestStayReadyCount;
+  final int guestStayTotalCount;
+  final int? guestCountdownSeconds;
+  final bool mustRespondToStay;
+  final bool myStayResponseSubmitted;
+  final VoidCallback onHostRematch;
+  final VoidCallback onHostReturnToLobby;
+  final VoidCallback onGuestStayInRoom;
+  final VoidCallback onLeaveToLobby;
+
+  const PostGameOverlay({
+    super.key,
+    required this.message,
+    required this.isHost,
+    this.countdownSeconds,
+    required this.awaitingGuestStayResponses,
+    required this.guestStayReadyCount,
+    required this.guestStayTotalCount,
+    this.guestCountdownSeconds,
+    required this.mustRespondToStay,
+    required this.myStayResponseSubmitted,
+    required this.onHostRematch,
+    required this.onHostReturnToLobby,
+    required this.onGuestStayInRoom,
+    required this.onLeaveToLobby,
+  });
+
+  String _subtitle() {
+    if (awaitingGuestStayResponses) {
+      if (isHost) {
+        return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人が残ると回答';
+      }
+      if (mustRespondToStay) {
+        return 'ルームに残りますか？';
+      }
+      if (myStayResponseSubmitted) {
+        return '回答を送信しました。他のプレイヤーを待っています…';
+      }
+      return 'ホストの選択を待っています…';
+    }
+    if (isHost) {
+      return '「もう一度遊ぶ」を選ぶと参加者に残存確認を行います。全員の回答後にルームが公開されます。';
+    }
+    return 'ホストの選択を待っています…';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.72),
+      child: Center(
+        child: Container(
+          width: 320,
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1B3A1B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.orangeAccent, width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _subtitle(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              if (isHost && !awaitingGuestStayResponses && countdownSeconds != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '残り $countdownSeconds 秒（未選択でルーム閉鎖）',
+                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                ),
+              ],
+              if (awaitingGuestStayResponses && guestCountdownSeconds != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '残り $guestCountdownSeconds 秒（未回答は自動退室）',
+                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                ),
+              ],
+              const SizedBox(height: 20),
+              if (awaitingGuestStayResponses) ...[
+                if (isHost)
+                  const Text(
+                    '全員の回答が揃うとルームを公開します',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  )
+                else if (mustRespondToStay) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: onGuestStayInRoom,
+                      child: const Text('ルームに残る'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: onLeaveToLobby,
+                      child: const Text('ロビーへ'),
+                    ),
+                  ),
+                ] else
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: onLeaveToLobby,
+                      child: const Text('ロビーへ'),
+                    ),
+                  ),
+              ] else if (isHost) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: onHostRematch,
+                    child: const Text('もう一度遊ぶ'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: onHostReturnToLobby,
+                    child: const Text('ロビーへ（ルームを閉鎖）'),
+                  ),
+                ),
+              ] else
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: onLeaveToLobby,
+                    child: const Text('ロビーへ'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

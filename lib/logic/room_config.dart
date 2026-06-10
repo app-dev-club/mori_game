@@ -14,4 +14,13 @@ class RoomConfig {
 
   static bool isRoomFull(int currentCount, int maxPlayers) =>
       currentCount >= maxPlayers;
+
+  /// ホストが再戦を選ぶまでの制限時間（秒）
+  static const int hostRematchDecisionSeconds = 60;
+
+  /// ゲストが再戦に参加するか答えるまでの制限時間（秒）
+  static const int guestRematchResponseSeconds = 60;
+
+  static int get hostRematchDecisionMs => hostRematchDecisionSeconds * 1000;
+  static int get guestRematchResponseMs => guestRematchResponseSeconds * 1000;
 }

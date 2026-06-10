@@ -50,10 +50,24 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
   bool _gameOverDialogShown = false;
-  bool _gameOverRouteOpen = false;
-  int _lastRematchGeneration = 0;
-  bool _rematchRestartInProgress = false;
-  int _rematchReadyCount = 0;
+  bool _isIntentionalLeave = false;
+  bool _postGameClosing = false;
+  String? _postGameMessage;
+  bool _postGameEntered = false;
+  Timer? _hostDecisionTimer;
+  Timer? _postGameCountdownTimer;
+  Timer? _guestStayCountdownTimer;
+  int? _countdownSeconds;
+  int? _guestCountdownSeconds;
+  bool rematchHostRequested = false;
+  bool awaitingGuestStayResponses = false;
+  List<String> rematchEligiblePlayers = [];
+  Map<String, bool> rematchReadyMap = {};
+  int? rematchStartedAt;
+  bool myStayResponseSubmitted = false;
+  bool _rematchFinalizing = false;
+  int? postGameEndedAt;
+  bool postGameActive = false;
   int maxPlayers = RoomConfig.defaultMaxPlayers;
   bool gameStarted = false;
 
@@ -65,6 +79,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Timer? _statusMessageTimer;
 
   bool get isHost => myId == hostId;
+
+  bool get _isActiveGameplay =>
+      gameStarted && !postGameActive && !awaitingGuestStayResponses;
+
+  bool get _showPostGameOverlay =>
+      _postGameMessage != null &&
+      (postGameActive || awaitingGuestStayResponses || (_postGameEntered && !_isActiveGameplay));
 
   void _showGameMessage(String message) {
     _statusMessageTimer?.cancel();
@@ -84,11 +105,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   @override
   void dispose() {
-    _cleanupRoomOnLeave(); 
-    WidgetsBinding.instance.removeObserver(this); 
+    if (!_isIntentionalLeave) _cleanupRoomOnLeave();
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _moriTimer?.cancel();
     _statusMessageTimer?.cancel();
+    _hostDecisionTimer?.cancel();
+    _postGameCountdownTimer?.cancel();
+    _cancelGuestStayTimers();
     super.dispose();
   }
 
@@ -118,7 +142,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     } else {
       bool isStarted = snap.child('gameStarted').value == true;
       String currentStatus = snap.child('roomStatus').value as String? ?? 'open';
-      if (isStarted || currentStatus == 'closed') {
+      if (currentStatus == 'closed' || isStarted) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _showErrorDialog("このゲームは既に開始されているか、閉鎖されているため入室できません。"));
         return;
       }
@@ -152,7 +176,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onData(DatabaseEvent event) {
     final data = event.snapshot.value as Map?;
-    if (data == null || !mounted) return;
+    if (data == null) {
+      if (!mounted || _isIntentionalLeave || isHost) return;
+      _forceReturnToLobby();
+      return;
+    }
+    if (!mounted) return;
     final int? deckResetAt = data['deckResetAt'] as int?;
     final bool shouldNotifyDeckReset =
         deckResetAt != null && deckResetAt != _lastDeckResetAt;
@@ -198,6 +227,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           if (cards is List) countsFromCards[pid] = cards.length;
         });
         handCounts = {...handCounts, ...countsFromCards};
+        if (playerCards[myId] is List) {
+          myHand = _parseHandFromFirebase(playerCards[myId]);
+        }
       }
       if (data['field'] != null) {
         fieldNumber = data['field']['number'];
@@ -248,10 +280,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         moriRevealedType = null;
       }
       
-      if (roomStatus == 'closed' && !isHost && !_isClosedDialogShown) { 
-        _isClosedDialogShown = true; 
-        _sub?.cancel(); 
-        _showGameOver("ホスト不在のため閉鎖されました"); 
+      // 山札めくりやゲーム終了後の閉鎖では弾かない（ホスト切断時のロビー閉鎖のみ）
+      if (roomStatus == 'closed' && !gameStarted && !postGameActive && !isHost && !_isClosedDialogShown) {
+        _isClosedDialogShown = true;
+        _sub?.cancel();
+        _showGameOver("ホスト不在のため閉鎖されました");
       }
       
       if (isHost && moriPhase == 'mori_declared' && _lastTrackedMoriPlayer != lastMoriPlayerId) {
@@ -260,52 +293,86 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _moriTimer = Timer(const Duration(seconds: 5), () => _db.updateGameStatus({'moriPhase': 'finished'}));
       }
       
-      if (moriPhase == 'finished' && lastMoriPlayerId != null) { 
-        _moriTimer?.cancel(); 
-        _showGameOver(
+      if (!_postGameEntered && moriPhase == 'finished' && lastMoriPlayerId != null) {
+        _moriTimer?.cancel();
+        _enterPostGame(
           lastMoriPlayerId == myId
               ? "勝利！(もり成功)"
               : (loserPlayerId == myId
                   ? "敗北...（${_displayName(lastMoriPlayerId)}にもりを宣言されました）"
                   : "ゲーム終了"),
-          allowRematch: true,
-        ); 
+        );
       }
 
       String? burstPlayerId = data['burstPlayerId'];
-      if (burstPlayerId != null) {
+      if (!_postGameEntered && burstPlayerId != null) {
         if (burstPlayerId == myId) {
-          _showGameOver("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。", allowRematch: true);
+          _enterPostGame("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。");
         } else {
-          _showGameOver(
+          _enterPostGame(
             "ゲーム終了\n（${_displayName(burstPlayerId)}がバーストしたため、勝者はありません）",
-            allowRematch: true,
           );
         }
       }
 
-      _rematchReadyCount = _countRematchReady(data, playerIds);
-      final int rematchGen = data['rematchGeneration'] as int? ?? 0;
-      if (rematchGen > _lastRematchGeneration) {
-        _lastRematchGeneration = rematchGen;
-        _applyRematchHands(data);
-        _gameOverDialogShown = false;
-        _rematchRestartInProgress = false;
-        if (_gameOverRouteOpen) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _gameOverRouteOpen) {
-              Navigator.of(context).pop();
-              _gameOverRouteOpen = false;
-            }
-          });
-        }
+      postGameActive = data['postGameActive'] == true;
+      rematchHostRequested = data['rematchHostRequested'] == true;
+      awaitingGuestStayResponses = data['awaitingGuestStayResponses'] == true;
+      rematchEligiblePlayers = List<String>.from(data['rematchEligiblePlayers'] ?? []);
+      rematchStartedAt = data['rematchStartedAt'] as int?;
+      if (data['rematchReady'] != null) {
+        rematchReadyMap = Map<String, bool>.from(
+          (data['rematchReady'] as Map).map((k, v) => MapEntry(k.toString(), v == true)),
+        );
+      } else {
+        rematchReadyMap = {};
+      }
+      myStayResponseSubmitted = rematchReadyMap[myId] == true;
+      postGameEndedAt = data['postGameEndedAt'] as int?;
+
+      if (!_isIntentionalLeave && !playerIds.contains(myId)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isIntentionalLeave) return;
+          _sub?.cancel();
+          _showGameOver('ルームから退室しました');
+        });
       }
 
-      if (isHost && !_rematchRestartInProgress && _allRematchReady(data, playerIds)) {
-        _rematchRestartInProgress = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) => _hostRestartGame(List<String>.from(playerIds)));
+      if (postGameActive && isHost && postGameEndedAt == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _db.markPostGameStarted());
+      }
+
+      if (rematchHostRequested && awaitingGuestStayResponses) {
+        _cancelPostGameTimers();
+        _syncGuestStayTimers();
+        if (isHost) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFinalizeRematchLobby());
+        }
+      } else if (_postGameMessage != null && !rematchHostRequested) {
+        _syncPostGameTimers();
+      } else if (!awaitingGuestStayResponses) {
+        _cancelGuestStayTimers();
+      }
+
+      if (rematchHostRequested && !awaitingGuestStayResponses && !gameStarted) {
+        _postGameMessage = null;
+        _postGameEntered = false;
+        _cancelPostGameTimers();
+      }
+
+      if (_isActiveGameplay) {
+        _postGameMessage = null;
+        _postGameEntered = false;
+        _cancelPostGameTimers();
+        _cancelGuestStayTimers();
       }
     });
+
+    if (data['roomDismissedByHost'] == true && !isHost && !_isClosedDialogShown) {
+      _isClosedDialogShown = true;
+      _forceReturnToLobby();
+      return;
+    }
 
     if (shouldNotifyDeckReset) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -519,7 +586,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'isInitialPhase': true,
       'lastPlayerId': 'system',
+      'roomStatus': 'closed',
       'gameStarted': true,
+      'rematchHostRequested': false,
+      'postGameActive': false,
+      'burstPlayerId': null,
+      'lastMoriPlayerId': null,
+      'loserPlayerId': null,
+      'moriPhase': 'none',
+      'moriRevealedHand': null,
+      'moriRevealedType': null,
+    });
+    setState(() {
+      _postGameMessage = null;
+      _postGameEntered = false;
     });
   }
 
@@ -561,18 +641,37 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _cleanupRoomOnLeave() {
     if (isHost) {
       _closeRoomForcefully();
-    } else {
-      List<String> p = List<String>.from(playerIds)..remove(myId);
-      _db.updateGameStatus({
-        'players': p,
-        'playerHands/$myId': null,
-        'playerCards/$myId': null,
-        'playerNames/$myId': null,
-      });
+      return;
     }
+
+    List<String> p = List<String>.from(playerIds)..remove(myId);
+    _db.updateGameStatus({
+      'players': p,
+      'playerHands/$myId': null,
+      'playerCards/$myId': null,
+      'playerNames/$myId': null,
+    });
   }
 
-  void _closeRoomForcefully() { _db.updateGameStatus({'roomStatus': 'closed'}); Timer(const Duration(seconds: 2), () => FirebaseDatabase.instance.ref('rooms/${widget.roomId}').remove()); }
+  void _closeRoomForcefully({bool dismissedByHost = false}) {
+    if (dismissedByHost) {
+      _db.dismissRoomByHost();
+    } else {
+      _db.updateGameStatus({'roomStatus': 'closed'});
+    }
+    Timer(const Duration(seconds: 2), () => FirebaseDatabase.instance.ref('rooms/${widget.roomId}').remove());
+  }
+
+  void _forceReturnToLobby() {
+    if (_postGameClosing || _isIntentionalLeave) return;
+    _postGameClosing = true;
+    _isIntentionalLeave = true;
+    _cancelPostGameTimers();
+    _cancelGuestStayTimers();
+    _sub?.cancel();
+    if (!mounted) return;
+    Navigator.popUntil(context, (r) => r.isFirst);
+  }
 
   /// 各スート(♠♥♦♣)で1-13が各1枚ずつ(52枚) + ジョーカー2枚 = 54枚
   List<CardWidget> _generateDeck() {
@@ -585,105 +684,253 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     ];
   }
 
-  int _countRematchReady(Map data, List<String> players) {
-    if (players.isEmpty) return 0;
-    final ready = data['rematchReady'];
-    if (ready == null) return 0;
-    final readyMap = Map<String, dynamic>.from(ready as Map);
-    return players.where((p) => readyMap[p] == true).length;
+  void _cancelPostGameTimers() {
+    _hostDecisionTimer?.cancel();
+    _hostDecisionTimer = null;
+    _postGameCountdownTimer?.cancel();
+    _postGameCountdownTimer = null;
+    _countdownSeconds = null;
   }
 
-  bool _allRematchReady(Map data, List<String> players) {
-    if (players.isEmpty) return false;
-    return _countRematchReady(data, players) >= players.length;
+  void _cancelGuestStayTimers() {
+    _guestStayCountdownTimer?.cancel();
+    _guestStayCountdownTimer = null;
+    _guestCountdownSeconds = null;
   }
 
-  void _applyRematchHands(Map data) {
-    final raw = data['rematchHands'];
-    if (raw is! Map || raw[myId] == null) return;
-    myHand = (raw[myId] as List)
-        .map((i) => CardWidget(
-              number: i['number'] as int,
-              suit: Suit.values.firstWhere((e) => e.name == i['suit']),
-            ))
-        .toList();
-    _hasPlayedThisTurn = false;
-    _lastTrackedMoriPlayer = '';
-    hasDeclaredMori = false;
+  void _syncGuestStayTimers() {
+    _guestStayCountdownTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateGuestCountdown();
+      if (isHost) _maybeFinalizeRematchLobby();
+    });
+    _updateGuestCountdown();
   }
 
-  Future<void> _hostRestartGame(List<String> players) async {
-    if (players.isEmpty) {
-      _rematchRestartInProgress = false;
-      return;
+  void _updateGuestCountdown() {
+    if (rematchStartedAt == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final next =
+        ((rematchStartedAt! + RoomConfig.guestRematchResponseMs - now) / 1000).ceil();
+    final clamped = next < 0 ? 0 : next;
+    if (clamped != _guestCountdownSeconds) setState(() => _guestCountdownSeconds = clamped);
+  }
+
+  int _guestStayReadyCount() =>
+      rematchEligiblePlayers.where((id) => rematchReadyMap[id] == true).length;
+
+  bool _allGuestStayResponsesResolved({required bool timedOut}) {
+    for (final id in rematchEligiblePlayers) {
+      if (!playerIds.contains(id)) continue;
+      if (rematchReadyMap[id] != true && !timedOut) return false;
     }
-    final snap = await _db.getSnapshot();
-    final nextGen = (snap.child('rematchGeneration').value as int? ?? 0) + 1;
+    return true;
+  }
 
-    List<CardWidget> deck = _generateDeck()..shuffle();
-    final rematchHands = <String, List<Map<String, dynamic>>>{};
+  Future<void> _maybeFinalizeRematchLobby() async {
+    if (!isHost || !awaitingGuestStayResponses || _rematchFinalizing) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final timedOut = rematchStartedAt != null &&
+        now >= rematchStartedAt! + RoomConfig.guestRematchResponseMs;
+
+    if (!_allGuestStayResponsesResolved(timedOut: timedOut)) return;
+
+    _rematchFinalizing = true;
+    try {
+      final stayingGuests = rematchEligiblePlayers
+          .where((id) => playerIds.contains(id) && rematchReadyMap[id] == true)
+          .toList();
+      final toRemove = rematchEligiblePlayers
+          .where((id) => playerIds.contains(id) && rematchReadyMap[id] != true)
+          .toList();
+
+      if (toRemove.isNotEmpty) {
+        final updates = <String, dynamic>{};
+        final newPlayers = List<String>.from(playerIds);
+        for (final id in toRemove) {
+          newPlayers.remove(id);
+          updates['playerHands/$id'] = null;
+          updates['playerCards/$id'] = null;
+          updates['playerNames/$id'] = null;
+          updates['rematchReady/$id'] = null;
+        }
+        updates['players'] = newPlayers;
+        await _db.updateGameStatus(updates);
+        playerIds = newPlayers;
+      }
+
+      final remaining = <String>[?hostId, ...stayingGuests];
+      if (remaining.length < RoomConfig.minPlayers) {
+        await _closeRoomAndExitLobby();
+        return;
+      }
+      await _finalizeRematchWithPlayers(remaining);
+    } finally {
+      _rematchFinalizing = false;
+    }
+  }
+
+  Future<void> _finalizeRematchWithPlayers(List<String> players) async {
+    _cancelGuestStayTimers();
+    final deckCards = _generateDeck()..shuffle();
+    final playerCards = <String, List<Map<String, dynamic>>>{};
+    final playerHandCounts = <String, int>{};
+
     for (final pid in players) {
       final hand = <CardWidget>[];
       for (int i = 0; i < 5; i++) {
-        if (deck.isNotEmpty) hand.add(deck.removeLast());
+        if (deckCards.isNotEmpty) hand.add(deckCards.removeLast());
       }
-      rematchHands[pid] = hand.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+      playerCards[pid] = hand.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+      playerHandCounts[pid] = hand.length;
     }
-    final remainingDeck = deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    final remainingDeck =
+        deckCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
 
-    await _db.restartGame(
+    await _db.prepareRematchLobby(
       players: players,
-      rematchHands: rematchHands,
-      remainingDeck: remainingDeck,
-      deckIndex: remainingDeck,
-      rematchGeneration: nextGen,
+      playerCards: playerCards,
+      playerHands: playerHandCounts,
+      deck: remainingDeck,
     );
-    if (mounted) {
-      setState(() {
-        myHand = (rematchHands[myId] ?? [])
-            .map((i) => CardWidget(
-                  number: i['number'] as int,
-                  suit: Suit.values.firstWhere((e) => e.name == i['suit']),
-                ))
-            .toList();
-      });
-    }
-    _rematchRestartInProgress = false;
-  }
 
-  Future<void> _onRematchRequest() async {
-    await _db.setRematchReady(myId);
     if (!mounted) return;
-    if (_gameOverRouteOpen) {
-      Navigator.of(context).pop();
-      _gameOverRouteOpen = false;
-    }
-    _gameOverDialogShown = false;
-    _showGameMessage('再戦の準備ができました。他のプレイヤーを待っています…');
+    setState(() {
+      _postGameMessage = null;
+      _postGameEntered = false;
+      awaitingGuestStayResponses = false;
+      rematchEligiblePlayers = [];
+      rematchReadyMap = {};
+      myStayResponseSubmitted = false;
+      postGameActive = false;
+      gameStarted = false;
+      roomStatus = 'open';
+      isInitialPhase = true;
+      fieldNumber = -1;
+      fieldSuit = Suit.joker;
+      fieldHistory = [];
+      myHand = (playerCards[myId] ?? [])
+          .map((i) => CardWidget(
+                number: i['number'] as int,
+                suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+              ))
+          .toList();
+      _hasPlayedThisTurn = false;
+      hasDeclaredMori = false;
+    });
+    _showGameMessage('ルームを公開しました。参加者が揃ったら山札をめくってください。');
   }
 
-  void _showGameOver(String msg, {bool allowRematch = false}) {
+  void _syncPostGameTimers() {
+    _postGameCountdownTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateCountdown();
+      _checkPostGameTimeouts();
+    });
+    _updateCountdown();
+  }
+
+  void _updateCountdown() {
+    if (postGameEndedAt == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final next = ((postGameEndedAt! + RoomConfig.hostRematchDecisionMs - now) / 1000).ceil();
+    final clamped = next < 0 ? 0 : next;
+    if (clamped != _countdownSeconds) setState(() => _countdownSeconds = clamped);
+  }
+
+  void _checkPostGameTimeouts() {
+    if (!isHost || rematchHostRequested || postGameEndedAt == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now >= postGameEndedAt! + RoomConfig.hostRematchDecisionMs) {
+      _closeRoomAndExitLobby();
+    }
+  }
+
+  Future<void> _onHostRematchRequest() async {
+    _cancelPostGameTimers();
+    final guests = playerIds.where((p) => p != hostId).toList();
+    if (guests.isEmpty) {
+      await _finalizeRematchWithPlayers([hostId!]);
+      if (mounted) setState(() => _postGameMessage = null);
+      return;
+    }
+
+    await _db.requestHostRematch(guests);
+    if (!mounted) return;
+    setState(() {
+      rematchHostRequested = true;
+      awaitingGuestStayResponses = true;
+      rematchEligiblePlayers = guests;
+      postGameActive = false;
+    });
+  }
+
+  Future<void> _onGuestStayInRoom() async {
+    if (isHost || !awaitingGuestStayResponses || myStayResponseSubmitted) return;
+    if (!rematchEligiblePlayers.contains(myId)) return;
+    await _db.setStayInRoom(myId);
+    if (!mounted) return;
+    setState(() => myStayResponseSubmitted = true);
+  }
+
+  Future<void> _onHostReturnToLobby() async {
+    await _closeRoomAndExitLobby();
+  }
+
+  Future<void> _leaveRoomToLobby() async {
+    if (_postGameClosing) return;
+    _postGameClosing = true;
+    _isIntentionalLeave = true;
+    _cancelPostGameTimers();
+    _sub?.cancel();
+
+    List<String> p = List<String>.from(playerIds)..remove(myId);
+    final updates = <String, dynamic>{
+      'players': p,
+      'playerHands/$myId': null,
+      'playerCards/$myId': null,
+      'playerNames/$myId': null,
+      'rematchReady/$myId': null,
+    };
+    await _db.updateGameStatus(updates);
+
+    if (!mounted) return;
+    Navigator.popUntil(context, (r) => r.isFirst);
+  }
+
+  void _enterPostGame(String message) {
+    if (_postGameMessage != null || _postGameEntered) return;
+    _postGameEntered = true;
+    setState(() => _postGameMessage = message);
+    if (isHost) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _db.markPostGameStarted());
+    }
+  }
+
+  Future<void> _closeRoomAndExitLobby() async {
+    if (_postGameClosing) return;
+    _postGameClosing = true;
+    _isIntentionalLeave = true;
+    _cancelPostGameTimers();
+    _sub?.cancel();
+    _closeRoomForcefully(dismissedByHost: true);
+    if (!mounted) return;
+    Navigator.popUntil(context, (r) => r.isFirst);
+  }
+
+  void _showGameOver(String msg) {
     if (_gameOverDialogShown) return;
     _gameOverDialogShown = true;
-    _gameOverRouteOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: Text(msg),
-        content: allowRematch
-            ? Text('再戦: $_rematchReadyCount / ${playerIds.length} 人が準備完了')
-            : null,
         actions: [
-          if (allowRematch)
-            TextButton(
-              onPressed: () => _onRematchRequest(),
-              child: const Text('もう一度遊ぶ'),
-            ),
           TextButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _gameOverRouteOpen = false;
               _gameOverDialogShown = false;
               Navigator.popUntil(context, (r) => r.isFirst);
             },
@@ -691,10 +938,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           ),
         ],
       ),
-    ).then((_) {
-      _gameOverRouteOpen = false;
-      _gameOverDialogShown = false;
-    });
+    ).then((_) => _gameOverDialogShown = false);
   }
 
   String _displayName(String? playerId) {
@@ -716,9 +960,25 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
-      rematchReadyCount: _rematchReadyCount, playerCount: playerIds.length,
+      playerCount: playerIds.length,
       maxPlayers: maxPlayers, gameStarted: gameStarted,
       statusMessage: _statusMessage,
+      postGameVisible: _showPostGameOverlay,
+      postGameMessage: _postGameMessage ?? '',
+      postGameCountdownSeconds: _countdownSeconds,
+      awaitingGuestStayResponses: awaitingGuestStayResponses,
+      guestStayReadyCount: _guestStayReadyCount(),
+      guestStayTotalCount: rematchEligiblePlayers.length,
+      guestCountdownSeconds: _guestCountdownSeconds,
+      mustRespondToStay: !isHost &&
+          awaitingGuestStayResponses &&
+          rematchEligiblePlayers.contains(myId) &&
+          !myStayResponseSubmitted,
+      myStayResponseSubmitted: myStayResponseSubmitted,
+      onHostRematch: _onHostRematchRequest,
+      onHostReturnToLobby: _onHostReturnToLobby,
+      onGuestStayInRoom: _onGuestStayInRoom,
+      onLeaveToLobby: _leaveRoomToLobby,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }

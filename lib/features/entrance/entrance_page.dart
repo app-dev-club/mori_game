@@ -128,7 +128,7 @@ class _EntrancePageState extends State<EntrancePage> {
       bool isStarted = snapshot.child('gameStarted').value == true;
       String status = snapshot.child('roomStatus').value as String? ?? 'open';
 
-      if (isStarted || status == 'closed') {
+      if (status == 'closed' || isStarted) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('その部屋は既に開始されているか、閉鎖されています')),
