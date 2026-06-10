@@ -57,8 +57,92 @@ class FirebaseDB {
   Future<DataSnapshot> getSnapshot() => _roomRef.get();
   Future<void> deleteRoom() => _roomRef.remove();
 
-  Future<void> setRematchReady(String playerId) =>
+  Future<void> setStayInRoom(String playerId) =>
       _roomRef.child('rematchReady/$playerId').set(true);
+
+  /// ホストが再戦を選んだ直後：既存ゲストの残存意思を集める（ルームはまだ閉鎖）
+  Future<void> requestHostRematch(List<String> eligibleGuestIds) async {
+    await _roomRef.update({
+      'rematchHostRequested': true,
+      'awaitingGuestStayResponses': true,
+      'rematchEligiblePlayers': eligibleGuestIds,
+      'rematchStartedAt': ServerValue.timestamp,
+      'rematchReady': null,
+      'postGameActive': false,
+      'postGameEndedAt': null,
+      'roomStatus': 'closed',
+    });
+  }
+
+  Future<void> markPostGameStarted() async {
+    await _roomRef.update({
+      'postGameActive': true,
+      'postGameEndedAt': ServerValue.timestamp,
+      'rematchHostRequested': false,
+      'rematchDeadline': null,
+      'rematchReady': null,
+      'roomDismissedByHost': false,
+      'roomStatus': 'closed',
+    });
+  }
+
+  /// ホストがルーム閉鎖を選んだとき、他プレイヤーへ通知する
+  Future<void> dismissRoomByHost() async {
+    await _roomRef.update({
+      'roomDismissedByHost': true,
+      'roomStatus': 'closed',
+      'postGameActive': false,
+      'awaitingGuestStayResponses': false,
+    });
+  }
+
+  /// ホストが再戦を選んだとき：ゲームをロビー状態に戻し、ルームを公開する
+  Future<void> prepareRematchLobby({
+    required List<String> players,
+    required Map<String, List<Map<String, dynamic>>> playerCards,
+    required Map<String, int> playerHands,
+    required List<Map<String, dynamic>> deck,
+  }) async {
+    await _roomRef.update({
+      'players': players,
+      'playerCards': playerCards,
+      'playerHands': playerHands,
+      'deck': deck,
+      'deckIndex': deck,
+      'field': {'number': -1, 'suit': 'joker'},
+      'fieldHistory': [],
+      'isInitialPhase': true,
+      'currentTurnIndex': 0,
+      'gameStarted': false,
+      'isPrivate': false,
+      'roomStatus': 'open',
+      'postGameActive': false,
+      'postGameEndedAt': null,
+      'rematchHostRequested': true,
+      'awaitingGuestStayResponses': false,
+      'rematchEligiblePlayers': null,
+      'rematchStartedAt': null,
+      'rematchDeadline': null,
+      'rematchReady': null,
+      'moriPhase': 'none',
+      'lastMoriPlayerId': null,
+      'loserPlayerId': null,
+      'moriRevealedHand': null,
+      'moriRevealedType': null,
+      'burstPlayerId': null,
+      'lastDrawerId': null,
+      'lastPlayerId': null,
+      'isDrawCompetitive': false,
+      'deckResetAt': null,
+    });
+  }
+
+  Future<void> closeRoomForGameStart() async {
+    await _roomRef.update({
+      'roomStatus': 'closed',
+      'gameStarted': true,
+    });
+  }
 
   /// 全員の準備が揃ったらホストが呼び、同じメンバーでゲームを初期化する。
   Future<void> restartGame({
@@ -92,6 +176,10 @@ class FirebaseDB {
       'deckResetAt': null,
       'fieldHistory': [],
       'rematchReady': null,
+      'rematchHostRequested': false,
+      'rematchDeadline': null,
+      'postGameActive': false,
+      'postGameEndedAt': null,
       'roomStatus': 'open',
     });
   }
