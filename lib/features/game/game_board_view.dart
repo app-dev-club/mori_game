@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
 import '../../logic/room_config.dart';
+import 'play_arrow_overlay.dart';
 
 enum Suit { spade, heart, diamond, club, joker }
 
@@ -234,7 +235,19 @@ class GameBoardView extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: Column(
+      body: PlayArrowOverlay(
+        lastPlayerId: lastPlayerId,
+        myId: myId,
+        playerIds: playerIds,
+        fieldNumber: fieldNumber,
+        playerLabel: _playerLabel,
+        builder: ({
+          required fieldKey,
+          required deckKey,
+          required myHandKey,
+          required opponentKeys,
+        }) =>
+            Column(
         children: [
           if (!gameStarted)
             Container(
@@ -260,9 +273,15 @@ class GameBoardView extends StatelessWidget {
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
-          _buildOthersStatus(),
+          _buildOthersStatus(opponentKeys),
           const Spacer(),
-          _buildFieldArea(isMyTurn: isMyTurn, canDraw: canDraw, inDrawCompetition: inDrawCompetition),
+          _buildFieldArea(
+            isMyTurn: isMyTurn,
+            canDraw: canDraw,
+            inDrawCompetition: inDrawCompetition,
+            fieldKey: fieldKey,
+            deckKey: deckKey,
+          ),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
@@ -287,8 +306,12 @@ class GameBoardView extends StatelessWidget {
           if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
             _buildMoriRevealedHandSection(),
           if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
-          _buildMyHandSection(isMyTurn, inDrawCompetition: inDrawCompetition),
+          KeyedSubtree(
+            key: myHandKey,
+            child: _buildMyHandSection(isMyTurn, inDrawCompetition: inDrawCompetition),
+          ),
         ],
+      ),
       ),
     );
   }
@@ -352,11 +375,9 @@ class GameBoardView extends StatelessWidget {
     required bool isMyTurn,
     required bool canDraw,
     required bool inDrawCompetition,
+    required GlobalKey fieldKey,
+    required GlobalKey deckKey,
   }) {
-    final bool hasFieldCard = fieldNumber != -1;
-    final String? fieldOwnerLabel =
-        hasFieldCard && lastPlayerId != null ? _playerLabel(lastPlayerId) : null;
-
     return Column(children: [
       if (isInitialPhase && isHost)
         Padding(
@@ -379,41 +400,33 @@ class GameBoardView extends StatelessWidget {
           fieldNumber != -1 &&
           moriPhase == 'none')
         const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
-      if (fieldOwnerLabel != null)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.orangeAccent, width: 1),
-            ),
-            child: Text(
-              '$fieldOwnerLabel の出したカード',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-          ),
-        ),
       const SizedBox(height: 10),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         GestureDetector(
           onTap: (canDraw && !isInitialPhase && moriPhase == 'none') ? onDraw : null,
           child: Container(
-            width: 60, height: 90, 
-            decoration: BoxDecoration(color: canDraw ? Colors.blueGrey[800] : Colors.grey[900], borderRadius: BorderRadius.circular(8), border: Border.all(color: canDraw ? Colors.yellow : Colors.white24)),
+            key: deckKey,
+            width: 60, height: 90,
+            decoration: BoxDecoration(
+              color: canDraw ? Colors.blueGrey[800] : Colors.grey[900],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: canDraw ? Colors.yellow : Colors.white24),
+            ),
             child: const Icon(Icons.help_outline, color: Colors.white24),
           ),
         ),
         const SizedBox(width: 20),
         fieldNumber == -1
             ? Container(width: 60, height: 90, decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(8)))
-            : CardWidget(suit: fieldSuit, number: fieldNumber),
+            : KeyedSubtree(
+                key: fieldKey,
+                child: CardWidget(suit: fieldSuit, number: fieldNumber),
+              ),
       ]),
     ]);
   }
 
-  Widget _buildOthersStatus() {
+  Widget _buildOthersStatus(Map<String, GlobalKey> opponentKeys) {
     final others = playerIds.asMap().entries.where((e) => e.value != myId).toList();
     if (others.isEmpty) return const SizedBox.shrink();
 
@@ -425,19 +438,17 @@ class GameBoardView extends StatelessWidget {
         children: others.map((e) {
           final handCount = handCounts[e.value] ?? 0;
           final isHisTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == e.key);
-          final playedField = fieldNumber != -1 && lastPlayerId == e.value;
           final isBurstWarning = handCount >= 6;
 
           return Container(
+            key: opponentKeys[e.value],
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             margin: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: Colors.black26,
               border: isHisTurn
                   ? Border.all(color: Colors.yellow, width: 2)
-                  : playedField
-                      ? Border.all(color: Colors.orangeAccent, width: 2)
-                      : Border.all(color: Colors.white12),
+                  : Border.all(color: Colors.white12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -450,11 +461,6 @@ class GameBoardView extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 OpponentHandVisual(count: handCount, isBurstWarning: isBurstWarning),
-                if (playedField)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                    child: Text('場に出した', style: TextStyle(color: Colors.orangeAccent, fontSize: 9)),
-                  ),
               ],
             ),
           );
@@ -491,16 +497,12 @@ class GameBoardView extends StatelessWidget {
 
   Widget _buildMyHandSection(bool isMyTurn, {required bool inDrawCompetition}) {
     bool isBurstWarning = myHand.length >= 6;
-    final bool iPlayedField = fieldNumber != -1 && lastPlayerId == myId;
     return Container(
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.black26,
-        border: iPlayedField ? const Border(top: BorderSide(color: Colors.orangeAccent, width: 2)) : null,
-      ),
+      decoration: const BoxDecoration(color: Colors.black26),
       child: Column(children: [
         Text(
-          "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}${iPlayedField ? ' · 場に出した' : ''}",
+          "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}",
           style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 5),
