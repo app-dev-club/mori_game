@@ -188,6 +188,7 @@ class GameBoardView extends StatelessWidget {
   final int maxPlayers;
   final bool gameStarted;
   final String? statusMessage;
+  final int? autoPlayCountdownSeconds;
   final bool postGameVisible;
   final String postGameMessage;
   final int? postGameCountdownSeconds;
@@ -213,6 +214,7 @@ class GameBoardView extends StatelessWidget {
     required this.playerCount,
     required this.maxPlayers, required this.gameStarted,
     this.statusMessage,
+    this.autoPlayCountdownSeconds,
     required this.postGameVisible,
     required this.postGameMessage,
     this.postGameCountdownSeconds,
@@ -323,6 +325,7 @@ class GameBoardView extends StatelessWidget {
           if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
             _buildMoriRevealedHandSection(),
           if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
+          if (autoPlayCountdownSeconds != null) _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
           KeyedSubtree(
             key: myHandKey,
             child: _buildMyHandSection(isMyTurn, inDrawCompetition: inDrawCompetition),
@@ -500,6 +503,34 @@ class GameBoardView extends StatelessWidget {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildAutoPlayCountdownBanner(int seconds) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.lightBlueAccent, width: 1),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.timer_outlined, color: Colors.lightBlueAccent, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            'あと $seconds 秒で自動操作',
+            style: const TextStyle(
+              color: Colors.lightBlueAccent,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }

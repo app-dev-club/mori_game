@@ -23,4 +23,9 @@ class RoomConfig {
 
   static int get hostRematchDecisionMs => hostRematchDecisionSeconds * 1000;
   static int get guestRematchResponseMs => guestRematchResponseSeconds * 1000;
+
+  /// ドロー可能な自分のターンで操作が無いとき、自動プレイまでの秒数
+  static const int autoPlayTimeoutSeconds = 5;
+
+  static int get autoPlayTimeoutMs => autoPlayTimeoutSeconds * 1000;
 }
