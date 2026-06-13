@@ -82,6 +82,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String _autoPlayTimerKey = '';
   int? _autoPlayDeadlineMs;
   int? _autoPlayCountdownSeconds;
+  Timer? _initialPhaseAutoFlipTimer;
+  String _initialPhaseAutoFlipKey = '';
 
   bool get isHost => myId == hostId;
 
@@ -119,6 +121,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _postGameCountdownTimer?.cancel();
     _cancelGuestStayTimers();
     _cancelAutoPlayTimer();
+    _cancelInitialPhaseAutoFlipTimer();
     super.dispose();
   }
 
@@ -388,6 +391,50 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     _syncAutoPlayTimer();
+    _syncInitialPhaseAutoFlipTimer();
+  }
+
+  bool _shouldStartInitialPhaseAutoFlip() {
+    if (!isHost || !mounted || _postGameClosing || _showPostGameOverlay) return false;
+    return GameRules.shouldStartInitialPhaseAutoFlip(
+      isInitialPhase: isInitialPhase,
+      fieldNumber: fieldNumber,
+      moriPhase: moriPhase,
+      gameStarted: gameStarted,
+    );
+  }
+
+  String _initialPhaseAutoFlipContextKey() =>
+      '$fieldNumber|${fieldSuit.name}|${fieldHistory.length}|$lastPlayerId';
+
+  void _cancelInitialPhaseAutoFlipTimer() {
+    _initialPhaseAutoFlipTimer?.cancel();
+    _initialPhaseAutoFlipTimer = null;
+    _initialPhaseAutoFlipKey = '';
+  }
+
+  void _syncInitialPhaseAutoFlipTimer() {
+    if (!_shouldStartInitialPhaseAutoFlip()) {
+      _cancelInitialPhaseAutoFlipTimer();
+      return;
+    }
+
+    final key = _initialPhaseAutoFlipContextKey();
+    if (key == _initialPhaseAutoFlipKey && _initialPhaseAutoFlipTimer != null) return;
+
+    _initialPhaseAutoFlipKey = key;
+    _initialPhaseAutoFlipTimer?.cancel();
+    _initialPhaseAutoFlipTimer = Timer(
+      Duration(milliseconds: RoomConfig.initialPhaseAutoFlipMs),
+      _performInitialPhaseAutoFlip,
+    );
+  }
+
+  void _performInitialPhaseAutoFlip() {
+    _initialPhaseAutoFlipTimer = null;
+    _initialPhaseAutoFlipKey = '';
+    if (!_shouldStartInitialPhaseAutoFlip()) return;
+    _onFlip();
   }
 
   bool _shouldAutoPlayOnTimeout() {
@@ -517,6 +564,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onCardTap(int index) {
     _cancelAutoPlayTimer();
+    if (isInitialPhase) _cancelInitialPhaseAutoFlipTimer();
     if (moriPhase == 'mori_declared') return;
     if (fieldNumber == -1) return;
 
@@ -707,6 +755,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onFlip() {
     if (!isHost) return;
+    _cancelInitialPhaseAutoFlipTimer();
     if (deck.isEmpty) {
       _replenishDeckFromFieldIfEmpty();
       if (deck.isEmpty) return;

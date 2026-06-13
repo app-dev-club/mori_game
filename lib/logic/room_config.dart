@@ -28,4 +28,9 @@ class RoomConfig {
   static const int autoPlayTimeoutSeconds = 5;
 
   static int get autoPlayTimeoutMs => autoPlayTimeoutSeconds * 1000;
+
+  /// 初期フェーズで誰も出せないとき、次の山札を自動でめくるまでの秒数
+  static const int initialPhaseAutoFlipSeconds = 5;
+
+  static int get initialPhaseAutoFlipMs => initialPhaseAutoFlipSeconds * 1000;
 }
