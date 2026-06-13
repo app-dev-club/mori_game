@@ -43,4 +43,110 @@ void main() {
       expect(GameRules.isJokerOnField(0, Suit.joker), isTrue);
     });
   });
+
+  group('auto play', () {
+    const players = ['host', 'guest'];
+
+    test('shouldAutoPlayOnTimeout はドロー可能な自分のターンのみ true', () {
+      expect(
+        GameRules.shouldAutoPlayOnTimeout(
+          gameStarted: true,
+          isInitialPhase: false,
+          fieldNumber: 7,
+          moriPhase: 'none',
+          currentTurnIndex: 1,
+          players: players,
+          myId: 'guest',
+          handCount: 5,
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+        ),
+        isTrue,
+      );
+      expect(
+        GameRules.shouldAutoPlayOnTimeout(
+          gameStarted: true,
+          isInitialPhase: false,
+          fieldNumber: 7,
+          moriPhase: 'none',
+          currentTurnIndex: 0,
+          players: players,
+          myId: 'guest',
+          handCount: 5,
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+        ),
+        isFalse,
+      );
+      expect(
+        GameRules.shouldAutoPlayOnTimeout(
+          gameStarted: true,
+          isInitialPhase: true,
+          fieldNumber: 7,
+          moriPhase: 'none',
+          currentTurnIndex: 1,
+          players: players,
+          myId: 'guest',
+          handCount: 5,
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('7枚目を引いた後も自動プレイ対象', () {
+      expect(
+        GameRules.shouldAutoPlayOnTimeout(
+          gameStarted: true,
+          isInitialPhase: false,
+          fieldNumber: 7,
+          moriPhase: 'none',
+          currentTurnIndex: 1,
+          players: players,
+          myId: 'guest',
+          handCount: 7,
+          lastDrawerId: 'guest',
+          isDrawCompetitive: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('findPlayableCardIndex は合法手を返し、無ければ null', () {
+      final hand = [heart7, heart5, CardWidget(number: 3, suit: Suit.spade)];
+
+      expect(
+        GameRules.findPlayableCardIndex(
+          fieldNumber: 7,
+          fieldSuit: Suit.heart,
+          hand: hand,
+          isInitialPhase: false,
+          currentTurnIndex: 1,
+          players: players,
+          myId: 'guest',
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+          hasPlayedThisTurn: false,
+        ),
+        0,
+      );
+
+      expect(
+        GameRules.findPlayableCardIndex(
+          fieldNumber: 7,
+          fieldSuit: Suit.heart,
+          hand: [CardWidget(number: 3, suit: Suit.spade), CardWidget(number: 4, suit: Suit.club)],
+          isInitialPhase: false,
+          currentTurnIndex: 1,
+          players: players,
+          myId: 'guest',
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+          hasPlayedThisTurn: false,
+        ),
+        isNull,
+      );
+    });
+  });
 }

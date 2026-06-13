@@ -77,6 +77,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int? _lastDeckResetAt;
   String? _statusMessage;
   Timer? _statusMessageTimer;
+  Timer? _autoPlayTimer;
+  Timer? _autoPlayCountdownTimer;
+  String _autoPlayTimerKey = '';
+  int? _autoPlayDeadlineMs;
+  int? _autoPlayCountdownSeconds;
 
   bool get isHost => myId == hostId;
 
@@ -113,6 +118,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _hostDecisionTimer?.cancel();
     _postGameCountdownTimer?.cancel();
     _cancelGuestStayTimers();
+    _cancelAutoPlayTimer();
     super.dispose();
   }
 
@@ -380,9 +386,137 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _showGameMessage('山札が尽きたのでシャッフルして補充しました');
       });
     }
+
+    _syncAutoPlayTimer();
+  }
+
+  bool _shouldAutoPlayOnTimeout() {
+    if (!mounted || _postGameClosing || _showPostGameOverlay) return false;
+    return GameRules.shouldAutoPlayOnTimeout(
+      gameStarted: gameStarted,
+      isInitialPhase: isInitialPhase,
+      fieldNumber: fieldNumber,
+      moriPhase: moriPhase,
+      currentTurnIndex: currentTurn,
+      players: playerIds,
+      myId: myId,
+      handCount: myHand.length,
+      lastDrawerId: lastDrawerId,
+      isDrawCompetitive: isDrawCompetitive,
+    );
+  }
+
+  String _autoPlayContextKey() =>
+      '$currentTurn|$lastDrawerId|$isDrawCompetitive|$fieldNumber|${fieldSuit.name}|'
+      '$isInitialPhase|$_hasPlayedThisTurn|${myHand.length}|$moriPhase|${myHand.map((c) => '${c.number}${c.suit.name}').join()}';
+
+  void _cancelAutoPlayTimer() {
+    _autoPlayTimer?.cancel();
+    _autoPlayTimer = null;
+    _autoPlayCountdownTimer?.cancel();
+    _autoPlayCountdownTimer = null;
+    _autoPlayTimerKey = '';
+    _autoPlayDeadlineMs = null;
+    if (_autoPlayCountdownSeconds != null && mounted) {
+      setState(() => _autoPlayCountdownSeconds = null);
+    } else {
+      _autoPlayCountdownSeconds = null;
+    }
+  }
+
+  void _updateAutoPlayCountdown() {
+    if (!_shouldAutoPlayOnTimeout() || _autoPlayDeadlineMs == null) {
+      _cancelAutoPlayTimer();
+      return;
+    }
+    final remaining =
+        ((_autoPlayDeadlineMs! - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
+    final clamped = remaining < 0 ? 0 : remaining;
+    if (clamped != _autoPlayCountdownSeconds && mounted) {
+      setState(() => _autoPlayCountdownSeconds = clamped);
+    }
+  }
+
+  void _syncAutoPlayTimer() {
+    if (!_shouldAutoPlayOnTimeout()) {
+      _cancelAutoPlayTimer();
+      return;
+    }
+
+    final key = _autoPlayContextKey();
+    if (key == _autoPlayTimerKey && _autoPlayTimer != null) return;
+
+    _autoPlayTimerKey = key;
+    _autoPlayTimer?.cancel();
+    _autoPlayCountdownTimer?.cancel();
+    _autoPlayDeadlineMs = DateTime.now().millisecondsSinceEpoch + RoomConfig.autoPlayTimeoutMs;
+    _autoPlayCountdownSeconds = RoomConfig.autoPlayTimeoutSeconds;
+    _autoPlayTimer = Timer(Duration(milliseconds: RoomConfig.autoPlayTimeoutMs), _performAutoPlay);
+    _autoPlayCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateAutoPlayCountdown();
+    });
+    if (mounted) {
+      setState(() => _autoPlayCountdownSeconds = RoomConfig.autoPlayTimeoutSeconds);
+    }
+  }
+
+  void _performAutoPlay() {
+    _autoPlayTimer = null;
+    _autoPlayTimerKey = '';
+    _autoPlayDeadlineMs = null;
+    _autoPlayCountdownTimer?.cancel();
+    _autoPlayCountdownTimer = null;
+    if (mounted) setState(() => _autoPlayCountdownSeconds = null);
+
+    if (!_shouldAutoPlayOnTimeout()) return;
+
+    final index = GameRules.findPlayableCardIndex(
+      fieldNumber: fieldNumber,
+      fieldSuit: fieldSuit,
+      hand: myHand,
+      isInitialPhase: isInitialPhase,
+      currentTurnIndex: currentTurn,
+      players: playerIds,
+      myId: myId,
+      lastDrawerId: lastDrawerId,
+      isDrawCompetitive: isDrawCompetitive,
+      hasPlayedThisTurn: _hasPlayedThisTurn,
+    );
+
+    if (index != null) {
+      _onCardTap(index);
+      return;
+    }
+
+    if (GameRules.canDraw(myHand.length, lastDrawerId, myId)) {
+      _onDraw();
+      return;
+    }
+
+    if (GameRules.mustPlayAfterSeventhDraw(
+      handCount: myHand.length,
+      lastDrawerId: lastDrawerId,
+      myId: myId,
+      currentTurnIndex: currentTurn,
+      players: playerIds,
+    )) {
+      _triggerBurst();
+    }
+  }
+
+  void _triggerBurst() {
+    final myIdx = playerIds.indexOf(myId);
+    _db.updateGameStatus({
+      'burstPlayerId': myId,
+      'currentTurnIndex': myIdx,
+      'lastDrawerId': null,
+      'isDrawCompetitive': false,
+    });
   }
 
   void _onCardTap(int index) {
+    _cancelAutoPlayTimer();
     if (moriPhase == 'mori_declared') return;
     if (fieldNumber == -1) return;
 
@@ -419,6 +553,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _onDraw() {
+    _cancelAutoPlayTimer();
     if (moriPhase != 'none' || isInitialPhase) return;
     int myIdx = playerIds.indexOf(myId);
     final bool isScheduledTurn = currentTurn % playerIds.length == myIdx;
@@ -963,6 +1098,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerCount: playerIds.length,
       maxPlayers: maxPlayers, gameStarted: gameStarted,
       statusMessage: _statusMessage,
+      autoPlayCountdownSeconds: _autoPlayCountdownSeconds,
       postGameVisible: _showPostGameOverlay,
       postGameMessage: _postGameMessage ?? '',
       postGameCountdownSeconds: _countdownSeconds,

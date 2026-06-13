@@ -105,4 +105,113 @@ class GameRules {
     if (isInitialPhase) return card.number == fieldNumber;
     return card.number == fieldNumber || card.suit == fieldSuit;
   }
+
+  /// 7枚目を引いた直後、出すカードを選ぶ必要があるか
+  static bool mustPlayAfterSeventhDraw({
+    required int handCount,
+    required String? lastDrawerId,
+    required String myId,
+    required int currentTurnIndex,
+    required List<String> players,
+  }) {
+    final myIdx = players.indexOf(myId);
+    if (myIdx < 0) return false;
+    final isMyTurn = players.isNotEmpty && (currentTurnIndex % players.length == myIdx);
+    return isMyTurn && handCount >= maxHandSize && lastDrawerId == myId;
+  }
+
+  /// 自動プレイタイマーを開始すべきか（ドロー可能なターン、または7枚目引き後）
+  static bool shouldAutoPlayOnTimeout({
+    required bool gameStarted,
+    required bool isInitialPhase,
+    required int fieldNumber,
+    required String moriPhase,
+    required int currentTurnIndex,
+    required List<String> players,
+    required String myId,
+    required int handCount,
+    required String? lastDrawerId,
+    required bool isDrawCompetitive,
+  }) {
+    if (!gameStarted || isInitialPhase || fieldNumber == -1 || moriPhase != 'none') {
+      return false;
+    }
+    final myIdx = players.indexOf(myId);
+    if (myIdx < 0) return false;
+    final isMyTurn = players.isNotEmpty && (currentTurnIndex % players.length == myIdx);
+    final canDrawInCompetition = GameRules.canDrawInCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: players,
+      myId: myId,
+      handCount: handCount,
+    );
+    final canDrawNow = (isMyTurn || canDrawInCompetition) && canDraw(handCount, lastDrawerId, myId);
+    final mustPlaySeventh = mustPlayAfterSeventhDraw(
+      handCount: handCount,
+      lastDrawerId: lastDrawerId,
+      myId: myId,
+      currentTurnIndex: currentTurnIndex,
+      players: players,
+    );
+    return canDrawNow || mustPlaySeventh;
+  }
+
+  /// 自動で出せる合法手の手札インデックス（無ければ null）
+  static int? findPlayableCardIndex({
+    required int fieldNumber,
+    required Suit fieldSuit,
+    required List<CardWidget> hand,
+    required bool isInitialPhase,
+    required int currentTurnIndex,
+    required List<String> players,
+    required String myId,
+    required String? lastDrawerId,
+    required bool isDrawCompetitive,
+    required bool hasPlayedThisTurn,
+  }) {
+    if (fieldNumber == -1 || hand.isEmpty) return null;
+
+    final myIdx = players.indexOf(myId);
+    if (myIdx < 0) return null;
+
+    final isJokerField = isJokerOnField(fieldNumber, fieldSuit);
+
+    if (isInitialPhase) {
+      for (var i = 0; i < hand.length; i++) {
+        if (canPlayNormal(fieldNumber, fieldSuit, hand[i], isInitialPhase: true)) return i;
+      }
+      return null;
+    }
+
+    final isServerTurn = currentTurnIndex % players.length == myIdx;
+    final isLastDrawer = lastDrawerId == myId;
+    final isCompetitiveParticipant = canPlayInDrawCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: players,
+      myId: myId,
+    );
+
+    for (var i = 0; i < hand.length; i++) {
+      final card = hand[i];
+      final isInterrupt = card.number == fieldNumber;
+      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+
+      if (usesTurnPlayLimit && hasPlayedThisTurn && !isInterrupt && !isJokerField) {
+        continue;
+      }
+
+      if (isServerTurn ||
+          isLastDrawer ||
+          isCompetitiveParticipant ||
+          isInterrupt ||
+          isJokerField) {
+        if (canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField) {
+          return i;
+        }
+      }
+    }
+    return null;
+  }
 }
