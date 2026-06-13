@@ -214,4 +214,17 @@ class GameRules {
     }
     return null;
   }
+
+  /// 初期フェーズで場にカードがあり、自動めくりタイマーを開始すべきか
+  static bool shouldStartInitialPhaseAutoFlip({
+    required bool isInitialPhase,
+    required int fieldNumber,
+    required String moriPhase,
+    required bool gameStarted,
+  }) {
+    return isInitialPhase &&
+        fieldNumber != -1 &&
+        moriPhase == 'none' &&
+        gameStarted;
+  }
 }

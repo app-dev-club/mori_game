@@ -148,5 +148,34 @@ void main() {
         isNull,
       );
     });
+    test('shouldStartInitialPhaseAutoFlip は初期フェーズで場にカードがあるとき true', () {
+      expect(
+        GameRules.shouldStartInitialPhaseAutoFlip(
+          isInitialPhase: true,
+          fieldNumber: 7,
+          moriPhase: 'none',
+          gameStarted: true,
+        ),
+        isTrue,
+      );
+      expect(
+        GameRules.shouldStartInitialPhaseAutoFlip(
+          isInitialPhase: true,
+          fieldNumber: -1,
+          moriPhase: 'none',
+          gameStarted: true,
+        ),
+        isFalse,
+      );
+      expect(
+        GameRules.shouldStartInitialPhaseAutoFlip(
+          isInitialPhase: false,
+          fieldNumber: 7,
+          moriPhase: 'none',
+          gameStarted: true,
+        ),
+        isFalse,
+      );
+    });
   });
 }
