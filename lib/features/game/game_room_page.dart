@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import '../../services/firebase_db.dart';
 import '../../logic/game_rules.dart';
+import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
 import 'game_board_view.dart';
 
@@ -84,6 +85,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int? _autoPlayCountdownSeconds;
   Timer? _initialPhaseAutoFlipTimer;
   String _initialPhaseAutoFlipKey = '';
+  Map<String, List<CardWidget>> _allPlayerCards = {};
+  final Map<String, bool> _botHasPlayedThisTurn = {};
+  final Map<String, Timer> _botTimers = {};
+  final Map<String, String> _botTimerKeys = {};
 
   bool get isHost => myId == hostId;
 
@@ -122,6 +127,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _cancelGuestStayTimers();
     _cancelAutoPlayTimer();
     _cancelInitialPhaseAutoFlipTimer();
+    _cancelAllBotTimers();
     super.dispose();
   }
 
@@ -232,12 +238,34 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (data['playerCards'] != null) {
         final playerCards = Map<String, dynamic>.from(data['playerCards'] as Map);
         final countsFromCards = <String, int>{};
+        final parsedAll = <String, List<CardWidget>>{};
         playerCards.forEach((pid, cards) {
-          if (cards is List) countsFromCards[pid] = cards.length;
+          if (cards is List) {
+            countsFromCards[pid.toString()] = cards.length;
+            parsedAll[pid.toString()] = _parseHandFromFirebase(cards);
+          }
         });
+        if (isHost) _allPlayerCards = parsedAll;
         handCounts = {...handCounts, ...countsFromCards};
         if (playerCards[myId] is List) {
-          myHand = _parseHandFromFirebase(playerCards[myId]);
+          myHand = parsedAll[myId] ?? _parseHandFromFirebase(playerCards[myId]);
+        }
+      }
+
+      if (isHost) {
+        for (final botId in playerIds.where(BotLogic.isBot)) {
+          final botIdx = playerIds.indexOf(botId);
+          final botMyTurn =
+              playerIds.isNotEmpty && (currentTurn % playerIds.length == botIdx);
+          final botInDrawCompetition = GameRules.canPlayInDrawCompetition(
+            isDrawCompetitive: isDrawCompetitive,
+            lastDrawerId: lastDrawerId,
+            players: playerIds,
+            myId: botId,
+          );
+          if (botInDrawCompetition || lastDrawerId == botId || (botMyTurn && lastPlayerId != botId)) {
+            _botHasPlayedThisTurn[botId] = false;
+          }
         }
       }
       if (data['field'] != null) {
@@ -392,6 +420,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     _syncAutoPlayTimer();
     _syncInitialPhaseAutoFlipTimer();
+    if (isHost) {
+      _syncAllBotTimers();
+    }
   }
 
   bool _shouldStartInitialPhaseAutoFlip() {
@@ -557,6 +588,316 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _db.updateGameStatus({
       'burstPlayerId': myId,
       'currentTurnIndex': myIdx,
+      'lastDrawerId': null,
+      'isDrawCompetitive': false,
+    });
+  }
+
+  void _cancelAllBotTimers() {
+    for (final timer in _botTimers.values) {
+      timer.cancel();
+    }
+    _botTimers.clear();
+    _botTimerKeys.clear();
+  }
+
+  void _cancelBotTimer(String botId) {
+    _botTimers[botId]?.cancel();
+    _botTimers.remove(botId);
+    _botTimerKeys.remove(botId);
+  }
+
+  bool _shouldRunBotLogic() =>
+      isHost && mounted && !_postGameClosing && !_showPostGameOverlay && gameStarted;
+
+  List<CardWidget> _botHand(String botId) =>
+      List<CardWidget>.from(_allPlayerCards[botId] ?? []);
+
+  void _syncAllBotTimers() {
+    if (!_shouldRunBotLogic()) {
+      _cancelAllBotTimers();
+      return;
+    }
+
+    final activeBotIds = <String>[];
+    for (final botId in playerIds.where(BotLogic.isBot)) {
+      final hand = _botHand(botId);
+      if (BotLogic.shouldBotAct(
+        gameStarted: gameStarted,
+        isInitialPhase: isInitialPhase,
+        fieldNumber: fieldNumber,
+        moriPhase: moriPhase,
+        currentTurnIndex: currentTurn,
+        players: playerIds,
+        botId: botId,
+        hand: hand,
+        lastDrawerId: lastDrawerId,
+        isDrawCompetitive: isDrawCompetitive,
+        hasPlayedThisTurn: _botHasPlayedThisTurn[botId] ?? false,
+        fieldSuit: fieldSuit,
+        lastPlayerId: lastPlayerId,
+      )) {
+        activeBotIds.add(botId);
+      }
+    }
+
+    for (final botId in _botTimers.keys.toList()) {
+      if (!activeBotIds.contains(botId)) _cancelBotTimer(botId);
+    }
+
+    for (final botId in activeBotIds) {
+      _syncBotTimer(botId);
+    }
+  }
+
+  void _syncBotTimer(String botId) {
+    final hand = _botHand(botId);
+    final key = BotLogic.actionContextKey(
+      botId: botId,
+      currentTurnIndex: currentTurn,
+      lastDrawerId: lastDrawerId,
+      isDrawCompetitive: isDrawCompetitive,
+      fieldNumber: fieldNumber,
+      fieldSuit: fieldSuit,
+      isInitialPhase: isInitialPhase,
+      hasPlayedThisTurn: _botHasPlayedThisTurn[botId] ?? false,
+      handLength: hand.length,
+      moriPhase: moriPhase,
+      handSignature: hand.map((c) => '${c.number}${c.suit.name}').join(),
+      lastPlayerId: lastPlayerId,
+    );
+    if (_botTimerKeys[botId] == key && _botTimers[botId] != null) return;
+
+    _cancelBotTimer(botId);
+    _botTimerKeys[botId] = key;
+    _botTimers[botId] = Timer(
+      Duration(milliseconds: RoomConfig.botActionTimeoutMs),
+      () => _performBotAction(botId),
+    );
+  }
+
+  void _performBotAction(String botId) {
+    _cancelBotTimer(botId);
+    if (!_shouldRunBotLogic() || !BotLogic.isBot(botId)) return;
+
+    final hand = _botHand(botId);
+    final decision = BotLogic.decideAction(
+      gameStarted: gameStarted,
+      isInitialPhase: isInitialPhase,
+      fieldNumber: fieldNumber,
+      fieldSuit: fieldSuit,
+      moriPhase: moriPhase,
+      currentTurnIndex: currentTurn,
+      players: playerIds,
+      botId: botId,
+      hand: hand,
+      lastDrawerId: lastDrawerId,
+      isDrawCompetitive: isDrawCompetitive,
+      hasPlayedThisTurn: _botHasPlayedThisTurn[botId] ?? false,
+      lastPlayerId: lastPlayerId,
+    );
+
+    switch (decision.type) {
+      case BotActionType.mori:
+        _executeBotMori(botId);
+      case BotActionType.play:
+        if (decision.cardIndex != null) _executeBotPlay(botId, decision.cardIndex!);
+      case BotActionType.draw:
+        _executeBotDraw(botId);
+      case BotActionType.burst:
+        _executeBotBurst(botId);
+      case BotActionType.none:
+        break;
+    }
+  }
+
+  Future<void> _addBot() async {
+    if (!isHost || gameStarted || _postGameClosing) return;
+    if (RoomConfig.isRoomFull(playerIds.length, maxPlayers)) {
+      _showGameMessage('定員に達しているためBotを追加できません');
+      return;
+    }
+
+    final botId = '${BotLogic.idPrefix}${DateTime.now().millisecondsSinceEpoch}';
+    final botName = BotLogic.nextBotName(playerIds);
+    final deckCopy = List<CardWidget>.from(deck);
+    final botHand = <CardWidget>[];
+    for (var i = 0; i < 5; i++) {
+      if (deckCopy.isNotEmpty) botHand.add(deckCopy.removeLast());
+    }
+
+    final updatedPlayers = List<String>.from(playerIds)..add(botId);
+    await _db.updateGameStatus({
+      'players': updatedPlayers,
+      'playerHands/$botId': botHand.length,
+      'playerCards/$botId': _serializeHand(botHand),
+      'playerNames/$botId': botName,
+      'bots/$botId': true,
+      'deck': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deckIndex': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+    });
+    _showGameMessage('$botName を追加しました');
+  }
+
+  void _executeBotPlay(String botId, int index) {
+    if (isInitialPhase) _cancelInitialPhaseAutoFlipTimer();
+    final hand = _botHand(botId);
+    if (index < 0 || index >= hand.length) return;
+
+    final card = hand[index];
+    if (isInitialPhase) {
+      if (!GameRules.canPlayNormal(fieldNumber, fieldSuit, card, isInitialPhase: true)) return;
+    } else {
+      final botIdx = playerIds.indexOf(botId);
+      final isServerTurn = currentTurn % playerIds.length == botIdx;
+      final isLastDrawer = lastDrawerId == botId;
+      final isCompetitiveParticipant = GameRules.canPlayInDrawCompetition(
+        isDrawCompetitive: isDrawCompetitive,
+        lastDrawerId: lastDrawerId,
+        players: playerIds,
+        myId: botId,
+      );
+      final isInterrupt = card.number == fieldNumber;
+      final isJokerField = GameRules.isJokerOnField(fieldNumber, fieldSuit);
+      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+      final hasPlayed = _botHasPlayedThisTurn[botId] ?? false;
+      if (usesTurnPlayLimit && hasPlayed && !isInterrupt && !isJokerField) return;
+      if (!(isServerTurn ||
+          isLastDrawer ||
+          isCompetitiveParticipant ||
+          isInterrupt ||
+          isJokerField)) {
+        return;
+      }
+      if (!(GameRules.canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField)) {
+        return;
+      }
+    }
+
+    hand.removeAt(index);
+    _allPlayerCards[botId] = hand;
+    _botHasPlayedThisTurn[botId] = true;
+
+    final botIdx = playerIds.indexOf(botId);
+    final updatedHistory = List<CardWidget>.from(fieldHistory)..add(card);
+    fieldHistory = updatedHistory;
+
+    _db.updateGameStatus({
+      'field': {'number': card.number, 'suit': card.suit.name},
+      'playerHands/$botId': hand.length,
+      'playerCards/$botId': _serializeHand(hand),
+      'lastPlayerId': botId,
+      'currentTurnIndex': (botIdx + 1) % playerIds.length,
+      'lastDrawerId': null,
+      'isDrawCompetitive': false,
+      'isInitialPhase': false,
+      'gameStarted': true,
+      'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+    });
+  }
+
+  void _executeBotDraw(String botId) {
+    if (moriPhase != 'none' || isInitialPhase) return;
+    final hand = _botHand(botId);
+    final botIdx = playerIds.indexOf(botId);
+    final isScheduledTurn = currentTurn % playerIds.length == botIdx;
+    final canDrawInCompetition = GameRules.canDrawInCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: playerIds,
+      myId: botId,
+      handCount: hand.length,
+    );
+    if (!isScheduledTurn && !canDrawInCompetition) return;
+    if (!GameRules.canDraw(hand.length, lastDrawerId, botId)) return;
+
+    if (deck.isEmpty) {
+      _replenishDeckFromFieldIfEmpty();
+      if (deck.isEmpty) return;
+    }
+
+    final drawn = deck.last;
+    final tempHand = List<CardWidget>.from(hand)..add(drawn);
+    final hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
+
+    var deckAfterDrawCards = deck.sublist(0, deck.length - 1);
+    final resetMetaUpdates = <String, dynamic>{};
+    if (deckAfterDrawCards.isEmpty) {
+      final replenished = _rebuildDeckFromFieldHistoryWithoutLatest();
+      if (replenished.isNotEmpty) {
+        deckAfterDrawCards = replenished;
+        resetMetaUpdates.addAll({
+          'field': {'number': fieldNumber, 'suit': fieldSuit.name},
+          'fieldHistory': fieldHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+          'deckResetAt': ServerValue.timestamp,
+        });
+      }
+    }
+    final deckAfterDraw =
+        deckAfterDrawCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    final isSeventhDraw = tempHand.length >= 7;
+
+    if (GameRules.isBurst(tempHand.length, hasPlayableCard)) {
+      _allPlayerCards[botId] = tempHand;
+      _db.updateGameStatus({
+        'burstPlayerId': botId,
+        'deck': deckAfterDraw,
+        'deckIndex': deckAfterDraw,
+        'playerHands/$botId': tempHand.length,
+        'playerCards/$botId': _serializeHand(tempHand),
+        'currentTurnIndex': botIdx,
+        'lastDrawerId': null,
+        'isDrawCompetitive': false,
+        ...resetMetaUpdates,
+      });
+      return;
+    }
+
+    _allPlayerCards[botId] = tempHand;
+    _db.updateGameStatus({
+      'deck': deckAfterDraw,
+      'deckIndex': deckAfterDraw,
+      'playerHands/$botId': tempHand.length,
+      'playerCards/$botId': _serializeHand(tempHand),
+      if (isSeventhDraw) ...{
+        'currentTurnIndex': botIdx,
+        'lastDrawerId': botId,
+        'isDrawCompetitive': false,
+      } else ...{
+        'currentTurnIndex': (botIdx + 1) % playerIds.length,
+        'lastDrawerId': botId,
+        'isDrawCompetitive': true,
+      },
+      ...resetMetaUpdates,
+    });
+  }
+
+  void _executeBotMori(String botId) {
+    final hand = _botHand(botId);
+    if (!BotLogic.canDeclareMori(
+      fieldNumber: fieldNumber,
+      hand: hand,
+      moriPhase: moriPhase,
+      lastPlayerId: lastPlayerId,
+      playerId: botId,
+    )) {
+      return;
+    }
+
+    _db.updateGameStatus({
+      'moriPhase': 'mori_declared',
+      'lastMoriPlayerId': botId,
+      'loserPlayerId': lastPlayerId,
+      'moriRevealedHand': _serializeHand(hand),
+      'moriRevealedType': 'mori',
+    });
+  }
+
+  void _executeBotBurst(String botId) {
+    final botIdx = playerIds.indexOf(botId);
+    _db.updateGameStatus({
+      'burstPlayerId': botId,
+      'currentTurnIndex': botIdx,
       'lastDrawerId': null,
       'isDrawCompetitive': false,
     });
@@ -923,10 +1264,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _rematchFinalizing = true;
     try {
       final stayingGuests = rematchEligiblePlayers
-          .where((id) => playerIds.contains(id) && rematchReadyMap[id] == true)
+          .where((id) => !BotLogic.isBot(id) && playerIds.contains(id) && rematchReadyMap[id] == true)
           .toList();
       final toRemove = rematchEligiblePlayers
-          .where((id) => playerIds.contains(id) && rematchReadyMap[id] != true)
+          .where((id) => !BotLogic.isBot(id) && playerIds.contains(id) && rematchReadyMap[id] != true)
           .toList();
 
       if (toRemove.isNotEmpty) {
@@ -957,11 +1298,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   Future<void> _finalizeRematchWithPlayers(List<String> players) async {
     _cancelGuestStayTimers();
+    final humanPlayers = players.where((p) => !BotLogic.isBot(p)).toList();
     final deckCards = _generateDeck()..shuffle();
     final playerCards = <String, List<Map<String, dynamic>>>{};
     final playerHandCounts = <String, int>{};
 
-    for (final pid in players) {
+    for (final pid in humanPlayers) {
       final hand = <CardWidget>[];
       for (int i = 0; i < 5; i++) {
         if (deckCards.isNotEmpty) hand.add(deckCards.removeLast());
@@ -973,7 +1315,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         deckCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
 
     await _db.prepareRematchLobby(
-      players: players,
+      players: humanPlayers,
       playerCards: playerCards,
       playerHands: playerHandCounts,
       deck: remainingDeck,
@@ -1031,9 +1373,37 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
   }
 
+  Future<void> _removeAllBotsFromRoom() async {
+    final botIds = playerIds.where(BotLogic.isBot).toList();
+    if (botIds.isEmpty) return;
+
+    final updates = <String, dynamic>{};
+    final newPlayers = List<String>.from(playerIds);
+    for (final id in botIds) {
+      newPlayers.remove(id);
+      updates['playerHands/$id'] = null;
+      updates['playerCards/$id'] = null;
+      updates['playerNames/$id'] = null;
+      updates['bots/$id'] = null;
+      updates['rematchReady/$id'] = null;
+    }
+    updates['players'] = newPlayers;
+    await _db.updateGameStatus(updates);
+
+    for (final id in botIds) {
+      _allPlayerCards.remove(id);
+      _botHasPlayedThisTurn.remove(id);
+      _cancelBotTimer(id);
+    }
+    playerIds = newPlayers;
+  }
+
   Future<void> _onHostRematchRequest() async {
     _cancelPostGameTimers();
-    final guests = playerIds.where((p) => p != hostId).toList();
+    await _removeAllBotsFromRoom();
+    if (!mounted) return;
+
+    final guests = playerIds.where((p) => p != hostId && !BotLogic.isBot(p)).toList();
     if (guests.isEmpty) {
       await _finalizeRematchWithPlayers([hostId!]);
       if (mounted) setState(() => _postGameMessage = null);
@@ -1164,6 +1534,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       onHostReturnToLobby: _onHostReturnToLobby,
       onGuestStayInRoom: _onGuestStayInRoom,
       onLeaveToLobby: _leaveRoomToLobby,
+      canAddBot: isHost && !gameStarted && !RoomConfig.isRoomFull(playerIds.length, maxPlayers),
+      onAddBot: _addBot,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }

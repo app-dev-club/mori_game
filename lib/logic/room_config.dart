@@ -29,6 +29,11 @@ class RoomConfig {
 
   static int get autoPlayTimeoutMs => autoPlayTimeoutSeconds * 1000;
 
+  /// Botの操作までの秒数
+  static const int botActionTimeoutSeconds = 2;
+
+  static int get botActionTimeoutMs => botActionTimeoutSeconds * 1000;
+
   /// 初期フェーズで誰も出せないとき、次の山札を自動でめくるまでの秒数
   static const int initialPhaseAutoFlipSeconds = 5;
 

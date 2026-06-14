@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
+import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
 import 'play_arrow_overlay.dart';
 
@@ -202,6 +203,8 @@ class GameBoardView extends StatelessWidget {
   final VoidCallback onHostReturnToLobby;
   final VoidCallback onGuestStayInRoom;
   final VoidCallback onLeaveToLobby;
+  final bool canAddBot;
+  final VoidCallback? onAddBot;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
@@ -228,6 +231,8 @@ class GameBoardView extends StatelessWidget {
     required this.onHostReturnToLobby,
     required this.onGuestStayInRoom,
     required this.onLeaveToLobby,
+    this.canAddBot = false,
+    this.onAddBot,
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
@@ -284,12 +289,27 @@ class GameBoardView extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
               color: Colors.teal.shade900,
-              child: Text(
-                RoomConfig.isRoomFull(playerCount, maxPlayers)
-                    ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
-                    : '参加者を待っています… $playerCount / $maxPlayers 人',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              child: Column(
+                children: [
+                  Text(
+                    RoomConfig.isRoomFull(playerCount, maxPlayers)
+                        ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
+                        : '参加者を待っています… $playerCount / $maxPlayers 人',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  if (canAddBot && onAddBot != null) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: onAddBot,
+                      icon: const Icon(Icons.smart_toy_outlined, color: Colors.white70),
+                      label: const Text('Botを追加', style: TextStyle(color: Colors.white)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white54),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           _buildOthersStatus(opponentKeys),
@@ -405,6 +425,7 @@ class GameBoardView extends StatelessWidget {
     if (idx < 0) return '不明';
     final name = playerNames[playerId];
     final displayName = (name != null && name.isNotEmpty) ? name : 'プレイヤー${idx + 1}';
+    if (BotLogic.isBot(playerId)) return '$displayName（Bot）';
     if (hostId != null && playerId == hostId) return '$displayName（ホスト）';
     return displayName;
   }
