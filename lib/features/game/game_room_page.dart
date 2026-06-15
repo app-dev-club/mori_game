@@ -427,6 +427,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   bool _shouldStartInitialPhaseAutoFlip() {
     if (!isHost || !mounted || _postGameClosing || _showPostGameOverlay) return false;
+    if (!RoomConfig.hasMinPlayers(playerIds.length)) return false;
     return GameRules.shouldStartInitialPhaseAutoFlip(
       isInitialPhase: isInitialPhase,
       fieldNumber: fieldNumber,
@@ -1096,6 +1097,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onFlip() {
     if (!isHost) return;
+    if (!RoomConfig.hasMinPlayers(playerIds.length)) {
+      _showGameMessage('ゲーム開始には${RoomConfig.minPlayers}人以上必要です');
+      return;
+    }
     _cancelInitialPhaseAutoFlipTimer();
     if (deck.isEmpty) {
       _replenishDeckFromFieldIfEmpty();

@@ -292,9 +292,11 @@ class GameBoardView extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    RoomConfig.isRoomFull(playerCount, maxPlayers)
-                        ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
-                        : '参加者を待っています… $playerCount / $maxPlayers 人',
+                    !RoomConfig.hasMinPlayers(playerCount)
+                        ? 'ゲーム開始には${RoomConfig.minPlayers}人以上必要です（現在 $playerCount 人）'
+                        : RoomConfig.isRoomFull(playerCount, maxPlayers)
+                            ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
+                            : '参加者を待っています… $playerCount / $maxPlayers 人',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
@@ -441,7 +443,11 @@ class GameBoardView extends StatelessWidget {
       if (isInitialPhase && isHost)
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
-          child: ElevatedButton(onPressed: onFlip, style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]), child: const Text("山札をめくる", style: TextStyle(color: Colors.white))),
+          child: ElevatedButton(
+            onPressed: RoomConfig.hasMinPlayers(playerCount) ? onFlip : null,
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]),
+            child: const Text('山札をめくる', style: TextStyle(color: Colors.white)),
+          ),
         ),
       if (GameRules.isJokerOnField(fieldNumber, fieldSuit))
         const Text("🃏 ジョーカー！誰でも出せます！", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),

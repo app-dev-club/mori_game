@@ -15,6 +15,8 @@ class RoomConfig {
   static bool isRoomFull(int currentCount, int maxPlayers) =>
       currentCount >= maxPlayers;
 
+  static bool hasMinPlayers(int currentCount) => currentCount >= minPlayers;
+
   /// ホストが再戦を選ぶまでの制限時間（秒）
   static const int hostRematchDecisionSeconds = 60;
 
