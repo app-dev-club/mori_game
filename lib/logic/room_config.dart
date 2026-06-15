@@ -31,8 +31,8 @@ class RoomConfig {
 
   static int get autoPlayTimeoutMs => autoPlayTimeoutSeconds * 1000;
 
-  /// Botの持ち時間（秒）
-  static const int botActionTimeoutSeconds = 10;
+  /// Botの操作までの秒数（プレイヤーの持ち時間とは別）
+  static const int botActionTimeoutSeconds = 2;
 
   static int get botActionTimeoutMs => botActionTimeoutSeconds * 1000;
 
