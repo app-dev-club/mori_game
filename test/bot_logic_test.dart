@@ -58,6 +58,25 @@ void main() {
       expect(decision.type, BotActionType.mori);
     });
 
+    test('decideAction は手札1枚のときドローを優先する', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: [CardWidget(number: 3, suit: Suit.club)],
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+      );
+      expect(decision.type, BotActionType.draw);
+    });
+
     test('decideAction は合法手があれば出す', () {
       final decision = BotLogic.decideAction(
         gameStarted: true,

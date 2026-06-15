@@ -107,6 +107,20 @@ class BotLogic {
       return const BotDecision.mori();
     }
 
+    // 手札1枚のときはカードを出さずドローを優先（初期フェーズはドロー不可のため除く）
+    if (!isInitialPhase && hand.length == 1) {
+      final drawDecision = _tryDrawDecision(
+        isInitialPhase: isInitialPhase,
+        handLength: hand.length,
+        lastDrawerId: lastDrawerId,
+        botId: botId,
+        currentTurnIndex: currentTurnIndex,
+        players: players,
+        isDrawCompetitive: isDrawCompetitive,
+      );
+      if (drawDecision != null) return drawDecision;
+    }
+
     final playIndex = GameRules.findPlayableCardIndex(
       fieldNumber: fieldNumber,
       fieldSuit: fieldSuit,
@@ -121,21 +135,16 @@ class BotLogic {
     );
     if (playIndex != null) return BotDecision.play(playIndex);
 
-    if (!isInitialPhase && GameRules.canDraw(hand.length, lastDrawerId, botId)) {
-      final myIdx = players.indexOf(botId);
-      if (myIdx < 0) return const BotDecision.none();
-      final isScheduledTurn = currentTurnIndex % players.length == myIdx;
-      final canDrawInCompetition = GameRules.canDrawInCompetition(
-        isDrawCompetitive: isDrawCompetitive,
-        lastDrawerId: lastDrawerId,
-        players: players,
-        myId: botId,
-        handCount: hand.length,
-      );
-      if (isScheduledTurn || canDrawInCompetition) {
-        return const BotDecision.draw();
-      }
-    }
+    final drawDecision = _tryDrawDecision(
+      isInitialPhase: isInitialPhase,
+      handLength: hand.length,
+      lastDrawerId: lastDrawerId,
+      botId: botId,
+      currentTurnIndex: currentTurnIndex,
+      players: players,
+      isDrawCompetitive: isDrawCompetitive,
+    );
+    if (drawDecision != null) return drawDecision;
 
     if (GameRules.mustPlayAfterSeventhDraw(
       handCount: hand.length,
@@ -148,6 +157,34 @@ class BotLogic {
     }
 
     return const BotDecision.none();
+  }
+
+  static BotDecision? _tryDrawDecision({
+    required bool isInitialPhase,
+    required int handLength,
+    required String? lastDrawerId,
+    required String botId,
+    required int currentTurnIndex,
+    required List<String> players,
+    required bool isDrawCompetitive,
+  }) {
+    if (isInitialPhase || !GameRules.canDraw(handLength, lastDrawerId, botId)) {
+      return null;
+    }
+    final myIdx = players.indexOf(botId);
+    if (myIdx < 0) return null;
+    final isScheduledTurn = currentTurnIndex % players.length == myIdx;
+    final canDrawInCompetition = GameRules.canDrawInCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: players,
+      myId: botId,
+      handCount: handLength,
+    );
+    if (isScheduledTurn || canDrawInCompetition) {
+      return const BotDecision.draw();
+    }
+    return null;
   }
 
   static String actionContextKey({
