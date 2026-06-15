@@ -26,13 +26,13 @@ class RoomConfig {
   static int get hostRematchDecisionMs => hostRematchDecisionSeconds * 1000;
   static int get guestRematchResponseMs => guestRematchResponseSeconds * 1000;
 
-  /// ドロー可能な自分のターンで操作が無いとき、自動プレイまでの秒数
-  static const int autoPlayTimeoutSeconds = 5;
+  /// 1手の持ち時間（秒）。超過時は自動で合法手またはドロー
+  static const int autoPlayTimeoutSeconds = 10;
 
   static int get autoPlayTimeoutMs => autoPlayTimeoutSeconds * 1000;
 
-  /// Botの操作までの秒数
-  static const int botActionTimeoutSeconds = 2;
+  /// Botの持ち時間（秒）
+  static const int botActionTimeoutSeconds = 10;
 
   static int get botActionTimeoutMs => botActionTimeoutSeconds * 1000;
 
