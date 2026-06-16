@@ -190,6 +190,7 @@ class GameBoardView extends StatelessWidget {
   final bool gameStarted;
   final String? statusMessage;
   final int? autoPlayCountdownSeconds;
+  final int? moriCountdownSeconds;
   final bool postGameVisible;
   final String postGameMessage;
   final int? postGameCountdownSeconds;
@@ -218,6 +219,7 @@ class GameBoardView extends StatelessWidget {
     required this.maxPlayers, required this.gameStarted,
     this.statusMessage,
     this.autoPlayCountdownSeconds,
+    this.moriCountdownSeconds,
     required this.postGameVisible,
     required this.postGameMessage,
     this.postGameCountdownSeconds,
@@ -339,10 +341,16 @@ class GameBoardView extends StatelessWidget {
               ),
             ),
           ),
-          if (moriPhase == 'mori_declared')
-            const Padding(
-              padding: EdgeInsets.only(bottom: 10),
-              child: Text("🔥 もり返し受付中 (5秒) 🔥", style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+          if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                moriRevealedType == 'gaeshi'
+                    ? '🔥 もり返し！ 残り $moriCountdownSeconds 秒 🔥'
+                    : '🔥 もり宣言！ 残り $moriCountdownSeconds 秒（もり返し受付中） 🔥',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
           if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
             _buildMoriRevealedHandSection(),
