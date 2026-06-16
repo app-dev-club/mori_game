@@ -12,12 +12,14 @@ class GameRoomPage extends StatefulWidget {
   final bool isPrivate;
   final String playerName;
   final int? maxPlayers;
+  final String? userId;
   const GameRoomPage({
     super.key,
     required this.roomId,
     this.isPrivate = false,
     required this.playerName,
     this.maxPlayers,
+    this.userId,
   });
   @override
   State<GameRoomPage> createState() => _GameRoomPageState();
@@ -26,7 +28,7 @@ class GameRoomPage extends StatefulWidget {
 class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
   late final FirebaseDB _db;
   StreamSubscription? _sub;
-  String myId = DateTime.now().millisecondsSinceEpoch.toString();
+  String myId = '';
 
   List<CardWidget> myHand = [];
   String? hostId;
@@ -116,6 +118,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
     _db = FirebaseDB(widget.roomId);
+    myId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
     _init();
   }
 
