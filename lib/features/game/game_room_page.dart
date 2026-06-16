@@ -45,8 +45,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String? lastMoriPlayerId, loserPlayerId;
   List<CardWidget> moriRevealedHand = [];
   String? moriRevealedType;
-  Timer? _moriTimer;         
-  String _lastTrackedMoriPlayer = ''; 
+  int? moriDeclaredAt;
+  int? _moriResolutionDeadlineMs;
+  int? _moriCountdownSeconds;
+  Timer? _moriCountdownTimer;
+  String _moriResolutionKey = '';
+  bool _moriFinishRequested = false;
   bool hasDeclaredMori = false;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
@@ -97,7 +101,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   bool get _showPostGameOverlay =>
       _postGameMessage != null &&
-      (postGameActive || awaitingGuestStayResponses || (_postGameEntered && !_isActiveGameplay));
+      (postGameActive || awaitingGuestStayResponses || _postGameEntered);
 
   void _showGameMessage(String message) {
     _statusMessageTimer?.cancel();
@@ -120,7 +124,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!_isIntentionalLeave) _cleanupRoomOnLeave();
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
-    _moriTimer?.cancel();
+    _moriCountdownTimer?.cancel();
     _statusMessageTimer?.cancel();
     _hostDecisionTimer?.cancel();
     _postGameCountdownTimer?.cancel();
@@ -309,12 +313,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       moriPhase = data['moriPhase'] ?? 'none';
       lastMoriPlayerId = data['lastMoriPlayerId'];
       loserPlayerId = data['loserPlayerId'];
+      moriDeclaredAt = _parseFirebaseTimestamp(data['moriDeclaredAt']);
       moriRevealedHand = _parseHandFromFirebase(data['moriRevealedHand']);
       moriRevealedType = data['moriRevealedType'] as String?;
       if (moriPhase == 'none') {
         hasDeclaredMori = false;
         moriRevealedHand = [];
         moriRevealedType = null;
+        moriDeclaredAt = null;
+        _moriFinishRequested = false;
       }
       
       // 山札めくりやゲーム終了後の閉鎖では弾かない（ホスト切断時のロビー閉鎖のみ）
@@ -323,34 +330,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _sub?.cancel();
         _showGameOver("ホスト不在のため閉鎖されました");
       }
-      
-      if (isHost && moriPhase == 'mori_declared' && _lastTrackedMoriPlayer != lastMoriPlayerId) {
-        _lastTrackedMoriPlayer = lastMoriPlayerId ?? '';
-        _moriTimer?.cancel();
-        _moriTimer = Timer(const Duration(seconds: 5), () => _db.updateGameStatus({'moriPhase': 'finished'}));
-      }
-      
-      if (!_postGameEntered && moriPhase == 'finished' && lastMoriPlayerId != null) {
-        _moriTimer?.cancel();
-        _enterPostGame(
-          lastMoriPlayerId == myId
-              ? "勝利！(もり成功)"
-              : (loserPlayerId == myId
-                  ? "敗北...（${_displayName(lastMoriPlayerId)}にもりを宣言されました）"
-                  : "ゲーム終了"),
-        );
-      }
 
-      String? burstPlayerId = data['burstPlayerId'];
-      if (!_postGameEntered && burstPlayerId != null) {
-        if (burstPlayerId == myId) {
-          _enterPostGame("敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。");
-        } else {
-          _enterPostGame(
-            "ゲーム終了\n（${_displayName(burstPlayerId)}がバーストしたため、勝者はありません）",
-          );
-        }
-      }
+      final burstPlayerId = data['burstPlayerId'] as String?;
 
       postGameActive = data['postGameActive'] == true;
       rematchHostRequested = data['rematchHostRequested'] == true;
@@ -397,7 +378,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _cancelPostGameTimers();
       }
 
-      if (_isActiveGameplay) {
+      if (_isActiveGameplay &&
+          moriPhase != 'finished' &&
+          moriPhase != 'mori_declared' &&
+          burstPlayerId == null) {
         _postGameMessage = null;
         _postGameEntered = false;
         _cancelPostGameTimers();
@@ -405,11 +389,35 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
     });
 
+    if (!_postGameEntered && moriPhase == 'finished' && lastMoriPlayerId != null) {
+      _cancelMoriResolutionTimers();
+      _enterPostGame(
+        lastMoriPlayerId == myId
+            ? (moriRevealedType == 'gaeshi' ? '勝利！(もり返し成功)' : '勝利！(もり成功)')
+            : (loserPlayerId == myId
+                ? '敗北...（${_displayName(lastMoriPlayerId)}に${moriRevealedType == 'gaeshi' ? 'もり返し' : 'もり'}を宣言されました）'
+                : 'ゲーム終了'),
+      );
+    }
+
+    final burstPlayerId = data['burstPlayerId'] as String?;
+    if (!_postGameEntered && burstPlayerId != null) {
+      if (burstPlayerId == myId) {
+        _enterPostGame('敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。');
+      } else {
+        _enterPostGame(
+          'ゲーム終了\n（${_displayName(burstPlayerId)}がバーストしたため、勝者はありません）',
+        );
+      }
+    }
+
     if (data['roomDismissedByHost'] == true && !isHost && !_isClosedDialogShown) {
       _isClosedDialogShown = true;
       _forceReturnToLobby();
       return;
     }
+
+    _syncMoriResolution();
 
     if (shouldNotifyDeckReset) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -423,6 +431,88 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (isHost) {
       _syncAllBotTimers();
     }
+  }
+
+  void _cancelMoriResolutionTimers() {
+    _moriCountdownTimer?.cancel();
+    _moriCountdownTimer = null;
+    _moriResolutionKey = '';
+    _moriResolutionDeadlineMs = null;
+    if (_moriCountdownSeconds != null && mounted) {
+      setState(() => _moriCountdownSeconds = null);
+    } else {
+      _moriCountdownSeconds = null;
+    }
+  }
+
+  String _moriResolutionKeyFromState() =>
+      '${lastMoriPlayerId ?? ''}|${moriRevealedType ?? ''}';
+
+  int _moriRemainingSeconds(int nowMs) {
+    final deadline = _moriResolutionDeadlineMs;
+    if (deadline == null) return RoomConfig.moriResolutionSeconds;
+    final remainingMs = deadline - nowMs;
+    if (remainingMs <= 0) return 0;
+    final seconds = (remainingMs + 999) ~/ 1000;
+    return seconds > RoomConfig.moriResolutionSeconds
+        ? RoomConfig.moriResolutionSeconds
+        : seconds;
+  }
+
+  void _tickMoriResolution() {
+    if (!mounted || moriPhase != 'mori_declared' || _moriResolutionDeadlineMs == null) {
+      _cancelMoriResolutionTimers();
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final remainingSeconds = _moriRemainingSeconds(now);
+    if (remainingSeconds != _moriCountdownSeconds) {
+      setState(() => _moriCountdownSeconds = remainingSeconds);
+    }
+
+    if (isHost && now >= _moriResolutionDeadlineMs! && !_moriFinishRequested) {
+      _moriFinishRequested = true;
+      _db.updateGameStatus({'moriPhase': 'finished'});
+    }
+  }
+
+  void _beginMoriResolutionCountdown(String key) {
+    if (key == _moriResolutionKey && _moriCountdownTimer != null) return;
+
+    _moriResolutionKey = key;
+    _moriFinishRequested = false;
+    _moriResolutionDeadlineMs =
+        DateTime.now().millisecondsSinceEpoch + RoomConfig.moriResolutionMs;
+    _cancelAutoPlayTimer();
+    _moriCountdownTimer?.cancel();
+    _moriCountdownTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickMoriResolution(),
+    );
+    if (mounted) {
+      setState(() => _moriCountdownSeconds = RoomConfig.moriResolutionSeconds);
+    } else {
+      _moriCountdownSeconds = RoomConfig.moriResolutionSeconds;
+    }
+    _tickMoriResolution();
+  }
+
+  void _syncMoriResolution() {
+    if (moriPhase != 'mori_declared') {
+      _cancelMoriResolutionTimers();
+      return;
+    }
+
+    final key = _moriResolutionKeyFromState();
+    if (key == '|') return;
+    _beginMoriResolutionCountdown(key);
+  }
+
+  int? _parseFirebaseTimestamp(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return null;
   }
 
   bool _shouldStartInitialPhaseAutoFlip() {
@@ -887,6 +977,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     _db.updateGameStatus({
       'moriPhase': 'mori_declared',
+      'moriDeclaredAt': ServerValue.timestamp,
       'lastMoriPlayerId': botId,
       'loserPlayerId': lastPlayerId,
       'moriRevealedHand': _serializeHand(hand),
@@ -1061,21 +1152,40 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onMori() {
     if (!GameRules.isValidMori(fieldNumber, myHand)) { _showGameMessage('計算が合いません！'); return; }
-    setState(() => hasDeclaredMori = true);
     final revealedHand = _serializeHand(myHand);
     if (moriPhase == 'none') {
       if (lastPlayerId == myId) { _showGameMessage('自滅はできません！'); setState(() => hasDeclaredMori = false); return; }
+      setState(() {
+        hasDeclaredMori = true;
+        moriPhase = 'mori_declared';
+        lastMoriPlayerId = myId;
+        loserPlayerId = lastPlayerId;
+        moriRevealedType = 'mori';
+        moriRevealedHand = List<CardWidget>.from(myHand);
+      });
+      _beginMoriResolutionCountdown('$myId|mori');
       _db.updateGameStatus({
         'moriPhase': 'mori_declared',
+        'moriDeclaredAt': ServerValue.timestamp,
         'lastMoriPlayerId': myId,
         'loserPlayerId': lastPlayerId,
         'moriRevealedHand': revealedHand,
         'moriRevealedType': 'mori',
       });
     } else {
+      final previousMoriPlayerId = lastMoriPlayerId;
+      setState(() {
+        hasDeclaredMori = true;
+        lastMoriPlayerId = myId;
+        loserPlayerId = previousMoriPlayerId;
+        moriRevealedType = 'gaeshi';
+        moriRevealedHand = List<CardWidget>.from(myHand);
+      });
+      _beginMoriResolutionCountdown('$myId|gaeshi');
       _db.updateGameStatus({
+        'moriDeclaredAt': ServerValue.timestamp,
         'lastMoriPlayerId': myId,
-        'loserPlayerId': lastMoriPlayerId,
+        'loserPlayerId': previousMoriPlayerId,
         'moriRevealedHand': revealedHand,
         'moriRevealedType': 'gaeshi',
       });
@@ -1124,6 +1234,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
+      'moriDeclaredAt': null,
       'moriRevealedHand': null,
       'moriRevealedType': null,
     });
@@ -1523,6 +1634,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       maxPlayers: maxPlayers, gameStarted: gameStarted,
       statusMessage: _statusMessage,
       autoPlayCountdownSeconds: _autoPlayCountdownSeconds,
+      moriCountdownSeconds: _moriCountdownSeconds,
       postGameVisible: _showPostGameOverlay,
       postGameMessage: _postGameMessage ?? '',
       postGameCountdownSeconds: _countdownSeconds,

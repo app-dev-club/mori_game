@@ -40,4 +40,9 @@ class RoomConfig {
   static const int initialPhaseAutoFlipSeconds = 5;
 
   static int get initialPhaseAutoFlipMs => initialPhaseAutoFlipSeconds * 1000;
+
+  /// もり・もり返し宣言後、結果確定までの秒数
+  static const int moriResolutionSeconds = 5;
+
+  static int get moriResolutionMs => moriResolutionSeconds * 1000;
 }
