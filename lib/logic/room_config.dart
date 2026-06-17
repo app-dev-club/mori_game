@@ -6,6 +6,22 @@ class RoomConfig {
 
   static const List<int> maxPlayerOptions = [2, 3, 4, 5, 6, 7, 8];
 
+  /// ルーム作成時に選べる対戦回数
+  static const List<int> matchCountOptions = [1, 2, 3, 5, 10];
+
+  static const int defaultMatchCount = 1;
+
+  static int resolveMatchCount(dynamic value) {
+    if (value is int && matchCountOptions.contains(value)) return value;
+    if (value is int && value >= 1) return value;
+    return defaultMatchCount;
+  }
+
+  /// シリーズ中、次の対戦を始めるまでの秒数
+  static const int seriesNextMatchSeconds = 5;
+
+  static int get seriesNextMatchMs => seriesNextMatchSeconds * 1000;
+
   /// 既存ルームで maxPlayers が未設定のときのフォールバック
   static int resolveMaxPlayers(dynamic value) {
     if (value is int && maxPlayerOptions.contains(value)) return value;

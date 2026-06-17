@@ -18,6 +18,7 @@ class FirebaseDB {
     bool isPrivate, {
     required String playerName,
     required int maxPlayers,
+    required int totalMatches,
     required List<Map<String, dynamic>> deckIndex,
     required List<Map<String, dynamic>> initialHand,
   }) async {
@@ -25,6 +26,8 @@ class FirebaseDB {
       'host': myId,
       'players': [myId],
       'maxPlayers': maxPlayers,
+      'totalMatches': totalMatches,
+      'completedMatches': 0,
       'playerNames': {myId: playerName},
       'playerHands': {myId: 5},
       'playerCards': {myId: initialHand},
@@ -39,6 +42,8 @@ class FirebaseDB {
       'isPrivate': isPrivate,
       'roomStatus': 'open',
       'fieldHistory': [],
+      'seriesRestarting': false,
+      'seriesNextMatchAt': null,
       // 万が一の残存バグを防ぐため、作成日時をタイムスタンプで記録
       'createdAt': ServerValue.timestamp, 
     });
@@ -102,6 +107,7 @@ class FirebaseDB {
     required Map<String, List<Map<String, dynamic>>> playerCards,
     required Map<String, int> playerHands,
     required List<Map<String, dynamic>> deck,
+    bool forSeriesContinue = false,
   }) async {
     await _roomRef.update({
       'players': players,
@@ -114,11 +120,11 @@ class FirebaseDB {
       'isInitialPhase': true,
       'currentTurnIndex': 0,
       'gameStarted': false,
-      'isPrivate': false,
-      'roomStatus': 'open',
+      if (!forSeriesContinue) 'isPrivate': false,
+      'roomStatus': forSeriesContinue ? 'closed' : 'open',
       'postGameActive': false,
       'postGameEndedAt': null,
-      'rematchHostRequested': true,
+      'rematchHostRequested': forSeriesContinue ? false : true,
       'awaitingGuestStayResponses': false,
       'rematchEligiblePlayers': null,
       'rematchStartedAt': null,
@@ -135,6 +141,51 @@ class FirebaseDB {
       'lastPlayerId': null,
       'isDrawCompetitive': false,
       'deckResetAt': null,
+    });
+  }
+
+  /// シリーズ対戦の次の1戦を、ロビー経由せず1回の更新で開始する
+  Future<void> startSeriesNextMatch({
+    required List<String> players,
+    required Map<String, List<Map<String, dynamic>>> playerCards,
+    required Map<String, int> playerHands,
+    required List<Map<String, dynamic>> deck,
+    required Map<String, dynamic> field,
+    required List<Map<String, dynamic>> fieldHistory,
+  }) async {
+    await _roomRef.update({
+      'players': players,
+      'playerCards': playerCards,
+      'playerHands': playerHands,
+      'deck': deck,
+      'deckIndex': deck,
+      'field': field,
+      'fieldHistory': fieldHistory,
+      'isInitialPhase': true,
+      'currentTurnIndex': 0,
+      'gameStarted': true,
+      'roomStatus': 'closed',
+      'postGameActive': false,
+      'postGameEndedAt': null,
+      'rematchHostRequested': false,
+      'awaitingGuestStayResponses': false,
+      'rematchEligiblePlayers': null,
+      'rematchStartedAt': null,
+      'rematchDeadline': null,
+      'rematchReady': null,
+      'moriPhase': 'none',
+      'moriDeclaredAt': null,
+      'lastMoriPlayerId': null,
+      'loserPlayerId': null,
+      'moriRevealedHand': null,
+      'moriRevealedType': null,
+      'burstPlayerId': null,
+      'lastDrawerId': null,
+      'lastPlayerId': 'system',
+      'isDrawCompetitive': false,
+      'deckResetAt': null,
+      'seriesRestarting': false,
+      'seriesNextMatchAt': null,
     });
   }
 
