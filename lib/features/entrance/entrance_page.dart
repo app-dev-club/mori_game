@@ -9,6 +9,7 @@ import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
 import '../ranking/ranking_page.dart';
+import '../common/app_side_bar.dart';
 
 class RoomCreationSettings {
   final int maxPlayers;
@@ -464,76 +465,22 @@ class _EntrancePageState extends State<EntrancePage> {
   }
 
   Widget _buildSideTabs() {
-    return Container(
-      width: 76,
-      decoration: const BoxDecoration(
-        color: Colors.black38,
-        border: Border(left: BorderSide(color: Colors.white24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          _buildSideTab(
-            label: _hideOpponentNames ? '名前非表示' : '名前表示',
-            icon: _hideOpponentNames ? Icons.visibility_off : Icons.visibility,
-            accent: _hideOpponentNames ? Colors.amberAccent : Colors.white70,
-            onTap: _toggleHideOpponentNames,
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Divider(height: 1, color: Colors.white24),
-          ),
-          _buildSideTab(
-            label: 'ランキング',
-            icon: Icons.leaderboard,
-            accent: Colors.amberAccent,
-            onTap: _openRanking,
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Divider(height: 1, color: Colors.white24),
-          ),
-          _buildSideTab(
-            label: 'ログアウト',
-            icon: Icons.logout,
-            onTap: () => FirebaseAuth.instance.signOut(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSideTab({
-    required String label,
-    required IconData icon,
-    required VoidCallback onTap,
-    Color accent = Colors.white70,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: accent, size: 24),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  height: 1.2,
-                ),
-              ),
-            ],
-          ),
+    return AppSideBar(
+      hideOpponentNames: _hideOpponentNames,
+      onToggleHideOpponentNames: _toggleHideOpponentNames,
+      items: [
+        AppSideBarItem(
+          label: 'ランキング',
+          icon: Icons.leaderboard,
+          accent: Colors.amberAccent,
+          onTap: _openRanking,
         ),
-      ),
+        AppSideBarItem(
+          label: 'ログアウト',
+          icon: Icons.logout,
+          onTap: () => FirebaseAuth.instance.signOut(),
+        ),
+      ],
     );
   }
 

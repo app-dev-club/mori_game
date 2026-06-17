@@ -5,6 +5,7 @@ import '../../logic/game_rules.dart';
 import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
+import '../common/app_side_bar.dart';
 import 'play_arrow_overlay.dart';
 
 enum Suit { spade, heart, diamond, club, joker }
@@ -617,58 +618,9 @@ class GameBoardView extends StatelessWidget {
   }
 
   Widget _buildSideBar() {
-    return Container(
-      width: 76,
-      decoration: const BoxDecoration(
-        color: Colors.black38,
-        border: Border(left: BorderSide(color: Colors.white24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          if (onToggleHideOpponentNames != null)
-            _buildSideTab(
-              label: hideOpponentNames ? '名前非表示' : '名前表示',
-              icon: hideOpponentNames ? Icons.visibility_off : Icons.visibility,
-              accent: hideOpponentNames ? Colors.amberAccent : Colors.white70,
-              onTap: onToggleHideOpponentNames!,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSideTab({
-    required String label,
-    required IconData icon,
-    required VoidCallback onTap,
-    Color accent = Colors.white70,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: accent, size: 24),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  height: 1.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return AppSideBar(
+      hideOpponentNames: hideOpponentNames,
+      onToggleHideOpponentNames: onToggleHideOpponentNames,
     );
   }
 

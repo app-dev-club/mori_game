@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mori_game/logic/player_display_name.dart';
+import 'package:mori_game/models/ranking_entry.dart';
 
 void main() {
   const playerIds = ['host', 'guest', 'bot_1'];
@@ -59,6 +60,33 @@ void main() {
           playerNames: playerNames,
         ),
         'ゲスト次郎',
+      );
+    });
+
+    test('ランキングは自分以外を匿名化できる', () {
+      const entry = RankingEntry(
+        id: 'host',
+        playerName: 'ホスト太郎',
+        rating: 1500,
+        gamesPlayed: 3,
+        isBot: false,
+        rank: 1,
+      );
+      expect(
+        PlayerDisplayName.resolveForRanking(
+          entry: entry,
+          myId: 'guest',
+          hideOpponentNames: true,
+        ),
+        '---',
+      );
+      expect(
+        PlayerDisplayName.resolveForRanking(
+          entry: entry,
+          myId: 'guest',
+          hideOpponentNames: false,
+        ),
+        'ホスト太郎',
       );
     });
   });

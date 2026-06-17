@@ -1,4 +1,5 @@
 import 'bot_logic.dart';
+import '../models/ranking_entry.dart';
 
 /// 画面上に表示するプレイヤー名を解決する
 class PlayerDisplayName {
@@ -43,5 +44,16 @@ class PlayerDisplayName {
     if (name != null && name.isNotEmpty) return name;
     final idx = playerIds.indexOf(playerId);
     return idx >= 0 ? 'プレイヤー${idx + 1}' : playerId;
+  }
+
+  /// ランキング一覧用。自分以外は設定に応じて匿名化する。
+  static String resolveForRanking({
+    required RankingEntry entry,
+    required String? myId,
+    bool hideOpponentNames = false,
+  }) {
+    if (myId != null && entry.id == myId) return entry.playerName;
+    if (hideOpponentNames) return '---';
+    return entry.playerName;
   }
 }
