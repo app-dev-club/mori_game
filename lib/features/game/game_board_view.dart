@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
-import '../../logic/bot_logic.dart';
+import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
 import 'play_arrow_overlay.dart';
@@ -411,6 +411,8 @@ class GameBoardView extends StatelessWidget {
   final VoidCallback onLeaveToLobby;
   final bool canAddBot;
   final VoidCallback? onAddBot;
+  final bool hideOpponentNames;
+  final VoidCallback? onToggleHideOpponentNames;
   final VoidCallback onMori, onDraw, onFlip;
   final Function(int) onCardTap;
 
@@ -443,6 +445,8 @@ class GameBoardView extends StatelessWidget {
     required this.onLeaveToLobby,
     this.canAddBot = false,
     this.onAddBot,
+    this.hideOpponentNames = false,
+    this.onToggleHideOpponentNames,
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
   });
@@ -486,7 +490,11 @@ class GameBoardView extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: Stack(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Stack(
         children: [
           PlayArrowOverlay(
         lastPlayerId: lastPlayerId,
@@ -601,6 +609,66 @@ class GameBoardView extends StatelessWidget {
             ),
         ],
       ),
+          ),
+          _buildSideBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSideBar() {
+    return Container(
+      width: 76,
+      decoration: const BoxDecoration(
+        color: Colors.black38,
+        border: Border(left: BorderSide(color: Colors.white24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          if (onToggleHideOpponentNames != null)
+            _buildSideTab(
+              label: hideOpponentNames ? '名前非表示' : '名前表示',
+              icon: hideOpponentNames ? Icons.visibility_off : Icons.visibility,
+              accent: hideOpponentNames ? Colors.amberAccent : Colors.white70,
+              onTap: onToggleHideOpponentNames!,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSideTab({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    Color accent = Colors.white70,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: accent, size: 24),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -648,20 +716,14 @@ class GameBoardView extends StatelessWidget {
   }
 
   String _playerLabel(String? playerId) {
-    if (playerId == null) return '';
-    if (playerId == 'system') return '山札';
-    if (playerId == myId) {
-      final myName = playerNames[myId];
-      if (myName != null && myName.isNotEmpty) return 'あなた（$myName）';
-      return 'あなた';
-    }
-    final idx = playerIds.indexOf(playerId);
-    if (idx < 0) return '不明';
-    final name = playerNames[playerId];
-    final displayName = (name != null && name.isNotEmpty) ? name : 'プレイヤー${idx + 1}';
-    if (BotLogic.isBot(playerId)) return '$displayName（Bot）';
-    if (hostId != null && playerId == hostId) return '$displayName（ホスト）';
-    return displayName;
+    return PlayerDisplayName.resolve(
+      playerId: playerId,
+      playerIds: playerIds,
+      myId: myId,
+      playerNames: playerNames,
+      hostId: hostId,
+      hideOpponentNames: hideOpponentNames,
+    );
   }
 
   Widget _buildFieldArea({
