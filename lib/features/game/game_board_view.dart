@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
@@ -189,33 +191,35 @@ class _CardBackPatternPainter extends CustomPainter {
 class OpponentHandVisual extends StatelessWidget {
   final int count;
   final bool isBurstWarning;
+  final double cardWidth;
+  final double cardHeight;
+  final double overlap;
 
   const OpponentHandVisual({
     super.key,
     required this.count,
     this.isBurstWarning = false,
+    this.cardWidth = 22,
+    this.cardHeight = 33,
+    this.overlap = 9,
   });
-
-  static const double _cardWidth = 22;
-  static const double _cardHeight = 33;
-  static const double _overlap = 9;
 
   @override
   Widget build(BuildContext context) {
     if (count <= 0) {
-      return SizedBox(width: _cardWidth, height: _cardHeight);
+      return SizedBox(width: cardWidth, height: cardHeight);
     }
 
-    final totalWidth = _cardWidth + (count - 1) * _overlap;
+    final totalWidth = cardWidth + (count - 1) * overlap;
     return SizedBox(
       width: totalWidth,
-      height: _cardHeight + 2,
+      height: cardHeight + 2,
       child: Stack(
         clipBehavior: Clip.none,
         children: List.generate(count, (i) {
-          final card = CardBackWidget(width: _cardWidth, height: _cardHeight);
+          final card = CardBackWidget(width: cardWidth, height: cardHeight);
           return Positioned(
-            left: i * _overlap,
+            left: i * overlap,
             child: isBurstWarning
                 ? ColorFiltered(
                     colorFilter: const ColorFilter.mode(Color(0x66FF5252), BlendMode.srcATop),
@@ -226,6 +230,147 @@ class OpponentHandVisual extends StatelessWidget {
         }),
       ),
     );
+  }
+}
+
+/// 相手プレイヤーを半円上に配置するためのレイアウト計算
+class OpponentArcLayout {
+  final double cardWidth;
+  final double cardHeight;
+  final double cardOverlap;
+  final double panelWidth;
+  final double panelHeight;
+  final double nameFontSize;
+  final double pointsFontSize;
+  final Offset arcCenter;
+  final double radius;
+  final List<double> angles;
+
+  const OpponentArcLayout({
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.cardOverlap,
+    required this.panelWidth,
+    required this.panelHeight,
+    required this.nameFontSize,
+    required this.pointsFontSize,
+    required this.arcCenter,
+    required this.radius,
+    required this.angles,
+  });
+
+  List<Offset> panelCenters() {
+    return angles
+        .map(
+          (theta) => Offset(
+            arcCenter.dx + radius * math.cos(theta),
+            arcCenter.dy - radius * math.sin(theta),
+          ),
+        )
+        .toList();
+  }
+
+  static OpponentArcLayout compute(Size area, int count) {
+    if (count <= 0) {
+      return OpponentArcLayout(
+        cardWidth: 22,
+        cardHeight: 33,
+        cardOverlap: 9,
+        panelWidth: 0,
+        panelHeight: 0,
+        nameFontSize: 10,
+        pointsFontSize: 11,
+        arcCenter: Offset(area.width / 2, area.height),
+        radius: 0,
+        angles: const [],
+      );
+    }
+
+    final cx = area.width / 2;
+    final cy = area.height * 0.94;
+    const arcStart = math.pi * 0.93;
+    const arcEnd = math.pi * 0.07;
+    const maxHandCards = 7;
+
+    var scale = 1.0;
+    OpponentArcLayout? best;
+
+    for (var attempt = 0; attempt < 28; attempt++) {
+      final cw = (22.0 * scale).clamp(9.0, 22.0);
+      final ch = cw * 1.5;
+      final ov = cw * 0.41;
+      final handW = cw + (maxHandCards - 1) * ov;
+      final panelW = handW + 10;
+      final panelH = 10 + 11 + ch + 10;
+      final nameSize = (9.5 * scale).clamp(7.0, 10.0);
+      final pointsSize = (10.5 * scale).clamp(8.0, 11.0);
+
+      final angles = count == 1
+          ? [math.pi / 2]
+          : List.generate(
+              count,
+              (i) => arcStart + (arcEnd - arcStart) * i / (count - 1),
+            );
+
+      final maxRByHeight = (cy - panelH * 0.55) / math.sin(math.pi / 2);
+      final maxRByWidth = math.min(cx - panelW * 0.55, area.width - cx - panelW * 0.55);
+      var radius = math.min(maxRByHeight, maxRByWidth);
+      if (count >= 6) {
+        radius *= 0.92;
+      }
+      radius = radius.clamp(panelH * 0.6, area.height * 0.98);
+
+      final centers = angles
+          .map(
+            (theta) => Offset(
+              cx + radius * math.cos(theta),
+              cy - radius * math.sin(theta),
+            ),
+          )
+          .toList();
+
+      final layout = OpponentArcLayout(
+        cardWidth: cw,
+        cardHeight: ch,
+        cardOverlap: ov,
+        panelWidth: panelW,
+        panelHeight: panelH,
+        nameFontSize: nameSize,
+        pointsFontSize: pointsSize,
+        arcCenter: Offset(cx, cy),
+        radius: radius,
+        angles: angles,
+      );
+
+      if (_layoutFits(area, centers, panelW, panelH)) {
+        return layout;
+      }
+      best = layout;
+      scale *= 0.88;
+    }
+
+    return best!;
+  }
+
+  static bool _layoutFits(
+    Size area,
+    List<Offset> centers,
+    double panelW,
+    double panelH,
+  ) {
+    const margin = 2.0;
+    for (final center in centers) {
+      if (center.dx - panelW / 2 < margin) return false;
+      if (center.dx + panelW / 2 > area.width - margin) return false;
+      if (center.dy - panelH / 2 < margin) return false;
+      if (center.dy + panelH / 2 > area.height - margin) return false;
+    }
+
+    for (var i = 0; i < centers.length - 1; i++) {
+      final dist = (centers[i] - centers[i + 1]).distance;
+      if (dist < panelW * 0.5) return false;
+    }
+    return true;
   }
 }
 
@@ -387,7 +532,10 @@ class GameBoardView extends StatelessWidget {
                 ],
               ),
             ),
-          _buildOthersStatus(opponentKeys),
+          Expanded(
+            flex: 2,
+            child: _buildOthersStatus(opponentKeys),
+          ),
           const Spacer(),
           _buildFieldArea(
             isMyTurn: isMyTurn,
@@ -579,50 +727,88 @@ class GameBoardView extends StatelessWidget {
     final others = playerIds.asMap().entries.where((e) => e.value != myId).toList();
     if (others.isEmpty) return const SizedBox.shrink();
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: others.map((e) {
-          final handCount = handCounts[e.value] ?? 0;
-          final isHisTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == e.key);
-          final isBurstWarning = handCount >= 6;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final area = Size(constraints.maxWidth, constraints.maxHeight);
+        final layout = OpponentArcLayout.compute(area, others.length);
+        final centers = layout.panelCenters();
 
-          return Container(
-            key: opponentKeys[e.value],
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              border: isHisTurn
-                  ? Border.all(color: Colors.yellow, width: 2)
-                  : Border.all(color: Colors.white12),
-              borderRadius: BorderRadius.circular(8),
+        return Stack(
+          clipBehavior: Clip.none,
+          children: List.generate(others.length, (i) {
+            final entry = others[i];
+            final playerId = entry.value;
+            final handCount = handCounts[playerId] ?? 0;
+            final isHisTurn =
+                playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == entry.key);
+            final isBurstWarning = handCount >= 6;
+            final center = centers[i];
+
+            return Positioned(
+              left: center.dx - layout.panelWidth / 2,
+              top: center.dy - layout.panelHeight / 2,
+              width: layout.panelWidth,
+              child: _buildOpponentPanel(
+                key: opponentKeys[playerId],
+                playerId: playerId,
+                handCount: handCount,
+                isHisTurn: isHisTurn,
+                isBurstWarning: isBurstWarning,
+                layout: layout,
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  Widget _buildOpponentPanel({
+    required Key? key,
+    required String playerId,
+    required int handCount,
+    required bool isHisTurn,
+    required bool isBurstWarning,
+    required OpponentArcLayout layout,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        border: isHisTurn
+            ? Border.all(color: Colors.yellow, width: 2)
+            : Border.all(color: Colors.white12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _playerLabel(playerId),
+            style: TextStyle(color: Colors.white70, fontSize: layout.nameFontSize),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (gameStarted)
+            Text(
+              '${playerPoints[playerId] ?? 0}点',
+              style: TextStyle(
+                color: (playerPoints[playerId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
+                fontSize: layout.pointsFontSize,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _playerLabel(e.value),
-                  style: const TextStyle(color: Colors.white70, fontSize: 10),
-                  textAlign: TextAlign.center,
-                ),
-                if (gameStarted)
-                  Text(
-                    '${playerPoints[e.value] ?? 0}点',
-                    style: TextStyle(
-                      color: (playerPoints[e.value] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                const SizedBox(height: 6),
-                OpponentHandVisual(count: handCount, isBurstWarning: isBurstWarning),
-              ],
-            ),
-          );
-        }).toList(),
+          const SizedBox(height: 4),
+          OpponentHandVisual(
+            count: handCount,
+            isBurstWarning: isBurstWarning,
+            cardWidth: layout.cardWidth,
+            cardHeight: layout.cardHeight,
+            overlap: layout.cardOverlap,
+          ),
+        ],
       ),
     );
   }
