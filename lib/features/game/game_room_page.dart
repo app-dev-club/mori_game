@@ -6,8 +6,10 @@ import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
 import '../../logic/scoring_rules.dart';
+import '../../logic/player_display_name.dart';
 import '../../logic/post_game_summary_builder.dart';
 import '../../models/post_game_summary.dart';
+import '../../services/game_display_settings.dart';
 import '../../services/rating_service.dart';
 import 'game_board_view.dart';
 
@@ -34,6 +36,7 @@ class GameRoomPage extends StatefulWidget {
 class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
   late final FirebaseDB _db;
   late final RatingService _ratingService;
+  final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
   StreamSubscription? _sub;
   String myId = '';
 
@@ -115,6 +118,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   final Map<String, bool> _botHasPlayedThisTurn = {};
   final Map<String, Timer> _botTimers = {};
   final Map<String, String> _botTimerKeys = {};
+  bool _hideOpponentNames = false;
 
   bool get isHost => myId == hostId;
 
@@ -146,7 +150,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _db = FirebaseDB(widget.roomId);
     _ratingService = RatingService();
     myId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
+    _loadDisplaySettings();
     _init();
+  }
+
+  Future<void> _loadDisplaySettings() async {
+    final hide = await _gameDisplaySettings.getHideOpponentNames();
+    if (!mounted) return;
+    setState(() => _hideOpponentNames = hide);
+  }
+
+  Future<void> _toggleHideOpponentNames() async {
+    final next = !_hideOpponentNames;
+    await _gameDisplaySettings.setHideOpponentNames(next);
+    if (!mounted) return;
+    setState(() => _hideOpponentNames = next);
+    if (_postGameEntered) _syncPostGameSummary();
   }
 
   @override
@@ -2044,10 +2063,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   String _displayNameForRating(String playerId) {
-    if (BotLogic.isBot(playerId)) return BotLogic.botDisplayName(playerId);
-    final name = playerNames[playerId];
-    if (name != null && name.isNotEmpty) return name;
-    return _displayName(playerId);
+    return PlayerDisplayName.resolveForRating(
+      playerId: playerId,
+      playerIds: playerIds,
+      playerNames: playerNames,
+    );
   }
 
   Future<void> _closeRoomAndExitLobby() async {
@@ -2085,11 +2105,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   String _displayName(String? playerId) {
     if (playerId == null) return '不明';
-    if (playerId == myId) return 'あなた';
-    final name = playerNames[playerId];
-    if (name != null && name.isNotEmpty) return name;
-    final idx = playerIds.indexOf(playerId);
-    return idx >= 0 ? 'プレイヤー${idx + 1}' : '不明';
+    return PlayerDisplayName.resolve(
+      playerId: playerId,
+      playerIds: playerIds,
+      myId: myId,
+      playerNames: playerNames,
+      hostId: hostId,
+      hideOpponentNames: _hideOpponentNames,
+    );
   }
 
   void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
@@ -2129,6 +2152,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       onLeaveToLobby: _leaveRoomToLobby,
       canAddBot: isHost && !gameStarted && !RoomConfig.isRoomFull(playerIds.length, maxPlayers),
       onAddBot: _addBot,
+      hideOpponentNames: _hideOpponentNames,
+      onToggleHideOpponentNames: _toggleHideOpponentNames,
       onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
     );
   }

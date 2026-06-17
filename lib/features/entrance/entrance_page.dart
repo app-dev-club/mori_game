@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/room_config.dart';
 import '../../services/firebase_db.dart';
+import '../../services/game_display_settings.dart';
 import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
@@ -32,16 +33,19 @@ class _EntrancePageState extends State<EntrancePage> {
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
   final RatingService _ratingService = RatingService();
   final UserProfileService _userProfileService = UserProfileService();
+  final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
 
   static const int _maxNameLength = UserProfileService.maxPlayerNameLength;
   int? _myRating;
   bool _namePrefilled = false;
+  bool _hideOpponentNames = false;
 
   @override
   void initState() {
     super.initState();
     FirebaseDB.cleanupOldRooms();
     _loadUserProfile();
+    _loadDisplaySettings();
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user == null) return;
       _ratingService.ensureBotRatings();
@@ -65,6 +69,22 @@ class _EntrancePageState extends State<EntrancePage> {
       _namePrefilled = true;
     }
     setState(() => _myRating = rating);
+  }
+
+  Future<void> _loadDisplaySettings() async {
+    final hide = await _gameDisplaySettings.getHideOpponentNames();
+    if (!mounted) return;
+    setState(() => _hideOpponentNames = hide);
+  }
+
+  Future<void> _toggleHideOpponentNames() async {
+    await _setHideOpponentNames(!_hideOpponentNames);
+  }
+
+  Future<void> _setHideOpponentNames(bool value) async {
+    await _gameDisplaySettings.setHideOpponentNames(value);
+    if (!mounted) return;
+    setState(() => _hideOpponentNames = value);
   }
 
   Future<void> _refreshRating() async {
@@ -453,6 +473,16 @@ class _EntrancePageState extends State<EntrancePage> {
       child: Column(
         children: [
           const SizedBox(height: 12),
+          _buildSideTab(
+            label: _hideOpponentNames ? '名前非表示' : '名前表示',
+            icon: _hideOpponentNames ? Icons.visibility_off : Icons.visibility,
+            accent: _hideOpponentNames ? Colors.amberAccent : Colors.white70,
+            onTap: _toggleHideOpponentNames,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Divider(height: 1, color: Colors.white24),
+          ),
           _buildSideTab(
             label: 'ランキング',
             icon: Icons.leaderboard,
