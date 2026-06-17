@@ -188,6 +188,8 @@ class GameBoardView extends StatelessWidget {
   final int playerCount;
   final int maxPlayers;
   final bool gameStarted;
+  final String matchProgressLabel;
+  final bool seriesAutoContinuing;
   final String? statusMessage;
   final int? autoPlayCountdownSeconds;
   final int? moriCountdownSeconds;
@@ -216,7 +218,10 @@ class GameBoardView extends StatelessWidget {
     required this.isDrawCompetitive,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
     required this.playerCount,
-    required this.maxPlayers, required this.gameStarted,
+    required this.maxPlayers,
+    required this.gameStarted,
+    this.matchProgressLabel = '',
+    this.seriesAutoContinuing = false,
     this.statusMessage,
     this.autoPlayCountdownSeconds,
     this.moriCountdownSeconds,
@@ -266,7 +271,15 @@ class GameBoardView extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
-        title: Text(gameStarted ? 'ルーム: $roomId' : 'ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'),
+        title: Text(
+          gameStarted
+              ? (matchProgressLabel.isNotEmpty
+                  ? '$matchProgressLabel · ルーム: $roomId'
+                  : 'ルーム: $roomId')
+              : (matchProgressLabel.isNotEmpty
+                  ? '$matchProgressLabel · ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'
+                  : 'ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -368,6 +381,7 @@ class GameBoardView extends StatelessWidget {
               message: postGameMessage,
               isHost: isHost,
               countdownSeconds: postGameCountdownSeconds,
+              seriesAutoContinuing: seriesAutoContinuing,
               awaitingGuestStayResponses: awaitingGuestStayResponses,
               guestStayReadyCount: guestStayReadyCount,
               guestStayTotalCount: guestStayTotalCount,
@@ -618,6 +632,7 @@ class PostGameOverlay extends StatelessWidget {
   final String message;
   final bool isHost;
   final int? countdownSeconds;
+  final bool seriesAutoContinuing;
   final bool awaitingGuestStayResponses;
   final int guestStayReadyCount;
   final int guestStayTotalCount;
@@ -634,6 +649,7 @@ class PostGameOverlay extends StatelessWidget {
     required this.message,
     required this.isHost,
     this.countdownSeconds,
+    this.seriesAutoContinuing = false,
     required this.awaitingGuestStayResponses,
     required this.guestStayReadyCount,
     required this.guestStayTotalCount,
@@ -647,6 +663,9 @@ class PostGameOverlay extends StatelessWidget {
   });
 
   String _subtitle() {
+    if (seriesAutoContinuing) {
+      return 'まもなく次の対戦を開始します';
+    }
     if (awaitingGuestStayResponses) {
       if (isHost) {
         return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人が残ると回答';
@@ -693,7 +712,14 @@ class PostGameOverlay extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
-              if (isHost && !awaitingGuestStayResponses && countdownSeconds != null) ...[
+              if (seriesAutoContinuing && countdownSeconds != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '残り $countdownSeconds 秒で次の対戦を開始',
+                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                ),
+              ],
+              if (isHost && !awaitingGuestStayResponses && !seriesAutoContinuing && countdownSeconds != null) ...[
                 const SizedBox(height: 12),
                 Text(
                   '残り $countdownSeconds 秒（未選択でルーム閉鎖）',
@@ -708,7 +734,13 @@ class PostGameOverlay extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 20),
-              if (awaitingGuestStayResponses) ...[
+              if (seriesAutoContinuing)
+                const Text(
+                  'シリーズ対戦中は自動的に次の対戦へ進みます',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                )
+              else if (awaitingGuestStayResponses) ...[
                 if (isHost)
                   const Text(
                     '全員の回答が揃うとルームを公開します',

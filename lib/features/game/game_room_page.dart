@@ -12,6 +12,7 @@ class GameRoomPage extends StatefulWidget {
   final bool isPrivate;
   final String playerName;
   final int? maxPlayers;
+  final int? totalMatches;
   final String? userId;
   const GameRoomPage({
     super.key,
@@ -19,6 +20,7 @@ class GameRoomPage extends StatefulWidget {
     this.isPrivate = false,
     required this.playerName,
     this.maxPlayers,
+    this.totalMatches,
     this.userId,
   });
   @override
@@ -76,7 +78,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int? postGameEndedAt;
   bool postGameActive = false;
   int maxPlayers = RoomConfig.defaultMaxPlayers;
+  int totalMatches = RoomConfig.defaultMatchCount;
+  int completedMatches = 0;
+  List<String> seriesPlayerIds = [];
   bool gameStarted = false;
+  bool _seriesAutoContinueScheduled = false;
+  bool _seriesRestartInProgress = false;
+  Timer? _seriesContinueTimer;
+  Timer? _seriesUiCountdownTimer;
 
   String? lastDrawerId;
   bool isDrawCompetitive = false;
@@ -104,6 +113,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool get _showPostGameOverlay =>
       _postGameMessage != null &&
       (postGameActive || awaitingGuestStayResponses || _postGameEntered);
+
+  bool get _hasRemainingSeriesMatches =>
+      totalMatches > 1 && completedMatches < totalMatches;
+
+  int get _currentMatchNumber => completedMatches + 1;
+
+  String get _matchProgressLabel =>
+      totalMatches > 1 ? '第$_currentMatchNumber戦 / 全$totalMatches戦' : '';
 
   void _showGameMessage(String message) {
     _statusMessageTimer?.cancel();
@@ -135,6 +152,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _cancelAutoPlayTimer();
     _cancelInitialPhaseAutoFlipTimer();
     _cancelAllBotTimers();
+    _seriesContinueTimer?.cancel();
+    _seriesUiCountdownTimer?.cancel();
     super.dispose();
   }
 
@@ -155,10 +174,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         widget.isPrivate,
         playerName: widget.playerName,
         maxPlayers: widget.maxPlayers ?? RoomConfig.defaultMaxPlayers,
+        totalMatches: widget.totalMatches ?? RoomConfig.defaultMatchCount,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
       maxPlayers = widget.maxPlayers ?? RoomConfig.defaultMaxPlayers;
+      totalMatches = widget.totalMatches ?? RoomConfig.defaultMatchCount;
       FirebaseDatabase.instance.ref('rooms/${widget.roomId}').onDisconnect().update({'roomStatus': 'closed'});
       setState(() => myHand = hand);
     } else {
@@ -205,12 +226,24 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     if (!mounted) return;
     final int? deckResetAt = data['deckResetAt'] as int?;
+    final bool dataPostGameActive = data['postGameActive'] == true;
+    final bool dataSeriesRestarting = data['seriesRestarting'] == true;
+    final int? seriesNextMatchAt = _parseFirebaseTimestamp(data['seriesNextMatchAt']);
     final bool shouldNotifyDeckReset =
         deckResetAt != null && deckResetAt != _lastDeckResetAt;
     setState(() {
       hostId = data['host'];
       playerIds = List<String>.from(data['players'] ?? []);
       maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+      totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
+      completedMatches = data['completedMatches'] as int? ?? 0;
+      if (data['seriesPlayerIds'] is List) {
+        seriesPlayerIds = List<String>.from(
+          (data['seriesPlayerIds'] as List).map((e) => e.toString()),
+        );
+      } else {
+        seriesPlayerIds = [];
+      }
       gameStarted = data['gameStarted'] == true;
       if (data['playerNames'] != null) {
         playerNames = Map<String, String>.from(
@@ -328,7 +361,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
       
       // 山札めくりやゲーム終了後の閉鎖では弾かない（ホスト切断時のロビー閉鎖のみ）
-      if (roomStatus == 'closed' && !gameStarted && !postGameActive && !isHost && !_isClosedDialogShown) {
+      if (roomStatus == 'closed' &&
+          !gameStarted &&
+          !dataPostGameActive &&
+          !isHost &&
+          !_isClosedDialogShown &&
+          !_shouldSkipClosedRoomKick(
+            dataPostGameActive: dataPostGameActive,
+            dataSeriesRestarting: dataSeriesRestarting,
+            seriesNextMatchAt: seriesNextMatchAt,
+            seriesPlayerIdsRaw: data['seriesPlayerIds'],
+          )) {
         _isClosedDialogShown = true;
         _sub?.cancel();
         _showGameOver("ホスト不在のため閉鎖されました");
@@ -351,7 +394,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       myStayResponseSubmitted = rematchReadyMap[myId] == true;
       postGameEndedAt = data['postGameEndedAt'] as int?;
 
-      if (!_isIntentionalLeave && !playerIds.contains(myId)) {
+      if (!_isIntentionalLeave &&
+          !playerIds.contains(myId) &&
+          !dataSeriesRestarting &&
+          seriesNextMatchAt == null &&
+          !_isInFixedSeriesRoster(data['seriesPlayerIds'], myId)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || _isIntentionalLeave) return;
           _sub?.cancel();
@@ -370,7 +417,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFinalizeRematchLobby());
         }
       } else if (_postGameMessage != null && !rematchHostRequested) {
-        _syncPostGameTimers();
+        if (!_hasRemainingSeriesMatches) {
+          _syncPostGameTimers();
+        }
       } else if (!awaitingGuestStayResponses) {
         _cancelGuestStayTimers();
       }
@@ -422,6 +471,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     _syncMoriResolution();
 
+    if (_postGameEntered && _hasRemainingSeriesMatches && seriesNextMatchAt != null) {
+      _syncSeriesContinueUi(seriesNextMatchAt);
+    } else if (_postGameEntered && totalMatches > 1 && completedMatches >= totalMatches) {
+      _appendSeriesCompleteMessageIfNeeded();
+    }
+
+    if (isHost) {
+      _maybeTriggerSeriesRestart(
+        seriesNextMatchAt: seriesNextMatchAt,
+        dataSeriesRestarting: dataSeriesRestarting,
+      );
+    }
+
     if (shouldNotifyDeckReset) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -434,6 +496,51 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (isHost) {
       _syncAllBotTimers();
     }
+  }
+
+  bool _isInFixedSeriesRoster(dynamic raw, String playerId) {
+    if (raw is! List || raw.isEmpty) return false;
+    return raw.any((id) => id.toString() == playerId);
+  }
+
+  List<String> _readSeriesRosterFromSnapshot(DataSnapshot snap) {
+    final seriesRaw = snap.child('seriesPlayerIds').value;
+    if (seriesRaw is List && seriesRaw.isNotEmpty) {
+      return seriesRaw.map((id) => id.toString()).toList();
+    }
+    return List<String>.from(snap.child('players').value as List? ?? [])
+        .map((id) => id.toString())
+        .toList();
+  }
+
+  int? _parseFirebaseTimestamp(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return null;
+  }
+
+  bool _shouldSkipClosedRoomKick({
+    required bool dataPostGameActive,
+    required bool dataSeriesRestarting,
+    required int? seriesNextMatchAt,
+    dynamic seriesPlayerIdsRaw,
+  }) {
+    if (dataPostGameActive) return true;
+    if (dataSeriesRestarting) return true;
+    if (seriesNextMatchAt != null) return true;
+    if (_hasRemainingSeriesMatches) return true;
+    if (_isInFixedSeriesRoster(seriesPlayerIdsRaw, myId)) return true;
+    return false;
+  }
+
+  void _maybeTriggerSeriesRestart({
+    required int? seriesNextMatchAt,
+    required bool dataSeriesRestarting,
+  }) {
+    if (!isHost || !mounted || _seriesRestartInProgress || dataSeriesRestarting) return;
+    if (!_hasRemainingSeriesMatches || seriesNextMatchAt == null) return;
+    if (DateTime.now().millisecondsSinceEpoch < seriesNextMatchAt) return;
+    _autoContinueSeries();
   }
 
   void _cancelMoriResolutionTimers() {
@@ -510,12 +617,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final key = _moriResolutionKeyFromState();
     if (key == '|') return;
     _beginMoriResolutionCountdown(key);
-  }
-
-  int? _parseFirebaseTimestamp(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.round();
-    return null;
   }
 
   bool _shouldStartInitialPhaseAutoFlip() {
@@ -1231,6 +1332,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'lastPlayerId': 'system',
       'roomStatus': 'closed',
       'gameStarted': true,
+      if (totalMatches > 1 && completedMatches == 0)
+        'seriesPlayerIds': List<String>.from(playerIds),
       'rematchHostRequested': false,
       'postGameActive': false,
       'burstPlayerId': null,
@@ -1244,6 +1347,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     setState(() {
       _postGameMessage = null;
       _postGameEntered = false;
+      _seriesAutoContinueScheduled = false;
+      if (totalMatches > 1 && completedMatches == 0) {
+        seriesPlayerIds = List<String>.from(playerIds);
+      }
     });
   }
 
@@ -1333,6 +1440,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _hostDecisionTimer = null;
     _postGameCountdownTimer?.cancel();
     _postGameCountdownTimer = null;
+    _seriesContinueTimer?.cancel();
+    _seriesContinueTimer = null;
+    _seriesUiCountdownTimer?.cancel();
+    _seriesUiCountdownTimer = null;
     _countdownSeconds = null;
   }
 
@@ -1415,7 +1526,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _finalizeRematchWithPlayers(List<String> players) async {
+  Future<void> _finalizeRematchWithPlayers(
+    List<String> players, {
+    bool forSeriesContinue = false,
+  }) async {
     _cancelGuestStayTimers();
     final humanPlayers = players.where((p) => !BotLogic.isBot(p)).toList();
     final deckCards = _generateDeck()..shuffle();
@@ -1438,6 +1552,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerCards: playerCards,
       playerHands: playerHandCounts,
       deck: remainingDeck,
+      forSeriesContinue: forSeriesContinue,
     );
 
     if (!mounted) return;
@@ -1450,7 +1565,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       myStayResponseSubmitted = false;
       postGameActive = false;
       gameStarted = false;
-      roomStatus = 'open';
+      roomStatus = forSeriesContinue ? 'closed' : 'open';
       isInitialPhase = true;
       fieldNumber = -1;
       fieldSuit = Suit.joker;
@@ -1464,7 +1579,160 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _hasPlayedThisTurn = false;
       hasDeclaredMori = false;
     });
-    _showGameMessage('ルームを公開しました。参加者が揃ったら山札をめくってください。');
+    if (!forSeriesContinue) {
+      _showGameMessage('ルームを公開しました。参加者が揃ったら山札をめくってください。');
+    }
+  }
+
+  void _appendSeriesCompleteMessageIfNeeded() {
+    final suffix = '\n\n全$totalMatches戦が終了しました';
+    if (_postGameMessage == null || _postGameMessage!.contains(suffix.trim())) return;
+    if (mounted) {
+      setState(() => _postGameMessage = '${_postGameMessage!}$suffix');
+    }
+  }
+
+  void _syncSeriesContinueUi(int deadlineMs) {
+    if (!_postGameEntered || !_hasRemainingSeriesMatches) return;
+    if (_seriesUiCountdownTimer != null) return;
+
+    _seriesUiCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateSeriesContinueCountdown(deadlineMs);
+    });
+    _updateSeriesContinueCountdown(deadlineMs);
+  }
+
+  void _scheduleSeriesAutoContinue(int deadlineMs) {
+    if (!isHost || _seriesAutoContinueScheduled || !_hasRemainingSeriesMatches) return;
+    _seriesAutoContinueScheduled = true;
+    _syncSeriesContinueUi(deadlineMs);
+    _seriesContinueTimer?.cancel();
+    final delay = deadlineMs - DateTime.now().millisecondsSinceEpoch;
+    _seriesContinueTimer = Timer(
+      Duration(milliseconds: delay > 0 ? delay : 0),
+      _autoContinueSeries,
+    );
+  }
+
+  void _updateSeriesContinueCountdown(int deadlineMs) {
+    final remaining =
+        ((deadlineMs - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
+    final clamped = remaining < 0 ? 0 : remaining;
+    if (clamped > RoomConfig.seriesNextMatchSeconds) {
+      return;
+    }
+    if (clamped != _countdownSeconds && mounted) {
+      setState(() => _countdownSeconds = clamped);
+    }
+  }
+
+  Future<void> _autoContinueSeries() async {
+    if (!isHost || !mounted || _seriesRestartInProgress) return;
+    if (!_hasRemainingSeriesMatches) return;
+
+    _seriesRestartInProgress = true;
+    _seriesAutoContinueScheduled = false;
+    _cancelPostGameTimers();
+
+    try {
+      await _db.updateGameStatus({'seriesRestarting': true});
+
+      final snap = await _db.getSnapshot();
+      if (!snap.exists || !mounted) return;
+
+      final roster = _readSeriesRosterFromSnapshot(snap);
+
+      if (!RoomConfig.hasMinPlayers(roster.length)) {
+        await _db.updateGameStatus({
+          'seriesRestarting': false,
+          'seriesNextMatchAt': null,
+        });
+        await _closeRoomAndExitLobby();
+        return;
+      }
+
+      final deckCards = _generateDeck()..shuffle();
+      final playerCards = <String, List<Map<String, dynamic>>>{};
+      final playerHandCounts = <String, int>{};
+
+      for (final pid in roster) {
+        final hand = <CardWidget>[];
+        for (int i = 0; i < 5; i++) {
+          if (deckCards.isNotEmpty) hand.add(deckCards.removeLast());
+        }
+        playerCards[pid] = _serializeHand(hand);
+        playerHandCounts[pid] = hand.length;
+      }
+
+      if (deckCards.isEmpty) {
+        await _db.updateGameStatus({
+          'seriesRestarting': false,
+          'seriesNextMatchAt': null,
+        });
+        return;
+      }
+
+      final firstCard = deckCards.removeLast();
+      final remainingDeck =
+          deckCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+      final fieldHistoryData = [
+        {'number': firstCard.number, 'suit': firstCard.suit.name},
+      ];
+
+      await _db.startSeriesNextMatch(
+        players: roster,
+        playerCards: playerCards,
+        playerHands: playerHandCounts,
+        deck: remainingDeck,
+        field: {'number': firstCard.number, 'suit': firstCard.suit.name},
+        fieldHistory: fieldHistoryData,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        playerIds = roster;
+        seriesPlayerIds = roster;
+        _postGameMessage = null;
+        _postGameEntered = false;
+        awaitingGuestStayResponses = false;
+        rematchEligiblePlayers = [];
+        rematchReadyMap = {};
+        myStayResponseSubmitted = false;
+        postGameActive = false;
+        gameStarted = true;
+        roomStatus = 'closed';
+        isInitialPhase = true;
+        fieldNumber = firstCard.number;
+        fieldSuit = firstCard.suit;
+        fieldHistory = [firstCard];
+        deck = List<CardWidget>.from(deckCards);
+        myHand = (playerCards[myId] ?? [])
+            .map((i) => CardWidget(
+                  number: i['number'] as int,
+                  suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+                ))
+            .toList();
+        _hasPlayedThisTurn = false;
+        hasDeclaredMori = false;
+      });
+      if (isHost) {
+        for (final pid in roster.where(BotLogic.isBot)) {
+          _allPlayerCards[pid] = _parseHandFromFirebase(playerCards[pid]);
+          _botHasPlayedThisTurn[pid] = false;
+        }
+      }
+      _showGameMessage('第$_currentMatchNumber戦を開始しました');
+    } catch (_) {
+      if (mounted) {
+        await _db.updateGameStatus({
+          'seriesRestarting': false,
+          'seriesNextMatchAt': null,
+        });
+      }
+    } finally {
+      _seriesRestartInProgress = false;
+    }
   }
 
   void _syncPostGameTimers() {
@@ -1486,6 +1754,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _checkPostGameTimeouts() {
     if (!isHost || rematchHostRequested || postGameEndedAt == null) return;
+    if (_hasRemainingSeriesMatches) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now >= postGameEndedAt! + RoomConfig.hostRematchDecisionMs) {
       _closeRoomAndExitLobby();
@@ -1575,10 +1844,46 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _enterPostGame(String message) {
     if (_postGameMessage != null || _postGameEntered) return;
     _postGameEntered = true;
-    setState(() => _postGameMessage = message);
+    final displayMessage = totalMatches > 1
+        ? '$message\n\n$_matchProgressLabel 終了'
+        : message;
+    setState(() => _postGameMessage = displayMessage);
     if (isHost) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _db.markPostGameStarted());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onHostPostGameEntered());
     }
+  }
+
+  Future<void> _onHostPostGameEntered() async {
+    await _db.markPostGameStarted();
+    if (totalMatches <= 1) return;
+
+    final nextCompleted = completedMatches + 1;
+    final deadline = DateTime.now().millisecondsSinceEpoch + RoomConfig.seriesNextMatchMs;
+    final updates = <String, dynamic>{
+      'completedMatches': nextCompleted,
+    };
+    if (nextCompleted < totalMatches) {
+      updates['seriesNextMatchAt'] = deadline;
+      if (seriesPlayerIds.isEmpty) {
+        updates['seriesPlayerIds'] = List<String>.from(playerIds);
+      }
+    } else {
+      updates['seriesNextMatchAt'] = null;
+      updates['seriesRestarting'] = false;
+      updates['seriesPlayerIds'] = null;
+    }
+    await _db.updateGameStatus(updates);
+    completedMatches = nextCompleted;
+
+    if (nextCompleted < totalMatches) {
+      _scheduleSeriesAutoContinue(deadline);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _postGameMessage = '${_postGameMessage ?? ''}\n\n全$totalMatches戦が終了しました';
+    });
   }
 
   Future<void> _closeRoomAndExitLobby() async {
@@ -1634,7 +1939,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
       playerCount: playerIds.length,
-      maxPlayers: maxPlayers, gameStarted: gameStarted,
+      maxPlayers: maxPlayers,
+      gameStarted: gameStarted,
+      matchProgressLabel: _matchProgressLabel,
+      seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
       statusMessage: _statusMessage,
       autoPlayCountdownSeconds: _autoPlayCountdownSeconds,
       moriCountdownSeconds: _moriCountdownSeconds,

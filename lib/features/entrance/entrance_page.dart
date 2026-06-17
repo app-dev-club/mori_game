@@ -7,6 +7,16 @@ import '../../services/firebase_db.dart';
 import '../../services/firebase_auth_service.dart';
 import '../game/game_room_page.dart';
 
+class RoomCreationSettings {
+  final int maxPlayers;
+  final int totalMatches;
+
+  const RoomCreationSettings({
+    required this.maxPlayers,
+    required this.totalMatches,
+  });
+}
+
 class EntrancePage extends StatefulWidget {
   const EntrancePage({super.key});
 
@@ -186,7 +196,13 @@ class _EntrancePageState extends State<EntrancePage> {
     return trimmed;
   }
 
-  void _openRoom(String roomId, {required bool isPrivate, required String userId, int? maxPlayers}) {
+  void _openRoom(
+    String roomId, {
+    required bool isPrivate,
+    required String userId,
+    int? maxPlayers,
+    int? totalMatches,
+  }) {
     final playerName = _validatedPlayerName();
     if (playerName == null) return;
 
@@ -199,6 +215,7 @@ class _EntrancePageState extends State<EntrancePage> {
           playerName: playerName,
           userId: userId,
           maxPlayers: maxPlayers,
+          totalMatches: totalMatches,
         ),
       ),
     );
@@ -209,18 +226,25 @@ class _EntrancePageState extends State<EntrancePage> {
     final uid = await _ensureSignedIn();
     if (uid == null || !mounted) return;
 
-    final maxPlayers = await _showMaxPlayersDialog(isPrivate: isPrivate);
-    if (maxPlayers == null || !mounted) return;
+    final settings = await _showRoomCreationDialog(isPrivate: isPrivate);
+    if (settings == null || !mounted) return;
 
     final newRoomId = (Random().nextInt(9000) + 1000).toString();
-    _openRoom(newRoomId, isPrivate: isPrivate, userId: uid, maxPlayers: maxPlayers);
+    _openRoom(
+      newRoomId,
+      isPrivate: isPrivate,
+      userId: uid,
+      maxPlayers: settings.maxPlayers,
+      totalMatches: settings.totalMatches,
+    );
   }
 
-  Future<int?> _showMaxPlayersDialog({required bool isPrivate}) {
-    int selected = RoomConfig.defaultMaxPlayers;
+  Future<RoomCreationSettings?> _showRoomCreationDialog({required bool isPrivate}) {
+    int selectedMaxPlayers = RoomConfig.defaultMaxPlayers;
+    int selectedMatchCount = RoomConfig.defaultMatchCount;
     final label = isPrivate ? '非公開ルーム' : '公開ルーム';
 
-    return showDialog<int>(
+    return showDialog<RoomCreationSettings>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -233,12 +257,30 @@ class _EntrancePageState extends State<EntrancePage> {
               const SizedBox(height: 16),
               DropdownButton<int>(
                 isExpanded: true,
-                value: selected,
+                value: selectedMaxPlayers,
                 items: RoomConfig.maxPlayerOptions
                     .map((n) => DropdownMenuItem(value: n, child: Text('$n 人')))
                     .toList(),
                 onChanged: (value) {
-                  if (value != null) setDialogState(() => selected = value);
+                  if (value != null) setDialogState(() => selectedMaxPlayers = value);
+                },
+              ),
+              const SizedBox(height: 20),
+              const Text('対戦回数を選んでください'),
+              const SizedBox(height: 8),
+              const Text(
+                '2回以上の場合、各対戦後は意思確認なしで自動的に次の対戦へ進みます。',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              DropdownButton<int>(
+                isExpanded: true,
+                value: selectedMatchCount,
+                items: RoomConfig.matchCountOptions
+                    .map((n) => DropdownMenuItem(value: n, child: Text('$n 回')))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedMatchCount = value);
                 },
               ),
             ],
@@ -249,7 +291,12 @@ class _EntrancePageState extends State<EntrancePage> {
               child: const Text('キャンセル'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(selected),
+              onPressed: () => Navigator.of(dialogContext).pop(
+                RoomCreationSettings(
+                  maxPlayers: selectedMaxPlayers,
+                  totalMatches: selectedMatchCount,
+                ),
+              ),
               child: const Text('ルームを作成'),
             ),
           ],
