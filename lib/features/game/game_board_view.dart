@@ -179,6 +179,7 @@ class GameBoardView extends StatelessWidget {
   final List<CardWidget> myHand;
   final List<String> playerIds;
   final Map<String, String> playerNames;
+  final Map<String, int> playerPoints;
   final Map<String, int> handCounts;
   final bool isHost, isInitialPhase, hasDeclaredMori;
   final String? hostId, lastPlayerId, lastDrawerId, lastMoriPlayerId;
@@ -213,7 +214,7 @@ class GameBoardView extends StatelessWidget {
 
   const GameBoardView({
     super.key, required this.roomId, required this.fieldNumber, required this.fieldSuit,
-    required this.myHand, required this.playerIds, required this.playerNames, required this.myId, required this.handCounts,
+    required this.myHand, required this.playerIds, required this.playerNames, required this.playerPoints, required this.myId, required this.handCounts,
     required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
     required this.isDrawCompetitive,
     required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
@@ -546,6 +547,15 @@ class GameBoardView extends StatelessWidget {
                   style: const TextStyle(color: Colors.white70, fontSize: 10),
                   textAlign: TextAlign.center,
                 ),
+                if (gameStarted)
+                  Text(
+                    '${playerPoints[e.value] ?? 0}点',
+                    style: TextStyle(
+                      color: (playerPoints[e.value] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 const SizedBox(height: 6),
                 OpponentHandVisual(count: handCount, isBurstWarning: isBurstWarning),
               ],
@@ -620,6 +630,18 @@ class GameBoardView extends StatelessWidget {
           "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}",
           style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold),
         ),
+        if (gameStarted)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '累計 ${playerPoints[myId] ?? 0}点',
+              style: TextStyle(
+                color: (playerPoints[myId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
         const SizedBox(height: 5),
         SizedBox(height: 100, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: myHand.length, itemBuilder: (c, i) => Padding(padding: const EdgeInsets.all(4), child: CardWidget(number: myHand[i].number, suit: myHand[i].suit, onTap: () => onCardTap(i))))),
       ]),
