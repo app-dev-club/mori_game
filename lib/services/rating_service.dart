@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../logic/bot_logic.dart';
 import '../logic/rating_logic.dart';
+import '../models/ranking_entry.dart';
 
 class RatingUpdateResult {
   final String summary;
@@ -78,6 +79,75 @@ class RatingService {
     return ratings;
   }
 
+  Stream<List<RankingEntry>> watchRanking() {
+    return _ratingsRef.onValue.map((event) => parseRankingSnapshot(event.snapshot.value));
+  }
+
+  static List<RankingEntry> parseRankingSnapshot(dynamic raw) {
+    if (raw is! Map) return [];
+
+    final entries = <RankingEntry>[];
+    raw.forEach((key, value) {
+      if (value is! Map) return;
+      final id = key.toString();
+      final ratingValue = value['rating'];
+      if (ratingValue is! num) return;
+
+      entries.add(RankingEntry(
+        id: id,
+        playerName: resolvePlayerName(id, value),
+        rating: ratingValue.round(),
+        gamesPlayed: value['gamesPlayed'] is num ? (value['gamesPlayed'] as num).round() : 0,
+        isBot: value['isBot'] == true || BotLogic.isBot(id),
+        rank: 0,
+      ));
+    });
+
+    entries.sort((a, b) {
+      final byRating = b.rating.compareTo(a.rating);
+      if (byRating != 0) return byRating;
+      return a.playerName.compareTo(b.playerName);
+    });
+
+    return [
+      for (var i = 0; i < entries.length; i++)
+        RankingEntry(
+          id: entries[i].id,
+          playerName: entries[i].playerName,
+          rating: entries[i].rating,
+          gamesPlayed: entries[i].gamesPlayed,
+          isBot: entries[i].isBot,
+          rank: i + 1,
+        ),
+    ];
+  }
+
+  static String resolvePlayerName(String id, Map<dynamic, dynamic> data) {
+    final playerName = data['playerName'];
+    if (playerName is String && playerName.trim().isNotEmpty) {
+      return playerName.trim();
+    }
+    if (BotLogic.isBot(id) || data['isBot'] == true) {
+      return BotLogic.botDisplayName(id);
+    }
+    final displayName = data['displayName'];
+    if (displayName is String && displayName.trim().isNotEmpty) {
+      return displayName.trim();
+    }
+    return 'プレイヤー';
+  }
+
+  Future<void> syncPlayerName(String userId, String playerName) async {
+    final trimmed = playerName.trim();
+    if (trimmed.isEmpty) return;
+    try {
+      await ensureUserRating(userId);
+      await _ratingsRef.child(userId).update({'playerName': trimmed});
+    } catch (_) {
+      // ランキング表示用の同期失敗は本体保存を妨げない
+    }
+  }
+
   /// 規定試合終了時に同室メンバーのレートを更新（二重適用防止付き）
   Future<RatingUpdateResult?> applySeriesRating({
     required String roomId,
@@ -123,12 +193,15 @@ class RatingService {
       rootUpdates['ratings/$id/gamesPlayed'] = ServerValue.increment(1);
       if (BotLogic.isBot(id)) {
         rootUpdates['ratings/$id/isBot'] = true;
-        rootUpdates['ratings/$id/displayName'] = BotLogic.botDisplayName(id);
+        final botName = BotLogic.botDisplayName(id);
+        rootUpdates['ratings/$id/displayName'] = botName;
+        rootUpdates['ratings/$id/playerName'] = botName;
       } else {
         rootUpdates['ratings/$id/isBot'] = false;
         final name = displayNames[id];
         if (name != null && name.isNotEmpty) {
           rootUpdates['ratings/$id/displayName'] = name;
+          rootUpdates['ratings/$id/playerName'] = name;
         }
       }
     }

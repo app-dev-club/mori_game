@@ -7,6 +7,7 @@ import '../../services/firebase_db.dart';
 import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
+import '../ranking/ranking_page.dart';
 
 class RoomCreationSettings {
   final int maxPlayers;
@@ -291,6 +292,13 @@ class _EntrancePageState extends State<EntrancePage> {
     return '待機中: $countLabel（$labels）';
   }
 
+  void _openRanking() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RankingPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -310,15 +318,12 @@ class _EntrancePageState extends State<EntrancePage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'ログアウト',
-            onPressed: () => FirebaseAuth.instance.signOut(),
-            icon: const Icon(Icons.logout, color: Colors.white70),
-          ),
-        ],
       ),
-      body: Column(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -430,6 +435,74 @@ class _EntrancePageState extends State<EntrancePage> {
           ),
           _buildBottomBar(),
         ],
+            ),
+          ),
+          _buildSideTabs(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSideTabs() {
+    return Container(
+      width: 76,
+      decoration: const BoxDecoration(
+        color: Colors.black38,
+        border: Border(left: BorderSide(color: Colors.white24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          _buildSideTab(
+            label: 'ランキング',
+            icon: Icons.leaderboard,
+            accent: Colors.amberAccent,
+            onTap: _openRanking,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Divider(height: 1, color: Colors.white24),
+          ),
+          _buildSideTab(
+            label: 'ログアウト',
+            icon: Icons.logout,
+            onTap: () => FirebaseAuth.instance.signOut(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSideTab({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    Color accent = Colors.white70,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: accent, size: 24),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

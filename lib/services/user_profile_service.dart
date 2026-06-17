@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'rating_service.dart';
 
 /// ユーザーアカウントに紐づくプロフィール（プレイヤー名など）
 class UserProfileService {
@@ -7,6 +8,7 @@ class UserProfileService {
 
   final DatabaseReference _usersRef =
       FirebaseDatabase.instance.ref('users');
+  final RatingService _ratingService = RatingService();
 
   Future<String?> getPlayerName(String userId) async {
     try {
@@ -35,6 +37,7 @@ class UserProfileService {
         'playerName': trimmed,
         'updatedAt': ServerValue.timestamp,
       });
+      await _ratingService.syncPlayerName(userId, trimmed);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception(
