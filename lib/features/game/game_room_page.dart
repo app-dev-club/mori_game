@@ -5,6 +5,7 @@ import '../../services/firebase_db.dart';
 import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
+import '../../logic/scoring_rules.dart';
 import 'game_board_view.dart';
 
 class GameRoomPage extends StatefulWidget {
@@ -36,6 +37,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String? hostId;
   List<String> playerIds = [];
   Map<String, String> playerNames = {};
+  Map<String, int> playerPoints = {};
   Map<String, int> handCounts = {};
   int fieldNumber = -1;
   Suit fieldSuit = Suit.joker;
@@ -47,6 +49,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   String moriPhase = 'none'; 
   String? lastMoriPlayerId, loserPlayerId;
+  String? burstPlayerId;
+  int moriGaeshiCount = 0;
+  List<int> moriDeclarationFactors = [];
   List<CardWidget> moriRevealedHand = [];
   String? moriRevealedType;
   int? moriDeclaredAt;
@@ -55,6 +60,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Timer? _moriCountdownTimer;
   String _moriResolutionKey = '';
   bool _moriFinishRequested = false;
+  String? _lastShownPointSummary;
   bool hasDeclaredMori = false;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
@@ -209,6 +215,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'playerHands/$myId': iHand.length,
         'playerCards/$myId': _serializeHand(iHand),
         'playerNames/$myId': widget.playerName,
+        'playerPoints/$myId': 0,
         'deck': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
         'deckIndex': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       });
@@ -248,6 +255,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (data['playerNames'] != null) {
         playerNames = Map<String, String>.from(
           (data['playerNames'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
+        );
+      }
+      if (data['playerPoints'] != null) {
+        playerPoints = Map<String, int>.from(
+          (data['playerPoints'] as Map).map(
+            (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+          ),
         );
       }
       currentTurn = data['currentTurnIndex'] ?? 0;
@@ -352,12 +366,23 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       moriDeclaredAt = _parseFirebaseTimestamp(data['moriDeclaredAt']);
       moriRevealedHand = _parseHandFromFirebase(data['moriRevealedHand']);
       moriRevealedType = data['moriRevealedType'] as String?;
+      moriGaeshiCount = data['moriGaeshiCount'] as int? ?? 0;
+      if (data['moriDeclarationFactors'] is List) {
+        moriDeclarationFactors = (data['moriDeclarationFactors'] as List)
+            .map((e) => e is int ? e : (e as num).round())
+            .toList();
+      } else if (moriPhase == 'none') {
+        moriDeclarationFactors = [];
+      }
+      burstPlayerId = data['burstPlayerId'] as String?;
       if (moriPhase == 'none') {
         hasDeclaredMori = false;
         moriRevealedHand = [];
         moriRevealedType = null;
         moriDeclaredAt = null;
         _moriFinishRequested = false;
+        moriGaeshiCount = 0;
+        moriDeclarationFactors = [];
       }
       
       // 山札めくりやゲーム終了後の閉鎖では弾かない（ホスト切断時のロビー閉鎖のみ）
@@ -376,8 +401,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _sub?.cancel();
         _showGameOver("ホスト不在のため閉鎖されました");
       }
-
-      final burstPlayerId = data['burstPlayerId'] as String?;
 
       postGameActive = data['postGameActive'] == true;
       rematchHostRequested = data['rematchHostRequested'] == true;
@@ -436,6 +459,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           burstPlayerId == null) {
         _postGameMessage = null;
         _postGameEntered = false;
+        _lastShownPointSummary = null;
         _cancelPostGameTimers();
         _cancelGuestStayTimers();
       }
@@ -452,16 +476,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       );
     }
 
-    final burstPlayerId = data['burstPlayerId'] as String?;
-    if (!_postGameEntered && burstPlayerId != null) {
-      if (burstPlayerId == myId) {
+    final burstId = data['burstPlayerId'] as String?;
+    if (!_postGameEntered && burstId != null) {
+      if (burstId == myId) {
         _enterPostGame('敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。');
       } else {
         _enterPostGame(
-          'ゲーム終了\n（${_displayName(burstPlayerId)}がバーストしたため、勝者はありません）',
+          'ゲーム終了\n（${_displayName(burstId)}がバーストしたため、勝者はありません）',
         );
       }
     }
+
+    _appendPointSummaryFromData(data);
 
     if (data['roomDismissedByHost'] == true && !isHost && !_isClosedDialogShown) {
       _isClosedDialogShown = true;
@@ -927,6 +953,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'playerHands/$botId': botHand.length,
       'playerCards/$botId': _serializeHand(botHand),
       'playerNames/$botId': botName,
+      'playerPoints/$botId': 0,
       'bots/$botId': true,
       'deck': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'deckIndex': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
@@ -1086,6 +1113,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'loserPlayerId': lastPlayerId,
       'moriRevealedHand': _serializeHand(hand),
       'moriRevealedType': 'mori',
+      'moriGaeshiCount': 0,
+      'moriDeclarationFactors': [ScoringRules.handFactor(hand)],
     });
   }
 
@@ -1259,6 +1288,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final revealedHand = _serializeHand(myHand);
     if (moriPhase == 'none') {
       if (lastPlayerId == myId) { _showGameMessage('自滅はできません！'); setState(() => hasDeclaredMori = false); return; }
+      final handFactor = ScoringRules.handFactor(myHand);
       setState(() {
         hasDeclaredMori = true;
         moriPhase = 'mori_declared';
@@ -1266,6 +1296,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         loserPlayerId = lastPlayerId;
         moriRevealedType = 'mori';
         moriRevealedHand = List<CardWidget>.from(myHand);
+        moriGaeshiCount = 0;
+        moriDeclarationFactors = [handFactor];
       });
       _beginMoriResolutionCountdown('$myId|mori');
       _db.updateGameStatus({
@@ -1275,15 +1307,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'loserPlayerId': lastPlayerId,
         'moriRevealedHand': revealedHand,
         'moriRevealedType': 'mori',
+        'moriGaeshiCount': 0,
+        'moriDeclarationFactors': [handFactor],
       });
     } else {
       final previousMoriPlayerId = lastMoriPlayerId;
+      final nextGaeshiCount = moriGaeshiCount + 1;
+      final handFactor = ScoringRules.handFactor(myHand);
+      final nextFactors = [...moriDeclarationFactors, handFactor];
       setState(() {
         hasDeclaredMori = true;
         lastMoriPlayerId = myId;
         loserPlayerId = previousMoriPlayerId;
         moriRevealedType = 'gaeshi';
         moriRevealedHand = List<CardWidget>.from(myHand);
+        moriGaeshiCount = nextGaeshiCount;
+        moriDeclarationFactors = nextFactors;
       });
       _beginMoriResolutionCountdown('$myId|gaeshi');
       _db.updateGameStatus({
@@ -1292,6 +1331,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'loserPlayerId': previousMoriPlayerId,
         'moriRevealedHand': revealedHand,
         'moriRevealedType': 'gaeshi',
+        'moriGaeshiCount': nextGaeshiCount,
+        'moriDeclarationFactors': nextFactors,
       });
     }
   }
@@ -1337,6 +1378,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'rematchHostRequested': false,
       'postGameActive': false,
       'burstPlayerId': null,
+      'moriGaeshiCount': null,
+      'moriDeclarationFactors': null,
+      'lastMatchPointSummary': null,
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
@@ -1853,7 +1897,69 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
   }
 
+  Future<void> _applyMatchScoring() async {
+    if (!isHost) return;
+
+    final updatedPoints = Map<String, int>.from(playerPoints);
+    for (final pid in playerIds) {
+      updatedPoints.putIfAbsent(pid, () => 0);
+    }
+
+    String? summary;
+    if (burstPlayerId != null) {
+      final penalty = ScoringRules.burstPenalty();
+      updatedPoints[burstPlayerId!] = (updatedPoints[burstPlayerId!] ?? 0) - penalty;
+      summary = ScoringRules.describeBurstScoring(
+        burstPlayerName: _displayName(burstPlayerId),
+      );
+    } else if (lastMoriPlayerId != null &&
+        loserPlayerId != null &&
+        moriDeclarationFactors.isNotEmpty) {
+      final delta = ScoringRules.moriWinnerDelta(moriDeclarationFactors, moriGaeshiCount);
+      updatedPoints[lastMoriPlayerId!] = (updatedPoints[lastMoriPlayerId!] ?? 0) + delta;
+      updatedPoints[loserPlayerId!] = (updatedPoints[loserPlayerId!] ?? 0) - delta;
+      summary = ScoringRules.describeMoriScoring(
+        winnerName: _displayName(lastMoriPlayerId),
+        loserName: _displayName(loserPlayerId),
+        declarationFactors: moriDeclarationFactors,
+        moriGaeshiCount: moriGaeshiCount,
+        delta: delta,
+      );
+    }
+
+    if (summary == null) return;
+
+    await _db.updateGameStatus({
+      'playerPoints': updatedPoints,
+      'lastMatchPointSummary': summary,
+    });
+    playerPoints = updatedPoints;
+    if (mounted) {
+      _appendPointSummaryFromData({'lastMatchPointSummary': summary});
+    }
+  }
+
+  void _appendPointSummaryFromData(Map data) {
+    if (!_postGameEntered) return;
+    final summary = data['lastMatchPointSummary'] as String?;
+    if (summary == null || summary.isEmpty || summary == _lastShownPointSummary) return;
+    _lastShownPointSummary = summary;
+
+    final pointsLine = playerIds
+        .map((id) => '${_displayName(id)}: ${playerPoints[id] ?? 0}点')
+        .join(' / ');
+    final fullSummary = '$summary\n\n【累計】$pointsLine';
+
+    if (!mounted) return;
+    setState(() {
+      final base = _postGameMessage ?? '';
+      _postGameMessage =
+          base.contains(summary) ? '$base\n\n【累計】$pointsLine' : '$base\n\n$fullSummary';
+    });
+  }
+
   Future<void> _onHostPostGameEntered() async {
+    await _applyMatchScoring();
     await _db.markPostGameStarted();
     if (totalMatches <= 1) return;
 
@@ -1935,6 +2041,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     return GameBoardView(
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
       playerNames: playerNames,
+      playerPoints: playerPoints,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
       moriPhase: moriPhase, hasDeclaredMori: hasDeclaredMori, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
       lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
