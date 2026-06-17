@@ -13,7 +13,15 @@ void main() {
   group('BotLogic', () {
     test('isBot は bot_ プレフィックスを判定する', () {
       expect(BotLogic.isBot('bot_123'), isTrue);
+      expect(BotLogic.isBot('bot_1'), isTrue);
       expect(BotLogic.isBot('host'), isFalse);
+    });
+
+    test('nextBotId は bot_1, bot_2 ... を割り当てる', () {
+      expect(BotLogic.nextBotId([]), 'bot_1');
+      expect(BotLogic.nextBotId(['bot_1']), 'bot_2');
+      expect(BotLogic.nextBotId(['bot_1', 'bot_3']), 'bot_2');
+      expect(BotLogic.botDisplayName('bot_2'), 'Bot 2');
     });
 
     test('canDeclareMori は直前に出した相手にもりできる', () {
