@@ -6,6 +6,8 @@ import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
 import '../../logic/scoring_rules.dart';
+import '../../logic/post_game_summary_builder.dart';
+import '../../models/post_game_summary.dart';
 import '../../services/rating_service.dart';
 import 'game_board_view.dart';
 
@@ -62,15 +64,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Timer? _moriCountdownTimer;
   String _moriResolutionKey = '';
   bool _moriFinishRequested = false;
-  String? _lastShownPointSummary;
-  String? _lastShownRatingSummary;
+  PostGameSummary? _postGameSummary;
+  Map<String, int> _lastMatchPointDeltas = {};
+  Map<String, Map<String, dynamic>> _seriesRatingDetails = {};
   bool hasDeclaredMori = false;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
   bool _gameOverDialogShown = false;
   bool _isIntentionalLeave = false;
   bool _postGameClosing = false;
-  String? _postGameMessage;
   bool _postGameEntered = false;
   Timer? _hostDecisionTimer;
   Timer? _postGameCountdownTimer;
@@ -119,9 +121,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool get _isActiveGameplay =>
       gameStarted && !postGameActive && !awaitingGuestStayResponses;
 
-  bool get _showPostGameOverlay =>
-      _postGameMessage != null &&
-      (postGameActive || awaitingGuestStayResponses || _postGameEntered);
+  bool get _showPostGameOverlay => _postGameEntered;
 
   bool get _hasRemainingSeriesMatches =>
       totalMatches > 1 && completedMatches < totalMatches;
@@ -443,7 +443,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (isHost) {
           WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFinalizeRematchLobby());
         }
-      } else if (_postGameMessage != null && !rematchHostRequested) {
+      } else if (_postGameEntered && !rematchHostRequested) {
         if (!_hasRemainingSeriesMatches) {
           _syncPostGameTimers();
         }
@@ -452,8 +452,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
 
       if (rematchHostRequested && !awaitingGuestStayResponses && !gameStarted) {
-        _postGameMessage = null;
+        _postGameSummary = null;
         _postGameEntered = false;
+        _lastMatchPointDeltas = {};
+        _seriesRatingDetails = {};
         _cancelPostGameTimers();
       }
 
@@ -461,9 +463,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           moriPhase != 'finished' &&
           moriPhase != 'mori_declared' &&
           burstPlayerId == null) {
-        _postGameMessage = null;
+        _postGameSummary = null;
         _postGameEntered = false;
-        _lastShownPointSummary = null;
+        _lastMatchPointDeltas = {};
+        _seriesRatingDetails = {};
         _cancelPostGameTimers();
         _cancelGuestStayTimers();
       }
@@ -471,28 +474,32 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     if (!_postGameEntered && moriPhase == 'finished' && lastMoriPlayerId != null) {
       _cancelMoriResolutionTimers();
-      _enterPostGame(
-        lastMoriPlayerId == myId
-            ? (moriRevealedType == 'gaeshi' ? '勝利！(もり返し成功)' : '勝利！(もり成功)')
-            : (loserPlayerId == myId
-                ? '敗北...（${_displayName(lastMoriPlayerId)}に${moriRevealedType == 'gaeshi' ? 'もり返し' : 'もり'}を宣言されました）'
-                : 'ゲーム終了'),
-      );
+      _enterPostGame();
     }
 
     final burstId = data['burstPlayerId'] as String?;
     if (!_postGameEntered && burstId != null) {
-      if (burstId == myId) {
-        _enterPostGame('敗北（バースト）\n手札が7枚になり、出せるカードがありませんでした。');
-      } else {
-        _enterPostGame(
-          'ゲーム終了\n（${_displayName(burstId)}がバーストしたため、勝者はありません）',
-        );
-      }
+      _enterPostGame();
     }
 
-    _appendPointSummaryFromData(data);
-    _appendRatingSummaryFromData(data);
+    if (data['lastMatchPointDeltas'] is Map) {
+      _lastMatchPointDeltas = Map<String, int>.from(
+        (data['lastMatchPointDeltas'] as Map).map(
+          (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+        ),
+      );
+    }
+    if (data['seriesRatingDetails'] is Map) {
+      _seriesRatingDetails = (data['seriesRatingDetails'] as Map).map(
+        (k, v) => MapEntry(
+          k.toString(),
+          v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{},
+        ),
+      );
+    }
+    if (_postGameEntered) {
+      _syncPostGameSummary();
+    }
 
     if (data['roomDismissedByHost'] == true && !isHost && !_isClosedDialogShown) {
       _isClosedDialogShown = true;
@@ -505,7 +512,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (_postGameEntered && _hasRemainingSeriesMatches && seriesNextMatchAt != null) {
       _syncSeriesContinueUi(seriesNextMatchAt);
     } else if (_postGameEntered && totalMatches > 1 && completedMatches >= totalMatches) {
-      _appendSeriesCompleteMessageIfNeeded();
+      _syncPostGameSummary();
     }
 
     if (isHost) {
@@ -1387,8 +1394,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriGaeshiCount': null,
       'moriDeclarationFactors': null,
       'lastMatchPointSummary': null,
+      'lastMatchPointDeltas': null,
       'seriesRatingApplied': null,
       'seriesRatingSummary': null,
+      'seriesRatingDetails': null,
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
@@ -1397,7 +1406,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriRevealedType': null,
     });
     setState(() {
-      _postGameMessage = null;
+      _postGameSummary = null;
       _postGameEntered = false;
       _seriesAutoContinueScheduled = false;
       if (totalMatches > 1 && completedMatches == 0) {
@@ -1609,7 +1618,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     if (!mounted) return;
     setState(() {
-      _postGameMessage = null;
+      _postGameSummary = null;
       _postGameEntered = false;
       awaitingGuestStayResponses = false;
       rematchEligiblePlayers = [];
@@ -1636,12 +1645,120 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
   }
 
-  void _appendSeriesCompleteMessageIfNeeded() {
-    final suffix = '\n\n全$totalMatches戦が終了しました';
-    if (_postGameMessage == null || _postGameMessage!.contains(suffix.trim())) return;
-    if (mounted) {
-      setState(() => _postGameMessage = '${_postGameMessage!}$suffix');
+  void _syncPostGameSummary() {
+    if (!_postGameEntered) return;
+
+    final roster = seriesPlayerIds.isNotEmpty
+        ? List<String>.from(seriesPlayerIds)
+        : List<String>.from(playerIds);
+    final names = {for (final id in roster) id: _displayName(id)};
+    final seriesComplete = totalMatches <= 1 || completedMatches >= totalMatches;
+
+    final summary = PostGameSummaryBuilder.build(
+      roster: roster,
+      names: names,
+      playerPoints: playerPoints,
+      lastMatchPointDeltas: _lastMatchPointDeltas,
+      seriesRatingDetails: _seriesRatingDetails,
+      totalMatches: totalMatches,
+      completedMatches: completedMatches,
+      seriesComplete: seriesComplete,
+    );
+
+    if (mounted) setState(() => _postGameSummary = summary);
+  }
+
+  void _enterPostGame() {
+    if (_postGameEntered) return;
+    _postGameEntered = true;
+    _syncPostGameSummary();
+    if (isHost) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onHostPostGameEntered());
     }
+  }
+
+  Future<void> _applyMatchScoring() async {
+    if (!isHost) return;
+
+    final updatedPoints = Map<String, int>.from(playerPoints);
+    for (final pid in playerIds) {
+      updatedPoints.putIfAbsent(pid, () => 0);
+    }
+
+    final matchDeltas = <String, int>{};
+    String? summary;
+    if (burstPlayerId != null) {
+      final penalty = ScoringRules.burstPenalty();
+      updatedPoints[burstPlayerId!] = (updatedPoints[burstPlayerId!] ?? 0) - penalty;
+      matchDeltas[burstPlayerId!] = -penalty;
+      summary = ScoringRules.describeBurstScoring(
+        burstPlayerName: _displayName(burstPlayerId),
+      );
+    } else if (lastMoriPlayerId != null &&
+        loserPlayerId != null &&
+        moriDeclarationFactors.isNotEmpty) {
+      final delta = ScoringRules.moriWinnerDelta(moriDeclarationFactors, moriGaeshiCount);
+      updatedPoints[lastMoriPlayerId!] = (updatedPoints[lastMoriPlayerId!] ?? 0) + delta;
+      updatedPoints[loserPlayerId!] = (updatedPoints[loserPlayerId!] ?? 0) - delta;
+      matchDeltas[lastMoriPlayerId!] = delta;
+      matchDeltas[loserPlayerId!] = -delta;
+      summary = ScoringRules.describeMoriScoring(
+        winnerName: _displayName(lastMoriPlayerId),
+        loserName: _displayName(loserPlayerId),
+        declarationFactors: moriDeclarationFactors,
+        moriGaeshiCount: moriGaeshiCount,
+        delta: delta,
+      );
+    }
+
+    if (summary == null) return;
+
+    _lastMatchPointDeltas = matchDeltas;
+    await _db.updateGameStatus({
+      'playerPoints': updatedPoints,
+      'lastMatchPointSummary': summary,
+      'lastMatchPointDeltas': matchDeltas,
+    });
+    playerPoints = updatedPoints;
+    if (mounted) _syncPostGameSummary();
+  }
+
+  Future<void> _onHostPostGameEntered() async {
+    await _applyMatchScoring();
+    await _db.markPostGameStarted();
+
+    final willCompleteSeries = totalMatches <= 1 || completedMatches + 1 >= totalMatches;
+
+    if (totalMatches <= 1) {
+      if (willCompleteSeries) await _applySeriesRatingUpdate();
+      return;
+    }
+
+    final nextCompleted = completedMatches + 1;
+    final deadline = DateTime.now().millisecondsSinceEpoch + RoomConfig.seriesNextMatchMs;
+    final updates = <String, dynamic>{
+      'completedMatches': nextCompleted,
+    };
+    if (nextCompleted < totalMatches) {
+      updates['seriesNextMatchAt'] = deadline;
+      if (seriesPlayerIds.isEmpty) {
+        updates['seriesPlayerIds'] = List<String>.from(playerIds);
+      }
+    } else {
+      updates['seriesNextMatchAt'] = null;
+      updates['seriesRestarting'] = false;
+      updates['seriesPlayerIds'] = null;
+    }
+    await _db.updateGameStatus(updates);
+    completedMatches = nextCompleted;
+
+    if (nextCompleted < totalMatches) {
+      _scheduleSeriesAutoContinue(deadline);
+      return;
+    }
+
+    await _applySeriesRatingUpdate();
+    if (mounted) _syncPostGameSummary();
   }
 
   void _syncSeriesContinueUi(int deadlineMs) {
@@ -1745,7 +1862,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       setState(() {
         playerIds = roster;
         seriesPlayerIds = roster;
-        _postGameMessage = null;
+        _postGameSummary = null;
         _postGameEntered = false;
         awaitingGuestStayResponses = false;
         rematchEligiblePlayers = [];
@@ -1846,7 +1963,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final guests = playerIds.where((p) => p != hostId && !BotLogic.isBot(p)).toList();
     if (guests.isEmpty) {
       await _finalizeRematchWithPlayers([hostId!]);
-      if (mounted) setState(() => _postGameMessage = null);
+      if (mounted) {
+        setState(() {
+          _postGameSummary = null;
+          _postGameEntered = false;
+        });
+      }
       return;
     }
 
@@ -1893,136 +2015,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     Navigator.popUntil(context, (r) => r.isFirst);
   }
 
-  void _enterPostGame(String message) {
-    if (_postGameMessage != null || _postGameEntered) return;
-    _postGameEntered = true;
-    final displayMessage = totalMatches > 1
-        ? '$message\n\n$_matchProgressLabel 終了'
-        : message;
-    setState(() => _postGameMessage = displayMessage);
-    if (isHost) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onHostPostGameEntered());
-    }
-  }
-
-  Future<void> _applyMatchScoring() async {
-    if (!isHost) return;
-
-    final updatedPoints = Map<String, int>.from(playerPoints);
-    for (final pid in playerIds) {
-      updatedPoints.putIfAbsent(pid, () => 0);
-    }
-
-    String? summary;
-    if (burstPlayerId != null) {
-      final penalty = ScoringRules.burstPenalty();
-      updatedPoints[burstPlayerId!] = (updatedPoints[burstPlayerId!] ?? 0) - penalty;
-      summary = ScoringRules.describeBurstScoring(
-        burstPlayerName: _displayName(burstPlayerId),
-      );
-    } else if (lastMoriPlayerId != null &&
-        loserPlayerId != null &&
-        moriDeclarationFactors.isNotEmpty) {
-      final delta = ScoringRules.moriWinnerDelta(moriDeclarationFactors, moriGaeshiCount);
-      updatedPoints[lastMoriPlayerId!] = (updatedPoints[lastMoriPlayerId!] ?? 0) + delta;
-      updatedPoints[loserPlayerId!] = (updatedPoints[loserPlayerId!] ?? 0) - delta;
-      summary = ScoringRules.describeMoriScoring(
-        winnerName: _displayName(lastMoriPlayerId),
-        loserName: _displayName(loserPlayerId),
-        declarationFactors: moriDeclarationFactors,
-        moriGaeshiCount: moriGaeshiCount,
-        delta: delta,
-      );
-    }
-
-    if (summary == null) return;
-
-    await _db.updateGameStatus({
-      'playerPoints': updatedPoints,
-      'lastMatchPointSummary': summary,
-    });
-    playerPoints = updatedPoints;
-    if (mounted) {
-      _appendPointSummaryFromData({'lastMatchPointSummary': summary});
-    }
-  }
-
-  void _appendPointSummaryFromData(Map data) {
-    if (!_postGameEntered) return;
-    final summary = data['lastMatchPointSummary'] as String?;
-    if (summary == null || summary.isEmpty || summary == _lastShownPointSummary) return;
-    _lastShownPointSummary = summary;
-
-    final pointsLine = playerIds
-        .map((id) => '${_displayName(id)}: ${playerPoints[id] ?? 0}点')
-        .join(' / ');
-    final fullSummary = '$summary\n\n【累計】$pointsLine';
-
-    if (!mounted) return;
-    setState(() {
-      final base = _postGameMessage ?? '';
-      _postGameMessage =
-          base.contains(summary) ? '$base\n\n【累計】$pointsLine' : '$base\n\n$fullSummary';
-    });
-  }
-
-  Future<void> _onHostPostGameEntered() async {
-    await _applyMatchScoring();
-    await _db.markPostGameStarted();
-
-    final willCompleteSeries = totalMatches <= 1 || completedMatches + 1 >= totalMatches;
-
-    if (totalMatches <= 1) {
-      if (willCompleteSeries) await _applySeriesRatingUpdate();
-      return;
-    }
-
-    final nextCompleted = completedMatches + 1;
-    final deadline = DateTime.now().millisecondsSinceEpoch + RoomConfig.seriesNextMatchMs;
-    final updates = <String, dynamic>{
-      'completedMatches': nextCompleted,
-    };
-    if (nextCompleted < totalMatches) {
-      updates['seriesNextMatchAt'] = deadline;
-      if (seriesPlayerIds.isEmpty) {
-        updates['seriesPlayerIds'] = List<String>.from(playerIds);
-      }
-    } else {
-      updates['seriesNextMatchAt'] = null;
-      updates['seriesRestarting'] = false;
-      updates['seriesPlayerIds'] = null;
-    }
-    await _db.updateGameStatus(updates);
-    completedMatches = nextCompleted;
-
-    if (nextCompleted < totalMatches) {
-      _scheduleSeriesAutoContinue(deadline);
-      return;
-    }
-
-    await _applySeriesRatingUpdate();
-
-    if (!mounted) return;
-    setState(() {
-      _postGameMessage = '${_postGameMessage ?? ''}\n\n全$totalMatches戦が終了しました';
-    });
-  }
-
-  void _appendRatingSummaryFromData(Map data) {
-    if (!_postGameEntered) return;
-    final summary = data['seriesRatingSummary'] as String?;
-    if (summary == null || summary.isEmpty || summary == _lastShownRatingSummary) return;
-    _lastShownRatingSummary = summary;
-
-    if (!mounted) return;
-    setState(() {
-      final base = _postGameMessage ?? '';
-      if (!base.contains(summary)) {
-        _postGameMessage = base.isEmpty ? summary : '$base\n\n$summary';
-      }
-    });
-  }
-
   Future<void> _applySeriesRatingUpdate() async {
     if (!isHost) return;
 
@@ -2048,7 +2040,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     );
 
     if (result == null || !mounted) return;
-    _appendRatingSummaryFromData({'seriesRatingSummary': result.summary});
+    _syncPostGameSummary();
   }
 
   String _displayNameForRating(String playerId) {
@@ -2120,7 +2112,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       autoPlayCountdownSeconds: _autoPlayCountdownSeconds,
       moriCountdownSeconds: _moriCountdownSeconds,
       postGameVisible: _showPostGameOverlay,
-      postGameMessage: _postGameMessage ?? '',
+      postGameSummary: _postGameSummary,
       postGameCountdownSeconds: _countdownSeconds,
       awaitingGuestStayResponses: awaitingGuestStayResponses,
       guestStayReadyCount: _guestStayReadyCount(),
