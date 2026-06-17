@@ -179,16 +179,24 @@ class RatingService {
     );
 
     final newRatings = <String, int>{};
+    final ratingDetails = <String, dynamic>{};
     final rootUpdates = <String, dynamic>{
       'rooms/$roomId/seriesRatingApplied': true,
       'rooms/$roomId/seriesRatingSummary': summary,
     };
 
-    for (final id in participantIds) {
+    for (final entry in ranked) {
+      final id = entry.id;
       final old = oldRatings[id] ?? RatingLogic.defaultRating;
       final delta = deltas[id] ?? 0;
       final neu = old + delta;
       newRatings[id] = neu;
+      ratingDetails[id] = {
+        'rank': entry.rank,
+        'points': entry.points,
+        'rating': neu,
+        'ratingDelta': delta,
+      };
       rootUpdates['ratings/$id/rating'] = neu;
       rootUpdates['ratings/$id/gamesPlayed'] = ServerValue.increment(1);
       if (BotLogic.isBot(id)) {
@@ -205,6 +213,8 @@ class RatingService {
         }
       }
     }
+
+    rootUpdates['rooms/$roomId/seriesRatingDetails'] = ratingDetails;
 
     await FirebaseDatabase.instance.ref().update(rootUpdates);
 

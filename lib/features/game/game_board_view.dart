@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
+import '../../models/post_game_summary.dart';
 import 'play_arrow_overlay.dart';
 
 enum Suit { spade, heart, diamond, club, joker }
@@ -195,7 +196,7 @@ class GameBoardView extends StatelessWidget {
   final int? autoPlayCountdownSeconds;
   final int? moriCountdownSeconds;
   final bool postGameVisible;
-  final String postGameMessage;
+  final PostGameSummary? postGameSummary;
   final int? postGameCountdownSeconds;
   final bool awaitingGuestStayResponses;
   final int guestStayReadyCount;
@@ -227,7 +228,7 @@ class GameBoardView extends StatelessWidget {
     this.autoPlayCountdownSeconds,
     this.moriCountdownSeconds,
     required this.postGameVisible,
-    required this.postGameMessage,
+    required this.postGameSummary,
     this.postGameCountdownSeconds,
     required this.awaitingGuestStayResponses,
     required this.guestStayReadyCount,
@@ -379,7 +380,7 @@ class GameBoardView extends StatelessWidget {
           ),
           if (postGameVisible)
             PostGameOverlay(
-              message: postGameMessage,
+              summary: postGameSummary,
               isHost: isHost,
               countdownSeconds: postGameCountdownSeconds,
               seriesAutoContinuing: seriesAutoContinuing,
@@ -651,7 +652,7 @@ class GameBoardView extends StatelessWidget {
 
 /// ゲーム終了後の再戦・退室UI
 class PostGameOverlay extends StatelessWidget {
-  final String message;
+  final PostGameSummary? summary;
   final bool isHost;
   final int? countdownSeconds;
   final bool seriesAutoContinuing;
@@ -668,7 +669,7 @@ class PostGameOverlay extends StatelessWidget {
 
   const PostGameOverlay({
     super.key,
-    required this.message,
+    required this.summary,
     required this.isHost,
     this.countdownSeconds,
     this.seriesAutoContinuing = false,
@@ -684,37 +685,40 @@ class PostGameOverlay extends StatelessWidget {
     required this.onLeaveToLobby,
   });
 
+  String _formatDelta(int? delta) {
+    if (delta == null || delta == 0) return '±0';
+    return delta > 0 ? '+$delta' : '$delta';
+  }
+
   String _subtitle() {
-    if (seriesAutoContinuing) {
-      return 'まもなく次の対戦を開始します';
-    }
+    if (seriesAutoContinuing) return 'まもなく次の対戦を開始します';
     if (awaitingGuestStayResponses) {
-      if (isHost) {
-        return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人が残ると回答';
-      }
-      if (mustRespondToStay) {
-        return 'ルームに残りますか？';
-      }
-      if (myStayResponseSubmitted) {
-        return '回答を送信しました。他のプレイヤーを待っています…';
-      }
+      if (isHost) return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人';
+      if (mustRespondToStay) return 'ルームに残りますか？';
+      if (myStayResponseSubmitted) return '回答済み。他のプレイヤーを待っています…';
       return 'ホストの選択を待っています…';
     }
-    if (isHost) {
-      return '「もう一度遊ぶ」を選ぶと参加者に残存確認を行います。全員の回答後にルームが公開されます。';
-    }
+    if (isHost) return 'もう一度遊ぶ / ロビーへ';
     return 'ホストの選択を待っています…';
   }
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final cardWidth = (size.width * 0.9).clamp(280.0, 420.0);
+    final maxCardHeight = size.height * 0.72;
+    final titleSize = (size.width / 24).clamp(16.0, 20.0);
+    final bodySize = (size.width / 28).clamp(12.0, 15.0);
+    final headerSize = (size.width / 32).clamp(11.0, 13.0);
+
     return Container(
       color: Colors.black.withValues(alpha: 0.72),
       child: Center(
         child: Container(
-          width: 320,
-          margin: const EdgeInsets.all(24),
-          padding: const EdgeInsets.all(20),
+          width: cardWidth,
+          constraints: BoxConstraints(maxHeight: maxCardHeight),
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
           decoration: BoxDecoration(
             color: const Color(0xFF1B3A1B),
             borderRadius: BorderRadius.circular(16),
@@ -724,50 +728,72 @@ class PostGameOverlay extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                message,
+                summary?.title ?? '試合結果',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: titleSize,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: _buildResultsTable(bodySize, headerSize),
+                ),
+              ),
+              const SizedBox(height: 10),
               Text(
                 _subtitle(),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: Colors.white70, fontSize: headerSize),
               ),
               if (seriesAutoContinuing && countdownSeconds != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
-                  '残り $countdownSeconds 秒で次の対戦を開始',
-                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                  '残り $countdownSeconds 秒で次の対戦',
+                  style: TextStyle(
+                    color: Colors.amberAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: bodySize,
+                  ),
                 ),
               ],
               if (isHost && !awaitingGuestStayResponses && !seriesAutoContinuing && countdownSeconds != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
                   '残り $countdownSeconds 秒（未選択でルーム閉鎖）',
-                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.amberAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: bodySize,
+                  ),
                 ),
               ],
               if (awaitingGuestStayResponses && guestCountdownSeconds != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Text(
                   '残り $guestCountdownSeconds 秒（未回答は自動退室）',
-                  style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.amberAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: bodySize,
+                  ),
                 ),
               ],
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
               if (seriesAutoContinuing)
-                const Text(
+                Text(
                   'シリーズ対戦中は自動的に次の対戦へ進みます',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(color: Colors.white54, fontSize: headerSize),
                 )
               else if (awaitingGuestStayResponses) ...[
                 if (isHost)
-                  const Text(
+                  Text(
                     '全員の回答が揃うとルームを公開します',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(color: Colors.white54, fontSize: headerSize),
                   )
                 else if (mustRespondToStay) ...[
                   SizedBox(
@@ -820,6 +846,81 @@ class PostGameOverlay extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildResultsTable(double bodySize, double headerSize) {
+    final players = summary?.players ?? [];
+    final showRating = summary?.showRating ?? false;
+
+    if (players.isEmpty) {
+      return Text(
+        '結果を読み込み中…',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: Colors.white54, fontSize: bodySize),
+      );
+    }
+
+    return Table(
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: FlexColumnWidth(),
+        2: IntrinsicColumnWidth(),
+        3: IntrinsicColumnWidth(),
+        4: IntrinsicColumnWidth(),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: Colors.white24)),
+          ),
+          children: [
+            _headerCell('順位', headerSize),
+            _headerCell('名前', headerSize),
+            _headerCell('今回', headerSize),
+            _headerCell('累計', headerSize),
+            _headerCell(showRating ? 'レート' : '', headerSize),
+          ],
+        ),
+        for (final row in players)
+          TableRow(
+            children: [
+              _bodyCell('${row.rank}', bodySize, align: TextAlign.center),
+              _bodyCell(row.name, bodySize),
+              _bodyCell(_formatDelta(row.matchDelta), bodySize, align: TextAlign.center),
+              _bodyCell('${row.totalPoints}', bodySize, align: TextAlign.center),
+              _bodyCell(
+                showRating && row.rating != null
+                    ? '${row.rating} (${_formatDelta(row.ratingDelta)})'
+                    : '—',
+                bodySize,
+                align: TextAlign.end,
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _headerCell(String text, double size) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Text(
+        text,
+        style: TextStyle(color: Colors.white70, fontSize: size, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _bodyCell(String text, double size, {TextAlign align = TextAlign.start}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Text(
+        text,
+        textAlign: align,
+        style: TextStyle(color: Colors.white, fontSize: size),
       ),
     );
   }

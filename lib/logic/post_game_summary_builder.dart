@@ -1,0 +1,73 @@
+import '../models/post_game_summary.dart';
+
+class PostGameSummaryBuilder {
+  static PostGameSummary build({
+    required List<String> roster,
+    required Map<String, String> names,
+    required Map<String, int> playerPoints,
+    required Map<String, int> lastMatchPointDeltas,
+    required Map<String, Map<String, dynamic>> seriesRatingDetails,
+    required int totalMatches,
+    required int completedMatches,
+    required bool seriesComplete,
+  }) {
+    if (roster.isEmpty) {
+      return const PostGameSummary(title: '試合結果', players: []);
+    }
+
+    final showRating = seriesComplete && seriesRatingDetails.isNotEmpty;
+    final rows = <PostGamePlayerRow>[];
+
+    for (final id in roster) {
+      final detail = seriesRatingDetails[id];
+      final ratingValue = detail?['rating'];
+      final deltaValue = detail?['ratingDelta'];
+      final rankValue = detail?['rank'];
+      final pointsValue = detail?['points'];
+
+      rows.add(
+        PostGamePlayerRow(
+          name: names[id] ?? 'プレイヤー',
+          matchDelta: lastMatchPointDeltas[id],
+          totalPoints: pointsValue is num
+              ? pointsValue.round()
+              : (playerPoints[id] ?? 0),
+          rank: rankValue is num ? rankValue.round() : 0,
+          rating: ratingValue is num ? ratingValue.round() : null,
+          ratingDelta: deltaValue is num ? deltaValue.round() : null,
+        ),
+      );
+    }
+
+    if (showRating) {
+      rows.sort((a, b) {
+        final byRank = a.rank.compareTo(b.rank);
+        if (byRank != 0) return byRank;
+        return b.totalPoints.compareTo(a.totalPoints);
+      });
+    } else {
+      rows.sort((a, b) => b.totalPoints.compareTo(a.totalPoints));
+      for (var i = 0; i < rows.length; i++) {
+        final row = rows[i];
+        rows[i] = PostGamePlayerRow(
+          name: row.name,
+          matchDelta: row.matchDelta,
+          totalPoints: row.totalPoints,
+          rank: i + 1,
+          rating: row.rating,
+          ratingDelta: row.ratingDelta,
+        );
+      }
+    }
+
+    final title = seriesComplete
+        ? '全$totalMatches戦 結果'
+        : (totalMatches > 1 ? '第$completedMatches戦終了' : '試合結果');
+
+    return PostGameSummary(
+      title: title,
+      players: rows,
+      showRating: showRating,
+    );
+  }
+}
