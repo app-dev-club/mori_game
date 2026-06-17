@@ -16,5 +16,11 @@ void main() {
       expect(RoomConfig.isRoomFull(4, 4), isTrue);
       expect(RoomConfig.isRoomFull(5, 4), isTrue);
     });
+
+    test('resolveMatchCount は Firebase の num でも対戦回数を解決する', () {
+      expect(RoomConfig.resolveMatchCount(3), 3);
+      expect(RoomConfig.resolveMatchCount(3.0), 3);
+      expect(RoomConfig.resolveMatchCount(null), RoomConfig.defaultMatchCount);
+    });
   });
 }

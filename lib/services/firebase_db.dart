@@ -110,7 +110,7 @@ class FirebaseDB {
     required List<Map<String, dynamic>> deck,
     bool forSeriesContinue = false,
   }) async {
-    await _roomRef.update({
+    final updates = <String, dynamic>{
       'players': players,
       'playerCards': playerCards,
       'playerHands': playerHands,
@@ -149,7 +149,17 @@ class FirebaseDB {
       'lastPlayerId': null,
       'isDrawCompetitive': false,
       'deckResetAt': null,
-    });
+    };
+
+    if (!forSeriesContinue) {
+      updates['completedMatches'] = 0;
+      updates['seriesNextMatchAt'] = null;
+      updates['seriesRestarting'] = false;
+      updates['seriesPlayerIds'] = null;
+      updates['playerPoints'] = {for (final p in players) p: 0};
+    }
+
+    await _roomRef.update(updates);
   }
 
   /// シリーズ対戦の次の1戦を、ロビー経由せず1回の更新で開始する

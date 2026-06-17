@@ -12,9 +12,20 @@ class RoomConfig {
   static const int defaultMatchCount = 1;
 
   static int resolveMatchCount(dynamic value) {
-    if (value is int && matchCountOptions.contains(value)) return value;
-    if (value is int && value >= 1) return value;
+    if (value is num) {
+      final n = value.round();
+      if (matchCountOptions.contains(n)) return n;
+      if (n >= 1) return n;
+    }
     return defaultMatchCount;
+  }
+
+  static int resolveNonNegativeInt(dynamic value, {int fallback = 0}) {
+    if (value is num) {
+      final n = value.round();
+      if (n >= 0) return n;
+    }
+    return fallback;
   }
 
   /// シリーズ中、次の対戦を始めるまでの秒数
