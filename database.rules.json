@@ -13,6 +13,15 @@
         ".write": "auth != null",
         ".validate": "newData.hasChildren(['rating', 'gamesPlayed']) && newData.child('rating').isNumber() && newData.child('gamesPlayed').isNumber()"
       }
+    },
+    "users": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        ".write": "auth != null && auth.uid == $userId",
+        "playerName": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
+        }
+      }
     }
   }
 }

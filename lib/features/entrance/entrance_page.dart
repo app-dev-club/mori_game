@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/room_config.dart';
 import '../../services/firebase_db.dart';
 import '../../services/rating_service.dart';
+import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
 
 class RoomCreationSettings {
@@ -29,28 +30,45 @@ class _EntrancePageState extends State<EntrancePage> {
   final TextEditingController _nameController = TextEditingController();
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
   final RatingService _ratingService = RatingService();
+  final UserProfileService _userProfileService = UserProfileService();
 
-  static const int _maxNameLength = 12;
+  static const int _maxNameLength = UserProfileService.maxPlayerNameLength;
   int? _myRating;
+  bool _namePrefilled = false;
 
   @override
   void initState() {
     super.initState();
     FirebaseDB.cleanupOldRooms();
-    _refreshMyRating();
+    _loadUserProfile();
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user == null) return;
-      _refreshMyRating();
       _ratingService.ensureBotRatings();
+      _refreshRating();
     });
   }
 
-  Future<void> _refreshMyRating() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+  Future<void> _loadUserProfile() async {
+    final uid = _userId;
     if (uid == null) {
       if (mounted) setState(() => _myRating = null);
       return;
     }
+
+    final playerName = await _userProfileService.getPlayerName(uid);
+    final rating = await _ratingService.getRating(uid);
+    if (!mounted) return;
+
+    if (!_namePrefilled && playerName != null && playerName.isNotEmpty) {
+      _nameController.text = playerName;
+      _namePrefilled = true;
+    }
+    setState(() => _myRating = rating);
+  }
+
+  Future<void> _refreshRating() async {
+    final uid = _userId;
+    if (uid == null) return;
     final rating = await _ratingService.getRating(uid);
     if (mounted) setState(() => _myRating = rating);
   }
@@ -78,15 +96,34 @@ class _EntrancePageState extends State<EntrancePage> {
     return trimmed;
   }
 
-  void _openRoom(
+  Future<String?> _validatedAndSavedPlayerName() async {
+    final playerName = _validatedPlayerName();
+    if (playerName == null) return null;
+
+    final uid = _userId;
+    if (uid != null) {
+      try {
+        await _userProfileService.savePlayerName(uid, playerName);
+      } catch (e) {
+        if (!mounted) return null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+        return null;
+      }
+    }
+    return playerName;
+  }
+
+  Future<void> _openRoom(
     String roomId, {
     required bool isPrivate,
     required String userId,
     int? maxPlayers,
     int? totalMatches,
-  }) {
-    final playerName = _validatedPlayerName();
-    if (playerName == null) return;
+  }) async {
+    final playerName = await _validatedAndSavedPlayerName();
+    if (playerName == null || !mounted) return;
 
     Navigator.push(
       context,
@@ -112,7 +149,7 @@ class _EntrancePageState extends State<EntrancePage> {
     if (settings == null || !mounted) return;
 
     final newRoomId = (Random().nextInt(9000) + 1000).toString();
-    _openRoom(
+    await _openRoom(
       newRoomId,
       isPrivate: isPrivate,
       userId: uid,
@@ -193,7 +230,7 @@ class _EntrancePageState extends State<EntrancePage> {
     final uid = _userId;
     if (uid == null) return;
 
-    final playerName = _validatedPlayerName();
+    final playerName = await _validatedAndSavedPlayerName();
     if (playerName == null) return;
 
     final db = FirebaseDB(roomId);
