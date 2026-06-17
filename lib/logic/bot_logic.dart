@@ -97,17 +97,7 @@ class BotLogic {
       return const BotDecision.none();
     }
 
-    if (canDeclareMori(
-      fieldNumber: fieldNumber,
-      hand: hand,
-      moriPhase: moriPhase,
-      lastPlayerId: lastPlayerId,
-      playerId: botId,
-    )) {
-      return const BotDecision.mori();
-    }
-
-    // 手札1枚のときはカードを出さずドローを優先（初期フェーズはドロー不可のため除く）
+    // 手札1枚のときはカードを出さない（割り込みも不可）。自分のターンならドローを優先する。
     if (!isInitialPhase && hand.length == 1) {
       final drawDecision = _tryDrawDecision(
         isInitialPhase: isInitialPhase,
@@ -119,6 +109,27 @@ class BotLogic {
         isDrawCompetitive: isDrawCompetitive,
       );
       if (drawDecision != null) return drawDecision;
+
+      if (canDeclareMori(
+        fieldNumber: fieldNumber,
+        hand: hand,
+        moriPhase: moriPhase,
+        lastPlayerId: lastPlayerId,
+        playerId: botId,
+      )) {
+        return const BotDecision.mori();
+      }
+      return const BotDecision.none();
+    }
+
+    if (canDeclareMori(
+      fieldNumber: fieldNumber,
+      hand: hand,
+      moriPhase: moriPhase,
+      lastPlayerId: lastPlayerId,
+      playerId: botId,
+    )) {
+      return const BotDecision.mori();
     }
 
     final playIndex = GameRules.findPlayableCardIndex(
