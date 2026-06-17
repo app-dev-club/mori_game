@@ -4,7 +4,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/room_config.dart';
 import '../../services/firebase_db.dart';
-import '../../services/firebase_auth_service.dart';
 import '../../services/rating_service.dart';
 import '../game/game_room_page.dart';
 
@@ -28,8 +27,6 @@ class EntrancePage extends StatefulWidget {
 class _EntrancePageState extends State<EntrancePage> {
   final TextEditingController _roomIdController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _authIdController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
   final RatingService _ratingService = RatingService();
 
@@ -42,10 +39,9 @@ class _EntrancePageState extends State<EntrancePage> {
     FirebaseDB.cleanupOldRooms();
     _refreshMyRating();
     FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null) return;
       _refreshMyRating();
-      if (user != null) {
-        _ratingService.ensureBotRatings();
-      }
+      _ratingService.ensureBotRatings();
     });
   }
 
@@ -63,155 +59,10 @@ class _EntrancePageState extends State<EntrancePage> {
   void dispose() {
     _roomIdController.dispose();
     _nameController.dispose();
-    _authIdController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<String?> _ensureSignedIn() async {
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
-    if (currentUid != null) return currentUid;
-
-    return showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        bool busy = false;
-        String? error;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> submit({
-              required bool isRegister,
-            }) async {
-              final navigator = Navigator.of(dialogContext);
-              final id = _authIdController.text;
-              final password = _passwordController.text;
-
-              if (!FirebaseAuthService.isValidId(id)) {
-                setDialogState(() {
-                  error = 'ユーザーIDは「3〜24文字」「半角英数字と_のみ」です。';
-                });
-                return;
-              }
-              if (password.length < 6) {
-                setDialogState(() {
-                  error = 'パスワードは6文字以上にしてください。';
-                });
-                return;
-              }
-
-              try {
-                setDialogState(() {
-                  busy = true;
-                  error = null;
-                });
-
-                if (isRegister) {
-                  await FirebaseAuthService.registerWithIdAndPassword(
-                    id: id,
-                    password: password,
-                  );
-                } else {
-                  await FirebaseAuthService.signInWithIdAndPassword(
-                    id: id,
-                    password: password,
-                  );
-                }
-
-                final uid = FirebaseAuth.instance.currentUser?.uid;
-                if (!mounted) return;
-                if (uid == null) {
-                  setDialogState(() => error = 'ログインに失敗しました。');
-                  return;
-                }
-                try {
-                  await _ratingService.ensureUserRating(uid, displayName: id);
-                } catch (e) {
-                  setDialogState(() {
-                    error = e.toString().contains('database.rules')
-                        ? '$e\n\nターミナルで次を実行してください:\nfirebase deploy --only database'
-                        : e.toString();
-                  });
-                  return;
-                }
-                if (!mounted) return;
-                navigator.pop(uid);
-              } catch (e) {
-                setDialogState(() {
-                  error = e.toString();
-                });
-              } finally {
-                setDialogState(() => busy = false);
-              }
-            }
-
-            return AlertDialog(
-              title: const Text('ログイン / 新規登録'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _authIdController,
-                      style: const TextStyle(color: Colors.black),
-                      decoration: const InputDecoration(
-                        labelText: 'ユーザーID',
-                        hintText: '例: mori_taro',
-                      ),
-                    ),
-                    TextField(
-                      controller: _passwordController,
-                      style: const TextStyle(color: Colors.black),
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'パスワード',
-                      ),
-                    ),
-                    if (error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        error!,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () {
-                          Navigator.of(dialogContext).pop(null);
-                        },
-                  child: const Text('キャンセル'),
-                ),
-                FilledButton(
-                  onPressed: busy ? null : () => submit(isRegister: true),
-                  child: busy
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('新規登録'),
-                ),
-                FilledButton.tonal(
-                  onPressed: busy ? null : () => submit(isRegister: false),
-                  child: busy
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('ログイン'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  String? get _userId => FirebaseAuth.instance.currentUser?.uid;
 
   String? _validatedPlayerName() {
     final trimmed = _nameController.text.trim();
@@ -254,8 +105,8 @@ class _EntrancePageState extends State<EntrancePage> {
 
   Future<void> _createRoom({required bool isPrivate}) async {
     if (_validatedPlayerName() == null) return;
-    final uid = await _ensureSignedIn();
-    if (uid == null || !mounted) return;
+    final uid = _userId;
+    if (uid == null) return;
 
     final settings = await _showRoomCreationDialog(isPrivate: isPrivate);
     if (settings == null || !mounted) return;
@@ -339,8 +190,8 @@ class _EntrancePageState extends State<EntrancePage> {
   Future<void> _joinRoom(String roomId) async {
     if (roomId.isEmpty) return;
 
-    final uid = await _ensureSignedIn();
-    if (uid == null || !mounted) return;
+    final uid = _userId;
+    if (uid == null) return;
 
     final playerName = _validatedPlayerName();
     if (playerName == null) return;
@@ -422,6 +273,13 @@ class _EntrancePageState extends State<EntrancePage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'ログアウト',
+            onPressed: () => FirebaseAuth.instance.signOut(),
+            icon: const Icon(Icons.logout, color: Colors.white70),
+          ),
+        ],
       ),
       body: Column(
         children: [
