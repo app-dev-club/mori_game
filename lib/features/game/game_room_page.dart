@@ -6,6 +6,7 @@ import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
 import '../../logic/scoring_rules.dart';
+import '../../services/rating_service.dart';
 import 'game_board_view.dart';
 
 class GameRoomPage extends StatefulWidget {
@@ -30,6 +31,7 @@ class GameRoomPage extends StatefulWidget {
 
 class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
   late final FirebaseDB _db;
+  late final RatingService _ratingService;
   StreamSubscription? _sub;
   String myId = '';
 
@@ -61,6 +63,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String _moriResolutionKey = '';
   bool _moriFinishRequested = false;
   String? _lastShownPointSummary;
+  String? _lastShownRatingSummary;
   bool hasDeclaredMori = false;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
@@ -141,6 +144,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
     _db = FirebaseDB(widget.roomId);
+    _ratingService = RatingService();
     myId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
     _init();
   }
@@ -488,6 +492,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     _appendPointSummaryFromData(data);
+    _appendRatingSummaryFromData(data);
 
     if (data['roomDismissedByHost'] == true && !isHost && !_isClosedDialogShown) {
       _isClosedDialogShown = true;
@@ -939,8 +944,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return;
     }
 
-    final botId = '${BotLogic.idPrefix}${DateTime.now().millisecondsSinceEpoch}';
-    final botName = BotLogic.nextBotName(playerIds);
+    final botId = BotLogic.nextBotId(playerIds);
+    final botName = BotLogic.botDisplayName(botId);
     final deckCopy = List<CardWidget>.from(deck);
     final botHand = <CardWidget>[];
     for (var i = 0; i < 5; i++) {
@@ -1382,6 +1387,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriGaeshiCount': null,
       'moriDeclarationFactors': null,
       'lastMatchPointSummary': null,
+      'seriesRatingApplied': null,
+      'seriesRatingSummary': null,
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
@@ -1962,7 +1969,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Future<void> _onHostPostGameEntered() async {
     await _applyMatchScoring();
     await _db.markPostGameStarted();
-    if (totalMatches <= 1) return;
+
+    final willCompleteSeries = totalMatches <= 1 || completedMatches + 1 >= totalMatches;
+
+    if (totalMatches <= 1) {
+      if (willCompleteSeries) await _applySeriesRatingUpdate();
+      return;
+    }
 
     final nextCompleted = completedMatches + 1;
     final deadline = DateTime.now().millisecondsSinceEpoch + RoomConfig.seriesNextMatchMs;
@@ -1987,10 +2000,62 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return;
     }
 
+    await _applySeriesRatingUpdate();
+
     if (!mounted) return;
     setState(() {
       _postGameMessage = '${_postGameMessage ?? ''}\n\n全$totalMatches戦が終了しました';
     });
+  }
+
+  void _appendRatingSummaryFromData(Map data) {
+    if (!_postGameEntered) return;
+    final summary = data['seriesRatingSummary'] as String?;
+    if (summary == null || summary.isEmpty || summary == _lastShownRatingSummary) return;
+    _lastShownRatingSummary = summary;
+
+    if (!mounted) return;
+    setState(() {
+      final base = _postGameMessage ?? '';
+      if (!base.contains(summary)) {
+        _postGameMessage = base.isEmpty ? summary : '$base\n\n$summary';
+      }
+    });
+  }
+
+  Future<void> _applySeriesRatingUpdate() async {
+    if (!isHost) return;
+
+    final roster = seriesPlayerIds.isNotEmpty
+        ? List<String>.from(seriesPlayerIds)
+        : List<String>.from(playerIds);
+    if (roster.length < 2) return;
+
+    final finalPoints = Map<String, int>.from(playerPoints);
+    for (final pid in roster) {
+      finalPoints.putIfAbsent(pid, () => 0);
+    }
+
+    final displayNames = <String, String>{
+      for (final pid in roster) pid: _displayNameForRating(pid),
+    };
+
+    final result = await _ratingService.applySeriesRating(
+      roomId: widget.roomId,
+      participantIds: roster,
+      finalPoints: finalPoints,
+      displayNames: displayNames,
+    );
+
+    if (result == null || !mounted) return;
+    _appendRatingSummaryFromData({'seriesRatingSummary': result.summary});
+  }
+
+  String _displayNameForRating(String playerId) {
+    if (BotLogic.isBot(playerId)) return BotLogic.botDisplayName(playerId);
+    final name = playerNames[playerId];
+    if (name != null && name.isNotEmpty) return name;
+    return _displayName(playerId);
   }
 
   Future<void> _closeRoomAndExitLobby() async {

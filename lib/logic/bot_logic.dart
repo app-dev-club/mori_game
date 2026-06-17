@@ -22,10 +22,33 @@ class BotLogic {
 
   static bool isBot(String playerId) => playerId.startsWith(idPrefix);
 
-  static String nextBotName(Iterable<String> playerIds) {
-    final count = playerIds.where(isBot).length + 1;
-    return 'Bot $count';
+  static String botIdForSlot(int slot) => '$idPrefix$slot';
+
+  static int? slotFromBotId(String playerId) {
+    if (!isBot(playerId)) return null;
+    return int.tryParse(playerId.substring(idPrefix.length));
   }
+
+  static String botDisplayName(String botId) {
+    final slot = slotFromBotId(botId);
+    return slot != null ? 'Bot $slot' : 'Bot';
+  }
+
+  /// 未使用の bot_N ID を返す（bot_1, bot_2, …）
+  static String nextBotId(Iterable<String> playerIds) {
+    final usedSlots = playerIds
+        .where(isBot)
+        .map(slotFromBotId)
+        .whereType<int>()
+        .toSet();
+    for (var slot = 1; slot <= 64; slot++) {
+      if (!usedSlots.contains(slot)) return botIdForSlot(slot);
+    }
+    return botIdForSlot(usedSlots.length + 1);
+  }
+
+  static String nextBotName(Iterable<String> playerIds) =>
+      botDisplayName(nextBotId(playerIds));
 
   static bool canDeclareMori({
     required int fieldNumber,

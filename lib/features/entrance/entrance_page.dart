@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/room_config.dart';
 import '../../services/firebase_db.dart';
 import '../../services/firebase_auth_service.dart';
+import '../../services/rating_service.dart';
 import '../game/game_room_page.dart';
 
 class RoomCreationSettings {
@@ -30,13 +31,32 @@ class _EntrancePageState extends State<EntrancePage> {
   final TextEditingController _authIdController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
+  final RatingService _ratingService = RatingService();
 
   static const int _maxNameLength = 12;
+  int? _myRating;
 
   @override
   void initState() {
     super.initState();
     FirebaseDB.cleanupOldRooms();
+    _refreshMyRating();
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      _refreshMyRating();
+      if (user != null) {
+        _ratingService.ensureBotRatings();
+      }
+    });
+  }
+
+  Future<void> _refreshMyRating() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _myRating = null);
+      return;
+    }
+    final rating = await _ratingService.getRating(uid);
+    if (mounted) setState(() => _myRating = rating);
   }
 
   @override
@@ -105,6 +125,17 @@ class _EntrancePageState extends State<EntrancePage> {
                   setDialogState(() => error = 'ログインに失敗しました。');
                   return;
                 }
+                try {
+                  await _ratingService.ensureUserRating(uid, displayName: id);
+                } catch (e) {
+                  setDialogState(() {
+                    error = e.toString().contains('database.rules')
+                        ? '$e\n\nターミナルで次を実行してください:\nfirebase deploy --only database'
+                        : e.toString();
+                  });
+                  return;
+                }
+                if (!mounted) return;
                 navigator.pop(uid);
               } catch (e) {
                 setDialogState(() {
@@ -377,7 +408,17 @@ class _EntrancePageState extends State<EntrancePage> {
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
-        title: const Text('もり - オンラインロビー', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Column(
+          children: [
+            const Text('もり - オンラインロビー',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            if (_myRating != null)
+              Text(
+                'レート $_myRating',
+                style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
+              ),
+          ],
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,

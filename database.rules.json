@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": true,
+      "$roomId": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    },
+    "ratings": {
+      ".read": "auth != null",
+      "$playerId": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['rating', 'gamesPlayed']) && newData.child('rating').isNumber() && newData.child('gamesPlayed').isNumber()"
+      }
+    }
+  }
+}
