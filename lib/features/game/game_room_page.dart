@@ -266,7 +266,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerIds = List<String>.from(data['players'] ?? []);
       maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
       totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
-      completedMatches = data['completedMatches'] as int? ?? 0;
+      completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (data['seriesPlayerIds'] is List) {
         seriesPlayerIds = List<String>.from(
           (data['seriesPlayerIds'] as List).map((e) => e.toString()),
@@ -1658,6 +1658,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           .toList();
       _hasPlayedThisTurn = false;
       hasDeclaredMori = false;
+      if (!forSeriesContinue) {
+        completedMatches = 0;
+        seriesPlayerIds = [];
+        _lastMatchPointDeltas = {};
+        _seriesRatingDetails = {};
+        playerPoints = {for (final p in players) p: 0};
+        _seriesAutoContinueScheduled = false;
+        _seriesRestartInProgress = false;
+      }
     });
     if (!forSeriesContinue) {
       _showGameMessage('ルームを公開しました。参加者が揃ったら山札をめくってください。');
