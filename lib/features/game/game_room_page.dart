@@ -965,6 +965,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (isInitialPhase) _cancelInitialPhaseAutoFlipTimer();
     final hand = _botHand(botId);
     if (index < 0 || index >= hand.length) return;
+    if (!isInitialPhase && hand.length == 1) return;
 
     final card = hand[index];
     if (isInitialPhase) {

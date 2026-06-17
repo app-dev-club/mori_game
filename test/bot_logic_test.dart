@@ -77,6 +77,63 @@ void main() {
       expect(decision.type, BotActionType.draw);
     });
 
+    test('decideAction は手札1枚・場と同数字でも割り込み出ししない', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 0,
+        players: players,
+        botId: 'bot_1',
+        hand: [CardWidget(number: 3, suit: Suit.club)],
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+      );
+      expect(decision.type, BotActionType.none);
+    });
+
+    test('decideAction は手札1枚・相手ターンで同数字ならもりできる', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 0,
+        players: players,
+        botId: 'bot_1',
+        hand: [spade7],
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+      );
+      expect(decision.type, BotActionType.mori);
+    });
+
+    test('decideAction は手札1枚・自分のターンでは同数字でもドローする', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: [spade7],
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+      );
+      expect(decision.type, BotActionType.draw);
+    });
+
     test('decideAction は合法手があれば出す', () {
       final decision = BotLogic.decideAction(
         gameStarted: true,
