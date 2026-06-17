@@ -1142,8 +1142,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _onCardTap(int index) {
-    _cancelAutoPlayTimer();
-    if (isInitialPhase) _cancelInitialPhaseAutoFlipTimer();
     if (moriPhase == 'mori_declared') return;
     if (fieldNumber == -1) return;
 
@@ -1274,6 +1272,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _executePlay(List<CardWidget> cards) {
     if (cards.isEmpty) return;
+    _cancelAutoPlayTimer();
+    if (isInitialPhase) _cancelInitialPhaseAutoFlipTimer();
     int myIdx = playerIds.indexOf(myId);
     _hasPlayedThisTurn = true;
     setState(() { for (var c in cards) { myHand.removeWhere((h) => h.number == c.number && h.suit == c.suit); } });
