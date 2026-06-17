@@ -11,8 +11,17 @@ class CardWidget extends StatelessWidget {
   final int number;
   final Suit suit;
   final VoidCallback? onTap;
+  final double width;
+  final double height;
 
-  const CardWidget({super.key, required this.number, required this.suit, this.onTap});
+  const CardWidget({
+    super.key,
+    required this.number,
+    required this.suit,
+    this.onTap,
+    this.width = 60,
+    this.height = 90,
+  });
 
   String get displayNumber {
     if (suit == Suit.joker) return 'JOKER';
@@ -25,27 +34,34 @@ class CardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = width * 0.13;
+    final suitSize = width * 0.33;
+    final numberSize = suit == Suit.joker ? width * 0.2 : width * 0.33;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 60, height: 90,
+        width: width,
+        height: height,
         decoration: BoxDecoration(
-          color: Colors.white, 
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(radius),
           border: Border.all(color: Colors.black, width: 1),
-          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1))]
+          boxShadow: const [
+            BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+          ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildSuitIcon(),
+            _buildSuitIcon(suitSize),
             Text(
-              displayNumber, 
+              displayNumber,
               style: TextStyle(
-                fontSize: suit == Suit.joker ? 12 : 20, 
-                fontWeight: FontWeight.bold, 
-                color: Colors.black
-              )
+                fontSize: numberSize,
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+              ),
             ),
           ],
         ),
@@ -53,11 +69,51 @@ class CardWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildSuitIcon() {
-    if (suit == Suit.joker) return const Text('🤡', style: TextStyle(fontSize: 20));
+  Widget _buildSuitIcon(double size) {
+    if (suit == Suit.joker) return Text('🤡', style: TextStyle(fontSize: size));
     String mark = {Suit.spade: '♠', Suit.heart: '♥', Suit.diamond: '♦', Suit.club: '♣'}[suit]!;
     Color color = (suit == Suit.heart || suit == Suit.diamond) ? Colors.red : Colors.black;
-    return Text(mark, style: TextStyle(fontSize: 20, color: color));
+    return Text(mark, style: TextStyle(fontSize: size, color: color));
+  }
+}
+
+/// 手札を画面幅に収めるためのカード配置サイズ
+class HandCardLayout {
+  final double width;
+  final double height;
+  final double step;
+
+  const HandCardLayout({
+    required this.width,
+    required this.height,
+    required this.step,
+  });
+
+  double totalWidth(int count) {
+    if (count <= 0) return width;
+    return width + (count - 1) * step;
+  }
+
+  /// [availableWidth] に [count] 枚の手札が収まるサイズを返す（最大7枚想定）
+  static HandCardLayout compute(double availableWidth, int count) {
+    const maxWidth = 60.0;
+    const minWidth = 34.0;
+    const gap = 6.0;
+    const sidePadding = 12.0;
+
+    final n = count.clamp(1, 7);
+    final inner = (availableWidth - sidePadding).clamp(120.0, double.infinity);
+
+    final widthWithGap = (inner - (n - 1) * gap) / n;
+    if (widthWithGap >= minWidth) {
+      final w = widthWithGap.clamp(minWidth, maxWidth);
+      return HandCardLayout(width: w, height: w * 1.5, step: w + gap);
+    }
+
+    const visibleRatio = 0.5;
+    var w = inner / (1 + (n - 1) * visibleRatio);
+    w = w.clamp(minWidth, maxWidth);
+    return HandCardLayout(width: w, height: w * 1.5, step: w * visibleRatio);
   }
 }
 
@@ -420,19 +476,23 @@ class GameBoardView extends StatelessWidget {
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
           ),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 90,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: moriRevealedHand.length,
-              itemBuilder: (_, i) => Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: CardWidget(
-                  number: moriRevealedHand[i].number,
-                  suit: moriRevealedHand[i].suit,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final layout = HandCardLayout.compute(
+                constraints.maxWidth,
+                moriRevealedHand.length,
+              );
+              return SizedBox(
+                height: layout.height + 4,
+                width: double.infinity,
+                child: Center(
+                  child: _buildOverlappingHandRow(
+                    cards: moriRevealedHand,
+                    layout: layout,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -621,6 +681,34 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
+  Widget _buildOverlappingHandRow({
+    required List<CardWidget> cards,
+    required HandCardLayout layout,
+    void Function(int index)? onTap,
+  }) {
+    if (cards.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      width: layout.totalWidth(cards.length),
+      height: layout.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: List.generate(cards.length, (i) {
+          return Positioned(
+            left: i * layout.step,
+            child: CardWidget(
+              width: layout.width,
+              height: layout.height,
+              number: cards[i].number,
+              suit: cards[i].suit,
+              onTap: onTap != null ? () => onTap(i) : null,
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
   Widget _buildMyHandSection(bool isMyTurn, {required bool inDrawCompetition}) {
     bool isBurstWarning = myHand.length >= 6;
     return Container(
@@ -644,7 +732,22 @@ class GameBoardView extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 5),
-        SizedBox(height: 100, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: myHand.length, itemBuilder: (c, i) => Padding(padding: const EdgeInsets.all(4), child: CardWidget(number: myHand[i].number, suit: myHand[i].suit, onTap: () => onCardTap(i))))),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final layout = HandCardLayout.compute(constraints.maxWidth, myHand.length);
+            return SizedBox(
+              height: layout.height + 8,
+              width: double.infinity,
+              child: Center(
+                child: _buildOverlappingHandRow(
+                  cards: myHand,
+                  layout: layout,
+                  onTap: onCardTap,
+                ),
+              ),
+            );
+          },
+        ),
       ]),
     );
   }
