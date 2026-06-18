@@ -65,6 +65,14 @@ class FirebaseDB {
   Future<DataSnapshot> getSnapshot() => _roomRef.get();
   Future<void> deleteRoom() => _roomRef.remove();
 
+  Future<void> joinAsSpectator(String spectatorId, String spectatorName) async {
+    await _roomRef.child('spectators/$spectatorId').set(spectatorName);
+  }
+
+  Future<void> leaveAsSpectator(String spectatorId) async {
+    await _roomRef.child('spectators/$spectatorId').remove();
+  }
+
   Future<void> setStayInRoom(String playerId) =>
       _roomRef.child('rematchReady/$playerId').set(true);
 

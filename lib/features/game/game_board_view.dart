@@ -393,6 +393,10 @@ class GameBoardView extends StatelessWidget {
   final int playerCount;
   final int maxPlayers;
   final bool gameStarted;
+  final bool isSpectator;
+  final Map<String, String> spectatorNames;
+  final String? spectatorViewLabel;
+  final ValueChanged<String>? onViewAsPlayerChanged;
   final String matchProgressLabel;
   final bool seriesAutoContinuing;
   final String? statusMessage;
@@ -427,6 +431,10 @@ class GameBoardView extends StatelessWidget {
     required this.playerCount,
     required this.maxPlayers,
     required this.gameStarted,
+    this.isSpectator = false,
+    this.spectatorNames = const {},
+    this.spectatorViewLabel,
+    this.onViewAsPlayerChanged,
     this.matchProgressLabel = '',
     this.seriesAutoContinuing = false,
     this.statusMessage,
@@ -455,7 +463,7 @@ class GameBoardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    bool canMori = GameRules.isValidMori(fieldNumber, myHand);
+    bool canMori = !isSpectator && GameRules.isValidMori(fieldNumber, myHand);
     if (moriPhase == 'none' && lastPlayerId == myId) canMori = false;
     bool isButtonEnabled = canMori && !moriDeclaredPlayerIds.contains(myId);
 
@@ -469,7 +477,9 @@ class GameBoardView extends StatelessWidget {
       handCount: myHand.length,
     );
     bool canDraw =
-        (isMyTurn || canDrawInCompetition) && GameRules.canDraw(myHand.length, lastDrawerId, myId);
+        !isSpectator &&
+        (isMyTurn || canDrawInCompetition) &&
+        GameRules.canDraw(myHand.length, lastDrawerId, myId);
     final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
       isDrawCompetitive: isDrawCompetitive,
       lastDrawerId: lastDrawerId,
@@ -481,7 +491,9 @@ class GameBoardView extends StatelessWidget {
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
         title: Text(
-          gameStarted
+          isSpectator
+              ? '観戦中 · ${_spectatorTitle()}'
+              : gameStarted
               ? (matchProgressLabel.isNotEmpty
                   ? '$matchProgressLabel · ルーム: $roomId'
                   : 'ルーム: $roomId')
@@ -491,6 +503,14 @@ class GameBoardView extends StatelessWidget {
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          if (isSpectator)
+            TextButton.icon(
+              onPressed: onLeaveToLobby,
+              icon: const Icon(Icons.logout, color: Colors.white70, size: 18),
+              label: const Text('退出', style: TextStyle(color: Colors.white70)),
+            ),
+        ],
       ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -512,6 +532,8 @@ class GameBoardView extends StatelessWidget {
         }) =>
             Column(
         children: [
+          if (isSpectator) _buildSpectatorPovBar(),
+          if (!isSpectator && spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
           if (!gameStarted)
             Container(
               width: double.infinity,
@@ -555,6 +577,7 @@ class GameBoardView extends StatelessWidget {
             deckKey: deckKey,
           ),
           const Spacer(),
+          if (!isSpectator)
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
             child: ElevatedButton(
@@ -570,6 +593,14 @@ class GameBoardView extends StatelessWidget {
               ),
             ),
           ),
+          if (isSpectator)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Text(
+                '観戦モード（操作不可）',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
+              ),
+            ),
           if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -596,6 +627,7 @@ class GameBoardView extends StatelessWidget {
             PostGameOverlay(
               summary: postGameSummary,
               isHost: isHost,
+              isSpectator: isSpectator,
               countdownSeconds: postGameCountdownSeconds,
               seriesAutoContinuing: seriesAutoContinuing,
               awaitingGuestStayResponses: awaitingGuestStayResponses,
@@ -613,6 +645,85 @@ class GameBoardView extends StatelessWidget {
       ),
           ),
           _buildSideBar(),
+        ],
+      ),
+    );
+  }
+
+  String _spectatorTitle() {
+    final viewLabel = spectatorViewLabel;
+    if (viewLabel != null && viewLabel.isNotEmpty) {
+      return '$viewLabel の視点 · ルーム: $roomId';
+    }
+    return 'ルーム: $roomId';
+  }
+
+  String _playerDisplayLabel(String playerId) {
+    final name = playerNames[playerId];
+    if (name != null && name.isNotEmpty) return name;
+    if (playerId.startsWith('bot_')) return 'Bot ${playerId.replaceFirst('bot_', '')}';
+    return 'プレイヤー';
+  }
+
+  Widget _buildSpectatorPovBar() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: Colors.blueGrey.shade900,
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          const Icon(Icons.visibility, color: Colors.lightBlueAccent, size: 20),
+          const Text(
+            '観戦中',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const Text('視点:', style: TextStyle(color: Colors.white70)),
+          DropdownButton<String>(
+            value: playerIds.contains(myId) ? myId : (playerIds.isNotEmpty ? playerIds.first : null),
+            dropdownColor: Colors.blueGrey.shade800,
+            underline: const SizedBox.shrink(),
+            style: const TextStyle(color: Colors.white),
+            items: playerIds
+                .map(
+                  (id) => DropdownMenuItem(
+                    value: id,
+                    child: Text(_playerDisplayLabel(id)),
+                  ),
+                )
+                .toList(),
+            onChanged: onViewAsPlayerChanged == null
+                ? null
+                : (value) {
+                    if (value != null) onViewAsPlayerChanged!(value);
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpectatorNoticeBanner() {
+    final labels = spectatorNames.values.where((n) => n.isNotEmpty).join('、');
+    final count = spectatorNames.length;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.indigo.shade900.withValues(alpha: 0.95),
+      child: Row(
+        children: [
+          const Icon(Icons.visibility, color: Colors.lightBlueAccent, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              labels.isNotEmpty
+                  ? '観戦中: $labels（$count人）'
+                  : '観戦者が $count 人います',
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
@@ -958,6 +1069,7 @@ class GameBoardView extends StatelessWidget {
 class PostGameOverlay extends StatelessWidget {
   final PostGameSummary? summary;
   final bool isHost;
+  final bool isSpectator;
   final int? countdownSeconds;
   final bool seriesAutoContinuing;
   final bool awaitingGuestStayResponses;
@@ -975,6 +1087,7 @@ class PostGameOverlay extends StatelessWidget {
     super.key,
     required this.summary,
     required this.isHost,
+    this.isSpectator = false,
     this.countdownSeconds,
     this.seriesAutoContinuing = false,
     required this.awaitingGuestStayResponses,
@@ -995,6 +1108,7 @@ class PostGameOverlay extends StatelessWidget {
   }
 
   String _subtitle() {
+    if (isSpectator) return '観戦を終了する場合はロビーへ戻ってください';
     if (seriesAutoContinuing) return 'まもなく次の対戦を開始します';
     if (awaitingGuestStayResponses) {
       if (isHost) return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人';
@@ -1134,6 +1248,14 @@ class PostGameOverlay extends StatelessWidget {
                   'シリーズ対戦中は自動的に次の対戦へ進みます',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white54, fontSize: headerSize),
+                )
+              else if (isSpectator)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: onLeaveToLobby,
+                    child: const Text('ロビーへ'),
+                  ),
                 )
               else if (awaitingGuestStayResponses) ...[
                 if (isHost)

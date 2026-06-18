@@ -22,6 +22,8 @@ class GameRoomPage extends StatefulWidget {
   final int? totalMatches;
   final int? turnTimeoutSeconds;
   final String? userId;
+  final bool isSpectator;
+  final String? initialViewAsPlayerId;
   const GameRoomPage({
     super.key,
     required this.roomId,
@@ -31,6 +33,8 @@ class GameRoomPage extends StatefulWidget {
     this.totalMatches,
     this.turnTimeoutSeconds,
     this.userId,
+    this.isSpectator = false,
+    this.initialViewAsPlayerId,
   });
   @override
   State<GameRoomPage> createState() => _GameRoomPageState();
@@ -124,8 +128,21 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   final Map<String, String> _botTimerKeys = {};
   final Random _botRandom = Random();
   bool _hideOpponentNames = false;
+  String? _viewAsPlayerId;
+  Map<String, String> spectatorNames = {};
+  Map<String, List<CardWidget>> _spectatorPlayerCards = {};
 
-  bool get isHost => myId == hostId;
+  bool get isSpectator => widget.isSpectator;
+
+  String get _povPlayerId {
+    if (!isSpectator) return myId;
+    if (_viewAsPlayerId != null && playerIds.contains(_viewAsPlayerId)) {
+      return _viewAsPlayerId!;
+    }
+    return playerIds.isNotEmpty ? playerIds.first : myId;
+  }
+
+  bool get isHost => !isSpectator && myId == hostId;
 
   int get _turnTimeoutMs => turnTimeoutSeconds * 1000;
 
@@ -177,7 +194,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   @override
   void dispose() {
-    if (!_isIntentionalLeave) _cleanupRoomOnLeave();
+    if (isSpectator) {
+      if (!_isIntentionalLeave) _db.leaveAsSpectator(myId);
+    } else if (!_isIntentionalLeave) {
+      _cleanupRoomOnLeave();
+    }
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _moriCountdownTimer?.cancel();
@@ -195,10 +216,55 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (isHost && (state == AppLifecycleState.paused || state == AppLifecycleState.detached)) _closeRoomForcefully();
+    if (!isSpectator && isHost && (state == AppLifecycleState.paused || state == AppLifecycleState.detached)) {
+      _closeRoomForcefully();
+    }
+  }
+
+  Future<void> _initSpectator() async {
+    final snap = await _db.getSnapshot();
+    if (!snap.exists) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showErrorDialog('ルームが見つかりません。'),
+      );
+      return;
+    }
+
+    final isStarted = snap.child('gameStarted').value == true;
+    if (!isStarted) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showErrorDialog('観戦できるのは進行中のゲームのみです。'),
+      );
+      return;
+    }
+
+    final players = List<String>.from(snap.child('players').value as List? ?? []);
+    if (players.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showErrorDialog('プレイヤーがいないため観戦できません。'),
+      );
+      return;
+    }
+
+    final initialView = widget.initialViewAsPlayerId;
+    _viewAsPlayerId = (initialView != null && players.contains(initialView))
+        ? initialView
+        : players.first;
+
+    await _db.joinAsSpectator(myId, widget.playerName);
+    FirebaseDatabase.instance
+        .ref('rooms/${widget.roomId}/spectators/$myId')
+        .onDisconnect()
+        .remove();
+
+    _sub = _db.roomStream.listen(_onData);
   }
 
   Future<void> _init() async {
+    if (isSpectator) {
+      await _initSpectator();
+      return;
+    }
     final snap = await _db.getSnapshot();
     if (!snap.exists) {
       List<CardWidget> fullDeck = _generateDeck()..shuffle();
@@ -292,6 +358,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           (data['playerNames'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
         );
       }
+      if (data['spectators'] is Map) {
+        spectatorNames = Map<String, String>.from(
+          (data['spectators'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
+        );
+      } else {
+        spectatorNames = {};
+      }
       if (data['playerPoints'] != null) {
         playerPoints = Map<String, int>.from(
           (data['playerPoints'] as Map).map(
@@ -307,20 +380,23 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       isDrawCompetitive = data['isDrawCompetitive'] == true;
       if (shouldNotifyDeckReset) _lastDeckResetAt = deckResetAt;
 
-      final int myIdx = playerIds.indexOf(myId);
+      final povId = _povPlayerId;
+      final int myIdx = playerIds.indexOf(povId);
       final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
       final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
         isDrawCompetitive: isDrawCompetitive,
         lastDrawerId: lastDrawerId,
         players: playerIds,
-        myId: myId,
+        myId: povId,
       );
-      if (inDrawCompetition) {
-        _hasPlayedThisTurn = false;
-      } else if (lastDrawerId == myId) {
-        _hasPlayedThisTurn = false;
-      } else if (isMyTurn && lastPlayerId != myId) {
-        _hasPlayedThisTurn = false;
+      if (!isSpectator) {
+        if (inDrawCompetition) {
+          _hasPlayedThisTurn = false;
+        } else if (lastDrawerId == povId) {
+          _hasPlayedThisTurn = false;
+        } else if (isMyTurn && lastPlayerId != povId) {
+          _hasPlayedThisTurn = false;
+        }
       }
 
       if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
@@ -335,13 +411,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           }
         });
         if (isHost) _allPlayerCards = parsedAll;
+        if (isSpectator) _spectatorPlayerCards = parsedAll;
         handCounts = {...handCounts, ...countsFromCards};
-        if (playerCards[myId] is List) {
-          myHand = parsedAll[myId] ?? _parseHandFromFirebase(playerCards[myId]);
+        final handOwnerId = isSpectator ? povId : myId;
+        if (playerCards[handOwnerId] is List) {
+          myHand = parsedAll[handOwnerId] ?? _parseHandFromFirebase(playerCards[handOwnerId]);
         }
       }
 
-      if (isHost) {
+      if (!isSpectator && isHost) {
         for (final botId in playerIds.where(BotLogic.isBot)) {
           final botIdx = playerIds.indexOf(botId);
           final botMyTurn =
@@ -460,6 +538,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       postGameEndedAt = data['postGameEndedAt'] as int?;
 
       if (!_isIntentionalLeave &&
+          !isSpectator &&
           !playerIds.contains(myId) &&
           !dataSeriesRestarting &&
           seriesNextMatchAt == null &&
@@ -567,10 +646,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       });
     }
 
-    _syncAutoPlayTimer();
-    _syncInitialPhaseAutoFlipTimer();
-    if (isHost) {
-      _syncAllBotTimers();
+    if (!isSpectator) {
+      _syncAutoPlayTimer();
+      _syncInitialPhaseAutoFlipTimer();
+      if (isHost) {
+        _syncAllBotTimers();
+      }
     }
   }
 
@@ -2116,19 +2197,34 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _cancelPostGameTimers();
     _sub?.cancel();
 
-    List<String> p = List<String>.from(playerIds)..remove(myId);
-    final updates = <String, dynamic>{
-      'players': p,
-      'playerHands/$myId': null,
-      'playerCards/$myId': null,
-      'playerNames/$myId': null,
-      'rematchReady/$myId': null,
-    };
-    await _db.updateGameStatus(updates);
+    if (isSpectator) {
+      await _db.leaveAsSpectator(myId);
+    } else {
+      List<String> p = List<String>.from(playerIds)..remove(myId);
+      final updates = <String, dynamic>{
+        'players': p,
+        'playerHands/$myId': null,
+        'playerCards/$myId': null,
+        'playerNames/$myId': null,
+        'rematchReady/$myId': null,
+      };
+      await _db.updateGameStatus(updates);
+    }
 
     if (!mounted) return;
     Navigator.popUntil(context, (r) => r.isFirst);
   }
+
+  void _onViewAsPlayerChanged(String playerId) {
+    if (!isSpectator || !playerIds.contains(playerId)) return;
+    setState(() {
+      _viewAsPlayerId = playerId;
+      myHand = List<CardWidget>.from(_spectatorPlayerCards[playerId] ?? []);
+    });
+  }
+
+  void _noopCardTap(int _) {}
+  void _noop() {}
 
   Future<void> _applySeriesRatingUpdate() async {
     if (!isHost) return;
@@ -2204,11 +2300,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     return PlayerDisplayName.resolve(
       playerId: playerId,
       playerIds: playerIds,
-      myId: myId,
+      myId: isSpectator ? _povPlayerId : myId,
       playerNames: playerNames,
       hostId: hostId,
       hideOpponentNames: _hideOpponentNames,
     );
+  }
+
+  String _spectatorViewLabel() {
+    final name = playerNames[_povPlayerId];
+    if (name != null && name.isNotEmpty) return name;
+    if (BotLogic.isBot(_povPlayerId)) return BotLogic.botDisplayName(_povPlayerId);
+    return 'プレイヤー';
   }
 
   void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
@@ -2216,7 +2319,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     return GameBoardView(
-      roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
+      roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: _povPlayerId,
       playerNames: playerNames,
       playerPoints: playerPoints,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
@@ -2225,6 +2328,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerCount: playerIds.length,
       maxPlayers: maxPlayers,
       gameStarted: gameStarted,
+      isSpectator: isSpectator,
+      spectatorNames: spectatorNames,
+      spectatorViewLabel: isSpectator ? _spectatorViewLabel() : null,
+      onViewAsPlayerChanged: isSpectator ? _onViewAsPlayerChanged : null,
       matchProgressLabel: _matchProgressLabel,
       seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
       statusMessage: _statusMessage,
@@ -2237,20 +2344,24 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       guestStayReadyCount: _guestStayReadyCount(),
       guestStayTotalCount: rematchEligiblePlayers.length,
       guestCountdownSeconds: _guestCountdownSeconds,
-      mustRespondToStay: !isHost &&
+      mustRespondToStay: !isSpectator &&
+          !isHost &&
           awaitingGuestStayResponses &&
           rematchEligiblePlayers.contains(myId) &&
           !myStayResponseSubmitted,
       myStayResponseSubmitted: myStayResponseSubmitted,
-      onHostRematch: _onHostRematchRequest,
-      onHostReturnToLobby: _onHostReturnToLobby,
-      onGuestStayInRoom: _onGuestStayInRoom,
+      onHostRematch: isSpectator ? _noop : _onHostRematchRequest,
+      onHostReturnToLobby: isSpectator ? _noop : _onHostReturnToLobby,
+      onGuestStayInRoom: isSpectator ? _noop : _onGuestStayInRoom,
       onLeaveToLobby: _leaveRoomToLobby,
-      canAddBot: isHost && !gameStarted && !RoomConfig.isRoomFull(playerIds.length, maxPlayers),
-      onAddBot: _addBot,
+      canAddBot: !isSpectator && isHost && !gameStarted && !RoomConfig.isRoomFull(playerIds.length, maxPlayers),
+      onAddBot: isSpectator ? null : _addBot,
       hideOpponentNames: _hideOpponentNames,
       onToggleHideOpponentNames: _toggleHideOpponentNames,
-      onCardTap: _onCardTap, onMori: _onMori, onDraw: _onDraw, onFlip: _onFlip,
+      onCardTap: isSpectator ? _noopCardTap : _onCardTap,
+      onMori: isSpectator ? _noop : _onMori,
+      onDraw: isSpectator ? _noop : _onDraw,
+      onFlip: isSpectator ? _noop : _onFlip,
     );
   }
 }
