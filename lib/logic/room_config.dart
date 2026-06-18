@@ -11,6 +11,20 @@ class RoomConfig {
 
   static const int defaultMatchCount = 1;
 
+  /// ルーム作成時に選べる1手あたりの持ち時間（秒）
+  static const List<int> turnTimeoutOptions = [3, 5, 7, 10, 15];
+
+  static const int defaultTurnTimeoutSeconds = 10;
+
+  static int resolveTurnTimeoutSeconds(dynamic value) {
+    if (value is num) {
+      final n = value.round();
+      if (turnTimeoutOptions.contains(n)) return n;
+      if (n >= 3 && n <= 120) return n;
+    }
+    return defaultTurnTimeoutSeconds;
+  }
+
   static int resolveMatchCount(dynamic value) {
     if (value is num) {
       final n = value.round();
@@ -53,15 +67,10 @@ class RoomConfig {
   static int get hostRematchDecisionMs => hostRematchDecisionSeconds * 1000;
   static int get guestRematchResponseMs => guestRematchResponseSeconds * 1000;
 
-  /// 1手の持ち時間（秒）。超過時は自動で合法手またはドロー
-  static const int autoPlayTimeoutSeconds = 10;
+  /// 1手の持ち時間（秒）のデフォルト。ルームごとに [turnTimeoutSeconds] で上書きされる
+  static const int autoPlayTimeoutSeconds = defaultTurnTimeoutSeconds;
 
   static int get autoPlayTimeoutMs => autoPlayTimeoutSeconds * 1000;
-
-  /// Botの操作までの目安（実際の遅延は持ち時間内でランダム）
-  static const int botActionTimeoutSeconds = 2;
-
-  static int get botActionTimeoutMs => botActionTimeoutSeconds * 1000;
 
   /// 初期フェーズで誰も出せないとき、次の山札を自動でめくるまでの秒数
   static const int initialPhaseAutoFlipSeconds = 5;

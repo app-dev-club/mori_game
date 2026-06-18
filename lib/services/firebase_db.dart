@@ -19,6 +19,7 @@ class FirebaseDB {
     required String playerName,
     required int maxPlayers,
     required int totalMatches,
+    required int turnTimeoutSeconds,
     required List<Map<String, dynamic>> deckIndex,
     required List<Map<String, dynamic>> initialHand,
   }) async {
@@ -27,6 +28,7 @@ class FirebaseDB {
       'players': [myId],
       'maxPlayers': maxPlayers,
       'totalMatches': totalMatches,
+      'turnTimeoutSeconds': turnTimeoutSeconds,
       'completedMatches': 0,
       'playerNames': {myId: playerName},
       'playerHands': {myId: 5},

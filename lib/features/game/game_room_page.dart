@@ -20,6 +20,7 @@ class GameRoomPage extends StatefulWidget {
   final String playerName;
   final int? maxPlayers;
   final int? totalMatches;
+  final int? turnTimeoutSeconds;
   final String? userId;
   const GameRoomPage({
     super.key,
@@ -28,6 +29,7 @@ class GameRoomPage extends StatefulWidget {
     required this.playerName,
     this.maxPlayers,
     this.totalMatches,
+    this.turnTimeoutSeconds,
     this.userId,
   });
   @override
@@ -94,6 +96,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool postGameActive = false;
   int maxPlayers = RoomConfig.defaultMaxPlayers;
   int totalMatches = RoomConfig.defaultMatchCount;
+  int turnTimeoutSeconds = RoomConfig.defaultTurnTimeoutSeconds;
   int completedMatches = 0;
   List<String> seriesPlayerIds = [];
   bool gameStarted = false;
@@ -123,6 +126,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool _hideOpponentNames = false;
 
   bool get isHost => myId == hostId;
+
+  int get _turnTimeoutMs => turnTimeoutSeconds * 1000;
 
   bool get _isActiveGameplay =>
       gameStarted && !postGameActive && !awaitingGuestStayResponses;
@@ -206,11 +211,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         playerName: widget.playerName,
         maxPlayers: widget.maxPlayers ?? RoomConfig.defaultMaxPlayers,
         totalMatches: widget.totalMatches ?? RoomConfig.defaultMatchCount,
+        turnTimeoutSeconds:
+            widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
       maxPlayers = widget.maxPlayers ?? RoomConfig.defaultMaxPlayers;
       totalMatches = widget.totalMatches ?? RoomConfig.defaultMatchCount;
+      turnTimeoutSeconds =
+          widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds;
       FirebaseDatabase.instance.ref('rooms/${widget.roomId}').onDisconnect().update({'roomStatus': 'closed'});
       setState(() => myHand = hand);
     } else {
@@ -268,6 +277,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerIds = List<String>.from(data['players'] ?? []);
       maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
       totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
+      turnTimeoutSeconds = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
       completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (data['seriesPlayerIds'] is List) {
         seriesPlayerIds = List<String>.from(
@@ -782,15 +792,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _autoPlayTimerKey = key;
     _autoPlayTimer?.cancel();
     _autoPlayCountdownTimer?.cancel();
-    _autoPlayDeadlineMs = DateTime.now().millisecondsSinceEpoch + RoomConfig.autoPlayTimeoutMs;
-    _autoPlayCountdownSeconds = RoomConfig.autoPlayTimeoutSeconds;
-    _autoPlayTimer = Timer(Duration(milliseconds: RoomConfig.autoPlayTimeoutMs), _performAutoPlay);
+    _autoPlayDeadlineMs = DateTime.now().millisecondsSinceEpoch + _turnTimeoutMs;
+    _autoPlayCountdownSeconds = turnTimeoutSeconds;
+    _autoPlayTimer = Timer(Duration(milliseconds: _turnTimeoutMs), _performAutoPlay);
     _autoPlayCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       _updateAutoPlayCountdown();
     });
     if (mounted) {
-      setState(() => _autoPlayCountdownSeconds = RoomConfig.autoPlayTimeoutSeconds);
+      setState(() => _autoPlayCountdownSeconds = turnTimeoutSeconds);
     }
   }
 
@@ -907,7 +917,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   int _botActionDelayMs({required bool moriDeclaredPhase}) {
-    final maxMs = moriDeclaredPhase ? _moriBotDelayMaxMs() : RoomConfig.autoPlayTimeoutMs;
+    final maxMs = moriDeclaredPhase ? _moriBotDelayMaxMs() : _turnTimeoutMs;
     return BotLogic.randomActionDelayMs(maxMs: maxMs, random: _botRandom);
   }
 
@@ -916,7 +926,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final remaining = _moriResolutionDeadlineMs != null
         ? _moriResolutionDeadlineMs! - DateTime.now().millisecondsSinceEpoch
         : RoomConfig.moriResolutionMs;
-    return remaining.clamp(minMs, RoomConfig.moriResolutionMs);
+    return remaining.clamp(minMs, _turnTimeoutMs);
   }
 
   void _syncBotTimer(String botId) {
