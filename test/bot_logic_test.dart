@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mori_game/features/game/game_board_view.dart';
 import 'package:mori_game/logic/bot_logic.dart';
@@ -45,6 +47,41 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('canDeclareMoriGaeshi はもり宣言中に有効な手札ならもり返しできる', () {
+      expect(
+        BotLogic.canDeclareMoriGaeshi(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'mori_declared',
+          lastMoriPlayerId: 'host',
+          playerId: 'bot_1',
+        ),
+        isTrue,
+      );
+      expect(
+        BotLogic.canDeclareMoriGaeshi(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'mori_declared',
+          lastMoriPlayerId: 'bot_1',
+          playerId: 'bot_1',
+        ),
+        isFalse,
+      );
+    });
+
+    test('randomActionDelayMs は指定範囲内の値を返す', () {
+      final random = Random(0);
+      for (var i = 0; i < 20; i++) {
+        final delay = BotLogic.randomActionDelayMs(
+          maxMs: 10_000,
+          minMs: 400,
+          random: random,
+        );
+        expect(delay, inInclusiveRange(400, 10_000));
+      }
     });
 
     test('decideAction はもりを最優先する', () {
