@@ -313,6 +313,50 @@ class _EntrancePageState extends State<EntrancePage> {
     return '待機中: $countLabel（$labels）';
   }
 
+  bool _isPublicRoomVisible(Map data) {
+    if (data['isPrivate'] == true) return false;
+    if (data['roomDismissedByHost'] == true) return false;
+
+    final players = data['players'] as List?;
+    if (players == null || players.isEmpty) return false;
+
+    final isStarted = data['gameStarted'] == true;
+    final status = data['roomStatus'] as String? ?? 'open';
+
+    if (isStarted) return true;
+    if (!isStarted && status == 'open') return true;
+    return false;
+  }
+
+  String _roomListSubtitle(Map data) {
+    final players = data['players'] as List? ?? [];
+    final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+    final countLabel = '${players.length}/$maxPlayers 人';
+    final isStarted = data['gameStarted'] == true;
+    final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
+
+    if (isStarted) {
+      final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
+      final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
+      if (totalMatches > 1) {
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦';
+      }
+      return '対戦中: $countLabel';
+    }
+    if (isFull) return '満員（$countLabel）';
+    return _formatRoomPlayers(data);
+  }
+
+  int _roomListSortOrder(Map data) {
+    final isStarted = data['gameStarted'] == true;
+    if (isStarted) return 2;
+
+    final players = data['players'] as List? ?? [];
+    final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+    if (RoomConfig.isRoomFull(players.length, maxPlayers)) return 1;
+    return 0;
+  }
+
   void _openRanking() {
     Navigator.push(
       context,
@@ -385,68 +429,116 @@ class _EntrancePageState extends State<EntrancePage> {
           const Divider(color: Colors.white24, indent: 40, endIndent: 40),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 10),
-            child: Text('募集中（公開ルーム）', style: TextStyle(color: Colors.white70, fontSize: 16)),
+            child: Text('公開ルーム', style: TextStyle(color: Colors.white70, fontSize: 16)),
           ),
           Expanded(
             child: StreamBuilder(
               stream: _roomsRef.onValue,
               builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
                 if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                  return const Center(child: Text('募集中の部屋はありません', style: TextStyle(color: Colors.white38)));
+                  return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
                 }
 
                 Map rooms = snapshot.data!.snapshot.value as Map;
 
-                List<MapEntry> activeRooms = rooms.entries.where((e) {
-                  final data = e.value as Map;
-                  bool isPrivate = data['isPrivate'] == true;
-                  bool isStarted = data['gameStarted'] == true;
-                  bool isClosed = data['roomStatus'] == 'closed';
-                  bool hasPlayers = data['players'] != null && (data['players'] as List).isNotEmpty;
+                List<MapEntry> publicRooms = rooms.entries
+                    .where((e) => _isPublicRoomVisible(e.value as Map))
+                    .toList()
+                  ..sort((a, b) {
+                    final order = _roomListSortOrder(a.value as Map)
+                        .compareTo(_roomListSortOrder(b.value as Map));
+                    if (order != 0) return order;
+                    return a.key.toString().compareTo(b.key.toString());
+                  });
 
-                  return !isPrivate && !isStarted && !isClosed && hasPlayers;
-                }).toList();
-
-                if (activeRooms.isEmpty) {
-                  return const Center(child: Text('募集中の部屋はありません', style: TextStyle(color: Colors.white38)));
+                if (publicRooms.isEmpty) {
+                  return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
                 }
 
                 return ListView.builder(
-                  itemCount: activeRooms.length,
+                  itemCount: publicRooms.length,
                   itemBuilder: (context, index) {
-                    final entry = activeRooms[index];
+                    final entry = publicRooms[index];
                     String rid = entry.key.toString();
                     final data = entry.value as Map;
                     final players = data['players'] as List? ?? [];
                     final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+                    final isStarted = data['gameStarted'] == true;
                     final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
+                    final canJoin = !isStarted && !isFull;
+
+                    final Color cardColor;
+                    final Color titleColor;
+                    final IconData leadingIcon;
+                    final Color leadingColor;
+                    final String? statusBadge;
+
+                    if (isStarted) {
+                      cardColor = Colors.blue.withValues(alpha: 0.12);
+                      titleColor = Colors.white;
+                      leadingIcon = Icons.sports_esports;
+                      leadingColor = Colors.lightBlueAccent;
+                      statusBadge = '対戦中';
+                    } else if (isFull) {
+                      cardColor = Colors.orange.withValues(alpha: 0.12);
+                      titleColor = Colors.white;
+                      leadingIcon = Icons.groups;
+                      leadingColor = Colors.orangeAccent;
+                      statusBadge = '満員';
+                    } else {
+                      cardColor = Colors.white.withValues(alpha: 0.1);
+                      titleColor = Colors.white;
+                      leadingIcon = Icons.meeting_room;
+                      leadingColor = Colors.orangeAccent;
+                      statusBadge = null;
+                    }
 
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                      color: Colors.white.withValues(alpha: isFull ? 0.05 : 0.1),
+                      color: cardColor,
                       child: ListTile(
-                        leading: Icon(
-                          isFull ? Icons.block : Icons.meeting_room,
-                          color: isFull ? Colors.white38 : Colors.orangeAccent,
-                        ),
-                        title: Text(
-                          'ルームID: $rid',
-                          style: TextStyle(
-                            color: isFull ? Colors.white38 : Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        leading: Icon(leadingIcon, color: leadingColor),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'ルームID: $rid',
+                                style: TextStyle(
+                                  color: titleColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (statusBadge != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: leadingColor.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: leadingColor.withValues(alpha: 0.6)),
+                                ),
+                                child: Text(
+                                  statusBadge,
+                                  style: TextStyle(
+                                    color: leadingColor,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                         subtitle: Text(
-                          isFull ? '満員（${players.length}/$maxPlayers 人）' : _formatRoomPlayers(data),
-                          style: TextStyle(color: isFull ? Colors.white38 : Colors.white70),
+                          _roomListSubtitle(data),
+                          style: const TextStyle(color: Colors.white70),
                         ),
                         trailing: Icon(
-                          isFull ? Icons.person_off : Icons.arrow_forward_ios,
-                          color: isFull ? Colors.white38 : Colors.white,
+                          canJoin ? Icons.arrow_forward_ios : Icons.visibility,
+                          color: canJoin ? Colors.white : Colors.white54,
                           size: 16,
                         ),
-                        enabled: !isFull,
-                        onTap: isFull ? null : () => _joinRoom(rid),
+                        enabled: canJoin,
+                        onTap: canJoin ? () => _joinRoom(rid) : null,
                       ),
                     );
                   },
