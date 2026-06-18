@@ -384,7 +384,8 @@ class GameBoardView extends StatelessWidget {
   final Map<String, String> playerNames;
   final Map<String, int> playerPoints;
   final Map<String, int> handCounts;
-  final bool isHost, isInitialPhase, hasDeclaredMori;
+  final bool isHost, isInitialPhase;
+  final List<String> moriDeclaredPlayerIds;
   final String? hostId, lastPlayerId, lastDrawerId, lastMoriPlayerId;
   final bool isDrawCompetitive;
   final List<CardWidget> moriRevealedHand;
@@ -422,7 +423,7 @@ class GameBoardView extends StatelessWidget {
     required this.myHand, required this.playerIds, required this.playerNames, required this.playerPoints, required this.myId, required this.handCounts,
     required this.currentTurnIndex, required this.isHost, this.hostId, this.lastPlayerId, this.lastDrawerId,
     required this.isDrawCompetitive,
-    required this.isInitialPhase, required this.moriPhase, required this.hasDeclaredMori,
+    required this.isInitialPhase, required this.moriPhase, required this.moriDeclaredPlayerIds,
     required this.playerCount,
     required this.maxPlayers,
     required this.gameStarted,
@@ -456,7 +457,7 @@ class GameBoardView extends StatelessWidget {
   Widget build(BuildContext context) {
     bool canMori = GameRules.isValidMori(fieldNumber, myHand);
     if (moriPhase == 'none' && lastPlayerId == myId) canMori = false;
-    bool isButtonEnabled = canMori && !hasDeclaredMori;
+    bool isButtonEnabled = canMori && !moriDeclaredPlayerIds.contains(myId);
 
     int myIdx = playerIds.indexOf(myId);
     bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);

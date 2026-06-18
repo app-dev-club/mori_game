@@ -34,6 +34,7 @@ void main() {
           moriPhase: 'none',
           lastPlayerId: 'host',
           playerId: 'bot_1',
+          moriDeclaredPlayerIds: const [],
         ),
         isTrue,
       );
@@ -44,6 +45,21 @@ void main() {
           moriPhase: 'none',
           lastPlayerId: 'system',
           playerId: 'bot_1',
+          moriDeclaredPlayerIds: const [],
+        ),
+        isFalse,
+      );
+    });
+
+    test('canDeclareMori はもう宣言済みのプレイヤーは不可', () {
+      expect(
+        BotLogic.canDeclareMori(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'none',
+          lastPlayerId: 'host',
+          playerId: 'bot_1',
+          moriDeclaredPlayerIds: const ['bot_1'],
         ),
         isFalse,
       );
@@ -57,6 +73,7 @@ void main() {
           moriPhase: 'mori_declared',
           lastMoriPlayerId: 'host',
           playerId: 'bot_1',
+          moriDeclaredPlayerIds: const ['host'],
         ),
         isTrue,
       );
@@ -67,6 +84,21 @@ void main() {
           moriPhase: 'mori_declared',
           lastMoriPlayerId: 'bot_1',
           playerId: 'bot_1',
+          moriDeclaredPlayerIds: const ['bot_1'],
+        ),
+        isFalse,
+      );
+    });
+
+    test('canDeclareMoriGaeshi はもう宣言済みのプレイヤーは不可', () {
+      expect(
+        BotLogic.canDeclareMoriGaeshi(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'mori_declared',
+          lastMoriPlayerId: 'host',
+          playerId: 'bot_1',
+          moriDeclaredPlayerIds: const ['host', 'bot_1'],
         ),
         isFalse,
       );
@@ -99,6 +131,7 @@ void main() {
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
       );
       expect(decision.type, BotActionType.mori);
     });
@@ -118,6 +151,7 @@ void main() {
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
       );
       expect(decision.type, BotActionType.draw);
     });
@@ -137,6 +171,7 @@ void main() {
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
       );
       expect(decision.type, BotActionType.none);
     });
@@ -156,6 +191,7 @@ void main() {
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
       );
       expect(decision.type, BotActionType.mori);
     });
@@ -175,6 +211,7 @@ void main() {
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
       );
       expect(decision.type, BotActionType.draw);
     });
@@ -194,6 +231,7 @@ void main() {
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
         lastPlayerId: 'bot_1',
+        moriDeclaredPlayerIds: const [],
       );
       expect(decision.type, BotActionType.play);
       expect(decision.cardIndex, 0);
