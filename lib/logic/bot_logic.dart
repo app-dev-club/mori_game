@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../features/game/game_board_view.dart';
 import 'game_rules.dart';
 
@@ -64,6 +66,30 @@ class BotLogic {
     return GameRules.isValidMori(fieldNumber, hand);
   }
 
+  static bool canDeclareMoriGaeshi({
+    required int fieldNumber,
+    required List<CardWidget> hand,
+    required String moriPhase,
+    required String? lastMoriPlayerId,
+    required String playerId,
+  }) {
+    if (moriPhase != 'mori_declared' || fieldNumber == -1) return false;
+    if (lastMoriPlayerId == null || lastMoriPlayerId == playerId) return false;
+    return GameRules.isValidMori(fieldNumber, hand);
+  }
+
+  /// 持ち時間内でランダムな操作遅延（ミリ秒）を返す
+  static int randomActionDelayMs({
+    required int maxMs,
+    int minMs = 400,
+    Random? random,
+  }) {
+    final rng = random ?? Random();
+    final cappedMax = maxMs < minMs ? minMs : maxMs;
+    if (cappedMax <= minMs) return minMs;
+    return minMs + rng.nextInt(cappedMax - minMs + 1);
+  }
+
   static bool shouldBotAct({
     required bool gameStarted,
     required bool isInitialPhase,
@@ -78,9 +104,19 @@ class BotLogic {
     required bool hasPlayedThisTurn,
     required Suit fieldSuit,
     required String? lastPlayerId,
+    required String? lastMoriPlayerId,
   }) {
     if (!gameStarted || fieldNumber == -1) return false;
-    if (moriPhase == 'mori_declared' || moriPhase == 'finished') return false;
+    if (moriPhase == 'finished') return false;
+    if (moriPhase == 'mori_declared') {
+      return canDeclareMoriGaeshi(
+        fieldNumber: fieldNumber,
+        hand: hand,
+        moriPhase: moriPhase,
+        lastMoriPlayerId: lastMoriPlayerId,
+        playerId: botId,
+      );
+    }
     return decideAction(
       gameStarted: gameStarted,
       isInitialPhase: isInitialPhase,
@@ -234,9 +270,11 @@ class BotLogic {
     required String moriPhase,
     required String handSignature,
     required String? lastPlayerId,
+    required String? lastMoriPlayerId,
+    required int moriGaeshiCount,
   }) {
     return '$botId|$currentTurnIndex|$lastDrawerId|$isDrawCompetitive|$fieldNumber|'
         '${fieldSuit.name}|$isInitialPhase|$hasPlayedThisTurn|$handLength|$moriPhase|'
-        '$lastPlayerId|$handSignature';
+        '$lastPlayerId|$lastMoriPlayerId|$moriGaeshiCount|$handSignature';
   }
 }

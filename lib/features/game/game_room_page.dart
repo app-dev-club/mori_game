@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
+import 'dart:math';
 import '../../services/firebase_db.dart';
 import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
@@ -118,6 +119,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   final Map<String, bool> _botHasPlayedThisTurn = {};
   final Map<String, Timer> _botTimers = {};
   final Map<String, String> _botTimerKeys = {};
+  final Random _botRandom = Random();
   bool _hideOpponentNames = false;
 
   bool get isHost => myId == hostId;
@@ -674,6 +676,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final key = _moriResolutionKeyFromState();
     if (key == '|') return;
     _beginMoriResolutionCountdown(key);
+    if (isHost) _syncAllBotTimers();
   }
 
   bool _shouldStartInitialPhaseAutoFlip() {
@@ -888,6 +891,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         hasPlayedThisTurn: _botHasPlayedThisTurn[botId] ?? false,
         fieldSuit: fieldSuit,
         lastPlayerId: lastPlayerId,
+        lastMoriPlayerId: lastMoriPlayerId,
       )) {
         activeBotIds.add(botId);
       }
@@ -900,6 +904,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     for (final botId in activeBotIds) {
       _syncBotTimer(botId);
     }
+  }
+
+  int _botActionDelayMs({required bool moriDeclaredPhase}) {
+    final maxMs = moriDeclaredPhase ? _moriBotDelayMaxMs() : RoomConfig.autoPlayTimeoutMs;
+    return BotLogic.randomActionDelayMs(maxMs: maxMs, random: _botRandom);
+  }
+
+  int _moriBotDelayMaxMs() {
+    const minMs = 400;
+    final remaining = _moriResolutionDeadlineMs != null
+        ? _moriResolutionDeadlineMs! - DateTime.now().millisecondsSinceEpoch
+        : RoomConfig.moriResolutionMs;
+    return remaining.clamp(minMs, RoomConfig.moriResolutionMs);
   }
 
   void _syncBotTimer(String botId) {
@@ -917,13 +934,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       moriPhase: moriPhase,
       handSignature: hand.map((c) => '${c.number}${c.suit.name}').join(),
       lastPlayerId: lastPlayerId,
+      lastMoriPlayerId: lastMoriPlayerId,
+      moriGaeshiCount: moriGaeshiCount,
     );
     if (_botTimerKeys[botId] == key && _botTimers[botId] != null) return;
 
     _cancelBotTimer(botId);
     _botTimerKeys[botId] = key;
+    final delayMs = _botActionDelayMs(moriDeclaredPhase: moriPhase == 'mori_declared');
     _botTimers[botId] = Timer(
-      Duration(milliseconds: RoomConfig.botActionTimeoutMs),
+      Duration(milliseconds: delayMs),
       () => _performBotAction(botId),
     );
   }
@@ -931,6 +951,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _performBotAction(String botId) {
     _cancelBotTimer(botId);
     if (!_shouldRunBotLogic() || !BotLogic.isBot(botId)) return;
+
+    if (moriPhase == 'mori_declared') {
+      _executeBotMoriGaeshi(botId);
+      return;
+    }
 
     final hand = _botHand(botId);
     final decision = BotLogic.decideAction(
@@ -1147,6 +1172,34 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriRevealedType': 'mori',
       'moriGaeshiCount': 0,
       'moriDeclarationFactors': [ScoringRules.handFactor(hand)],
+    });
+  }
+
+  void _executeBotMoriGaeshi(String botId) {
+    final hand = _botHand(botId);
+    if (!BotLogic.canDeclareMoriGaeshi(
+      fieldNumber: fieldNumber,
+      hand: hand,
+      moriPhase: moriPhase,
+      lastMoriPlayerId: lastMoriPlayerId,
+      playerId: botId,
+    )) {
+      return;
+    }
+
+    final previousMoriPlayerId = lastMoriPlayerId;
+    final nextGaeshiCount = moriGaeshiCount + 1;
+    final handFactor = ScoringRules.handFactor(hand);
+    final nextFactors = [...moriDeclarationFactors, handFactor];
+
+    _db.updateGameStatus({
+      'moriDeclaredAt': ServerValue.timestamp,
+      'lastMoriPlayerId': botId,
+      'loserPlayerId': previousMoriPlayerId,
+      'moriRevealedHand': _serializeHand(hand),
+      'moriRevealedType': 'gaeshi',
+      'moriGaeshiCount': nextGaeshiCount,
+      'moriDeclarationFactors': nextFactors,
     });
   }
 
