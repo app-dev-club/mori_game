@@ -12,7 +12,7 @@ class RoomConfig {
   static const int defaultMatchCount = 1;
 
   /// ルーム作成時に選べる1手あたりの持ち時間（秒）
-  static const List<int> turnTimeoutOptions = [3, 5, 7, 10, 15];
+  static const List<int> turnTimeoutOptions = [5, 7, 10, 15];
 
   static const int defaultTurnTimeoutSeconds = 10;
 
