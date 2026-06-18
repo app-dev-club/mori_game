@@ -14,10 +14,12 @@ import '../common/app_side_bar.dart';
 class RoomCreationSettings {
   final int maxPlayers;
   final int totalMatches;
+  final int turnTimeoutSeconds;
 
   const RoomCreationSettings({
     required this.maxPlayers,
     required this.totalMatches,
+    required this.turnTimeoutSeconds,
   });
 }
 
@@ -143,6 +145,7 @@ class _EntrancePageState extends State<EntrancePage> {
     required String userId,
     int? maxPlayers,
     int? totalMatches,
+    int? turnTimeoutSeconds,
   }) async {
     final playerName = await _validatedAndSavedPlayerName();
     if (playerName == null || !mounted) return;
@@ -157,6 +160,7 @@ class _EntrancePageState extends State<EntrancePage> {
           userId: userId,
           maxPlayers: maxPlayers,
           totalMatches: totalMatches,
+          turnTimeoutSeconds: turnTimeoutSeconds,
         ),
       ),
     );
@@ -177,12 +181,14 @@ class _EntrancePageState extends State<EntrancePage> {
       userId: uid,
       maxPlayers: settings.maxPlayers,
       totalMatches: settings.totalMatches,
+      turnTimeoutSeconds: settings.turnTimeoutSeconds,
     );
   }
 
   Future<RoomCreationSettings?> _showRoomCreationDialog({required bool isPrivate}) {
     int selectedMaxPlayers = RoomConfig.defaultMaxPlayers;
     int selectedMatchCount = RoomConfig.defaultMatchCount;
+    int selectedTurnTimeout = RoomConfig.defaultTurnTimeoutSeconds;
     final label = isPrivate ? '非公開ルーム' : '公開ルーム';
 
     return showDialog<RoomCreationSettings>(
@@ -224,6 +230,24 @@ class _EntrancePageState extends State<EntrancePage> {
                   if (value != null) setDialogState(() => selectedMatchCount = value);
                 },
               ),
+              const SizedBox(height: 20),
+              const Text('持ち時間を選んでください'),
+              const SizedBox(height: 8),
+              const Text(
+                '1手あたりの制限時間です。超過時は自動で合法手またはドローします。',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              DropdownButton<int>(
+                isExpanded: true,
+                value: selectedTurnTimeout,
+                items: RoomConfig.turnTimeoutOptions
+                    .map((n) => DropdownMenuItem(value: n, child: Text('$n 秒')))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedTurnTimeout = value);
+                },
+              ),
             ],
           ),
           actions: [
@@ -236,6 +260,7 @@ class _EntrancePageState extends State<EntrancePage> {
                 RoomCreationSettings(
                   maxPlayers: selectedMaxPlayers,
                   totalMatches: selectedMatchCount,
+                  turnTimeoutSeconds: selectedTurnTimeout,
                 ),
               ),
               child: const Text('ルームを作成'),
@@ -334,17 +359,19 @@ class _EntrancePageState extends State<EntrancePage> {
     final countLabel = '${players.length}/$maxPlayers 人';
     final isStarted = data['gameStarted'] == true;
     final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
+    final turnTimeout = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
+    final timeoutLabel = '持ち時間 $turnTimeout 秒';
 
     if (isStarted) {
       final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (totalMatches > 1) {
-        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦';
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel';
       }
-      return '対戦中: $countLabel';
+      return '対戦中: $countLabel · $timeoutLabel';
     }
-    if (isFull) return '満員（$countLabel）';
-    return _formatRoomPlayers(data);
+    if (isFull) return '満員（$countLabel） · $timeoutLabel';
+    return '${_formatRoomPlayers(data)} · $timeoutLabel';
   }
 
   int _roomListSortOrder(Map data) {

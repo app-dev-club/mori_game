@@ -22,5 +22,13 @@ void main() {
       expect(RoomConfig.resolveMatchCount(3.0), 3);
       expect(RoomConfig.resolveMatchCount(null), RoomConfig.defaultMatchCount);
     });
+
+    test('resolveTurnTimeoutSeconds は持ち時間を解決する', () {
+      expect(RoomConfig.resolveTurnTimeoutSeconds(15), 15);
+      expect(RoomConfig.resolveTurnTimeoutSeconds(15.0), 15);
+      expect(RoomConfig.resolveTurnTimeoutSeconds(null), RoomConfig.defaultTurnTimeoutSeconds);
+      expect(RoomConfig.resolveTurnTimeoutSeconds(2), RoomConfig.defaultTurnTimeoutSeconds);
+      expect(RoomConfig.resolveTurnTimeoutSeconds(121), RoomConfig.defaultTurnTimeoutSeconds);
+    });
   });
 }
