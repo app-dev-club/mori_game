@@ -662,15 +662,30 @@ class _EntrancePageState extends State<EntrancePage> {
                           _roomListSubtitle(data),
                           style: const TextStyle(color: Colors.white70),
                         ),
-                        trailing: Icon(
-                          canJoin ? Icons.arrow_forward_ios : Icons.visibility,
-                          color: canJoin ? Colors.white : Colors.lightBlueAccent,
-                          size: 16,
-                        ),
-                        enabled: canJoin || isStarted,
-                        onTap: canJoin
-                            ? () => _joinRoom(rid)
-                            : (isStarted ? () => _spectateRoom(rid, data) : null),
+                        trailing: isStarted
+                            ? TextButton(
+                                onPressed: () => _spectateRoom(rid, data),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.lightBlueAccent,
+                                  backgroundColor: Colors.lightBlueAccent.withValues(alpha: 0.15),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  '観戦',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              )
+                            : (canJoin
+                                ? const Icon(
+                                    Icons.arrow_forward_ios,
+                                    color: Colors.white,
+                                    size: 16,
+                                  )
+                                : null),
+                        enabled: canJoin,
+                        onTap: canJoin ? () => _joinRoom(rid) : null,
                       ),
                     );
                   },
