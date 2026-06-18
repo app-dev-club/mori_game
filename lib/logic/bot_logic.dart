@@ -58,8 +58,10 @@ class BotLogic {
     required String moriPhase,
     required String? lastPlayerId,
     required String playerId,
+    required List<String> moriDeclaredPlayerIds,
   }) {
     if (moriPhase != 'none' || fieldNumber == -1) return false;
+    if (moriDeclaredPlayerIds.contains(playerId)) return false;
     if (lastPlayerId == null || lastPlayerId == playerId || lastPlayerId == 'system') {
       return false;
     }
@@ -72,8 +74,10 @@ class BotLogic {
     required String moriPhase,
     required String? lastMoriPlayerId,
     required String playerId,
+    required List<String> moriDeclaredPlayerIds,
   }) {
     if (moriPhase != 'mori_declared' || fieldNumber == -1) return false;
+    if (moriDeclaredPlayerIds.contains(playerId)) return false;
     if (lastMoriPlayerId == null || lastMoriPlayerId == playerId) return false;
     return GameRules.isValidMori(fieldNumber, hand);
   }
@@ -105,6 +109,7 @@ class BotLogic {
     required Suit fieldSuit,
     required String? lastPlayerId,
     required String? lastMoriPlayerId,
+    required List<String> moriDeclaredPlayerIds,
   }) {
     if (!gameStarted || fieldNumber == -1) return false;
     if (moriPhase == 'finished') return false;
@@ -115,6 +120,7 @@ class BotLogic {
         moriPhase: moriPhase,
         lastMoriPlayerId: lastMoriPlayerId,
         playerId: botId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
       );
     }
     return decideAction(
@@ -131,6 +137,7 @@ class BotLogic {
       isDrawCompetitive: isDrawCompetitive,
       hasPlayedThisTurn: hasPlayedThisTurn,
       lastPlayerId: lastPlayerId,
+      moriDeclaredPlayerIds: moriDeclaredPlayerIds,
     ).type != BotActionType.none;
   }
 
@@ -148,6 +155,7 @@ class BotLogic {
     required bool isDrawCompetitive,
     required bool hasPlayedThisTurn,
     required String? lastPlayerId,
+    required List<String> moriDeclaredPlayerIds,
   }) {
     if (!gameStarted || fieldNumber == -1 || hand.isEmpty) {
       return const BotDecision.none();
@@ -175,6 +183,7 @@ class BotLogic {
         moriPhase: moriPhase,
         lastPlayerId: lastPlayerId,
         playerId: botId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
       )) {
         return const BotDecision.mori();
       }
@@ -187,6 +196,7 @@ class BotLogic {
       moriPhase: moriPhase,
       lastPlayerId: lastPlayerId,
       playerId: botId,
+      moriDeclaredPlayerIds: moriDeclaredPlayerIds,
     )) {
       return const BotDecision.mori();
     }
@@ -272,9 +282,11 @@ class BotLogic {
     required String? lastPlayerId,
     required String? lastMoriPlayerId,
     required int moriGaeshiCount,
+    required List<String> moriDeclaredPlayerIds,
   }) {
     return '$botId|$currentTurnIndex|$lastDrawerId|$isDrawCompetitive|$fieldNumber|'
         '${fieldSuit.name}|$isInitialPhase|$hasPlayedThisTurn|$handLength|$moriPhase|'
-        '$lastPlayerId|$lastMoriPlayerId|$moriGaeshiCount|$handSignature';
+        '$lastPlayerId|$lastMoriPlayerId|$moriGaeshiCount|'
+        '${moriDeclaredPlayerIds.join(",")}|$handSignature';
   }
 }
