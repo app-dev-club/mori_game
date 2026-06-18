@@ -1039,6 +1039,49 @@ class PostGameOverlay extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              if (summary?.resultMessage != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.redAccent, width: 1.5),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: headerSize + 4),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'バースト',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: bodySize,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              summary!.resultMessage!,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: bodySize,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Flexible(
                 child: SingleChildScrollView(

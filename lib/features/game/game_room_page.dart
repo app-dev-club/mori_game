@@ -1691,6 +1691,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       totalMatches: totalMatches,
       completedMatches: completedMatches,
       seriesComplete: seriesComplete,
+      resultMessage: burstPlayerId != null
+          ? ScoringRules.describeBurstScoring(burstPlayerName: _displayName(burstPlayerId))
+          : null,
     );
 
     if (mounted) setState(() => _postGameSummary = summary);

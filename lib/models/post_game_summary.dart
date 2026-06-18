@@ -22,10 +22,12 @@ class PostGameSummary {
   final String title;
   final List<PostGamePlayerRow> players;
   final bool showRating;
+  final String? resultMessage;
 
   const PostGameSummary({
     required this.title,
     required this.players,
     this.showRating = false,
+    this.resultMessage,
   });
 }
