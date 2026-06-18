@@ -10,6 +10,7 @@ class PostGameSummaryBuilder {
     required int totalMatches,
     required int completedMatches,
     required bool seriesComplete,
+    String? resultMessage,
   }) {
     if (roster.isEmpty) {
       return const PostGameSummary(title: '試合結果', players: []);
@@ -68,6 +69,7 @@ class PostGameSummaryBuilder {
       title: title,
       players: rows,
       showRating: showRating,
+      resultMessage: resultMessage,
     );
   }
 }
