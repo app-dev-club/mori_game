@@ -271,6 +271,101 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
+  Future<String?> _showSpectatorPlayerPicker({
+    required List<String> players,
+    required Map<String, String> names,
+  }) {
+    String selected = players.first;
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('観戦するプレイヤーを選択'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('選択したプレイヤーの視点で対戦を観戦します。'),
+              const SizedBox(height: 16),
+              DropdownButton<String>(
+                isExpanded: true,
+                value: selected,
+                items: players
+                    .map(
+                      (id) => DropdownMenuItem(
+                        value: id,
+                        child: Text(_playerLabelForSpectator(id, names)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selected = value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, selected),
+              child: const Text('観戦開始'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _playerLabelForSpectator(String playerId, Map<String, String> names) {
+    final name = names[playerId];
+    if (name != null && name.isNotEmpty) return name;
+    if (playerId.startsWith('bot_')) return 'Bot ${playerId.replaceFirst('bot_', '')}';
+    return 'プレイヤー';
+  }
+
+  Future<void> _spectateRoom(String roomId, Map data) async {
+    final uid = _userId;
+    if (uid == null) return;
+
+    final playerName = await _validatedAndSavedPlayerName();
+    if (playerName == null || !mounted) return;
+
+    final players = List<String>.from(data['players'] as List? ?? []);
+    if (players.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('プレイヤーがいないため観戦できません')),
+      );
+      return;
+    }
+
+    final namesRaw = data['playerNames'];
+    final names = namesRaw is Map
+        ? namesRaw.map((k, v) => MapEntry(k.toString(), v.toString()))
+        : <String, String>{};
+
+    final viewAsPlayerId = await _showSpectatorPlayerPicker(
+      players: players,
+      names: names,
+    );
+    if (viewAsPlayerId == null || !mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GameRoomPage(
+          roomId: roomId,
+          playerName: playerName,
+          userId: uid,
+          isSpectator: true,
+          initialViewAsPlayerId: viewAsPlayerId,
+        ),
+      ),
+    );
+  }
+
   Future<void> _joinRoom(String roomId) async {
     if (roomId.isEmpty) return;
 
@@ -288,6 +383,11 @@ class _EntrancePageState extends State<EntrancePage> {
       String status = snapshot.child('roomStatus').value as String? ?? 'open';
 
       if (status == 'closed' || isStarted) {
+        if (isStarted) {
+          final data = Map<String, dynamic>.from(snapshot.value as Map);
+          await _spectateRoom(roomId, data);
+          return;
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('その部屋は既に開始されているか、閉鎖されています')),
@@ -361,17 +461,20 @@ class _EntrancePageState extends State<EntrancePage> {
     final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
     final turnTimeout = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
     final timeoutLabel = '持ち時間 $turnTimeout 秒';
+    final spectators = data['spectators'] as Map?;
+    final spectatorCount = spectators?.length ?? 0;
+    final spectatorLabel = spectatorCount > 0 ? ' · 観戦 $spectatorCount人' : '';
 
     if (isStarted) {
       final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (totalMatches > 1) {
-        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel';
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$spectatorLabel';
       }
-      return '対戦中: $countLabel · $timeoutLabel';
+      return '対戦中: $countLabel · $timeoutLabel$spectatorLabel';
     }
-    if (isFull) return '満員（$countLabel） · $timeoutLabel';
-    return '${_formatRoomPlayers(data)} · $timeoutLabel';
+    if (isFull) return '満員（$countLabel） · $timeoutLabel$spectatorLabel';
+    return '${_formatRoomPlayers(data)} · $timeoutLabel$spectatorLabel';
   }
 
   int _roomListSortOrder(Map data) {
@@ -561,11 +664,13 @@ class _EntrancePageState extends State<EntrancePage> {
                         ),
                         trailing: Icon(
                           canJoin ? Icons.arrow_forward_ios : Icons.visibility,
-                          color: canJoin ? Colors.white : Colors.white54,
+                          color: canJoin ? Colors.white : Colors.lightBlueAccent,
                           size: 16,
                         ),
-                        enabled: canJoin,
-                        onTap: canJoin ? () => _joinRoom(rid) : null,
+                        enabled: canJoin || isStarted,
+                        onTap: canJoin
+                            ? () => _joinRoom(rid)
+                            : (isStarted ? () => _spectateRoom(rid, data) : null),
                       ),
                     );
                   },
