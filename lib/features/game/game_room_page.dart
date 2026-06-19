@@ -131,6 +131,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   String? _viewAsPlayerId;
   Map<String, String> spectatorNames = {};
   Map<String, List<CardWidget>> _spectatorPlayerCards = {};
+  bool _hostDisconnectHandlerRegistered = false;
 
   bool get isSpectator => widget.isSpectator;
 
@@ -216,8 +217,29 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!isSpectator && isHost && (state == AppLifecycleState.paused || state == AppLifecycleState.detached)) {
+    if (isSpectator) return;
+    if (!isHost) return;
+    if (gameStarted) return;
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
       _closeRoomForcefully();
+    }
+  }
+
+  DatabaseReference get _roomRef => FirebaseDatabase.instance.ref('rooms/${widget.roomId}');
+
+  void _registerHostDisconnectClose() {
+    if (!isHost || _hostDisconnectHandlerRegistered) return;
+    _hostDisconnectHandlerRegistered = true;
+    _roomRef.onDisconnect().update({'roomStatus': 'closed'});
+  }
+
+  Future<void> _cancelHostDisconnectClose() async {
+    if (!_hostDisconnectHandlerRegistered) return;
+    _hostDisconnectHandlerRegistered = false;
+    try {
+      await _roomRef.onDisconnect().cancel();
+    } catch (_) {
+      // 未接続など
     }
   }
 
@@ -286,7 +308,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       totalMatches = widget.totalMatches ?? RoomConfig.defaultMatchCount;
       turnTimeoutSeconds =
           widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds;
-      FirebaseDatabase.instance.ref('rooms/${widget.roomId}').onDisconnect().update({'roomStatus': 'closed'});
+      _registerHostDisconnectClose();
       setState(() => myHand = hand);
     } else {
       bool isStarted = snap.child('gameStarted').value == true;
@@ -321,6 +343,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       });
       setState(() => myHand = iHand);
     }
+    if (isHost && !gameStarted) {
+      _registerHostDisconnectClose();
+    }
     _sub = _db.roomStream.listen(_onData);
   }
 
@@ -353,6 +378,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         seriesPlayerIds = [];
       }
       gameStarted = data['gameStarted'] == true;
+      if (isHost && gameStarted && _hostDisconnectHandlerRegistered) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _cancelHostDisconnectClose());
+      }
       if (data['playerNames'] != null) {
         playerNames = Map<String, String>.from(
           (data['playerNames'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
@@ -1652,6 +1680,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _closeRoomForcefully({bool dismissedByHost = false}) {
+    if (isHost) {
+      unawaited(_cancelHostDisconnectClose());
+    }
     if (dismissedByHost) {
       _db.dismissRoomByHost();
     } else {
