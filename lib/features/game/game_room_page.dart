@@ -309,6 +309,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       turnTimeoutSeconds =
           widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds;
       _registerHostDisconnectClose();
+      await _db.registerPlayerPresence(myId);
       setState(() => myHand = hand);
     } else {
       bool isStarted = snap.child('gameStarted').value == true;
@@ -341,6 +342,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'deck': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
         'deckIndex': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       });
+      await _db.registerPlayerPresence(myId);
       setState(() => myHand = iHand);
     }
     if (isHost && !gameStarted) {
@@ -1669,14 +1671,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _closeRoomForcefully();
       return;
     }
+    unawaited(_removeSelfFromRoomAndMaybeDelete());
+  }
 
-    List<String> p = List<String>.from(playerIds)..remove(myId);
-    _db.updateGameStatus({
+  Future<void> _removeSelfFromRoomAndMaybeDelete() async {
+    await _db.removePlayerPresence(myId);
+    final p = List<String>.from(playerIds)..remove(myId);
+    await _db.updateGameStatus({
       'players': p,
       'playerHands/$myId': null,
       'playerCards/$myId': null,
       'playerNames/$myId': null,
     });
+    await _db.deleteRoomIfAbandoned();
   }
 
   void _closeRoomForcefully({bool dismissedByHost = false}) {
@@ -2231,7 +2238,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (isSpectator) {
       await _db.leaveAsSpectator(myId);
     } else {
-      List<String> p = List<String>.from(playerIds)..remove(myId);
+      await _db.removePlayerPresence(myId);
+      final p = List<String>.from(playerIds)..remove(myId);
       final updates = <String, dynamic>{
         'players': p,
         'playerHands/$myId': null,
@@ -2240,6 +2248,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'rematchReady/$myId': null,
       };
       await _db.updateGameStatus(updates);
+      await _db.deleteRoomIfAbandoned();
     }
 
     if (!mounted) return;

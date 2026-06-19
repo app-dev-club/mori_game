@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/room_config.dart';
+import '../../logic/room_lifecycle.dart';
 import '../../logic/rating_logic.dart';
 import '../../services/firebase_db.dart';
 import '../../services/game_display_settings.dart';
@@ -45,18 +47,31 @@ class _EntrancePageState extends State<EntrancePage> {
   double? _mySigma;
   bool _namePrefilled = false;
   bool _hideOpponentNames = false;
+  bool _roomCleanupRunning = false;
+  bool _roomCleanupFromStreamTriggered = false;
 
   @override
   void initState() {
     super.initState();
-    FirebaseDB.cleanupOldRooms();
     _loadUserProfile();
     _loadDisplaySettings();
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user == null) return;
+      _scheduleRoomCleanup();
       _ratingService.ensureBotRatings();
       _refreshRating();
     });
+  }
+
+  void _scheduleRoomCleanup() {
+    if (_roomCleanupRunning) return;
+    if (FirebaseAuth.instance.currentUser == null) return;
+    _roomCleanupRunning = true;
+    unawaited(
+      FirebaseDB.cleanupOldRooms().whenComplete(() {
+        _roomCleanupRunning = false;
+      }),
+    );
   }
 
   Future<void> _loadUserProfile() async {
@@ -462,8 +477,7 @@ class _EntrancePageState extends State<EntrancePage> {
     if (data['isPrivate'] == true) return false;
     if (data['roomDismissedByHost'] == true) return false;
 
-    final players = data['players'] as List?;
-    if (players == null || players.isEmpty) return false;
+    if (!RoomLifecycle.hasActivePlayers(data)) return false;
 
     final isStarted = data['gameStarted'] == true;
     final status = data['roomStatus'] as String? ?? 'open';
@@ -594,6 +608,11 @@ class _EntrancePageState extends State<EntrancePage> {
             child: StreamBuilder(
               stream: _roomsRef.onValue,
               builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+                if (!_roomCleanupFromStreamTriggered && snapshot.hasData) {
+                  _roomCleanupFromStreamTriggered = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleRoomCleanup());
+                }
+
                 if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
                   return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
                 }

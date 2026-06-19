@@ -48,9 +48,37 @@ class FirebaseDB {
       'fieldHistory': [],
       'seriesRestarting': false,
       'seriesNextMatchAt': null,
+      'presence': {},
       // 万が一の残存バグを防ぐため、作成日時をタイムスタンプで記録
-      'createdAt': ServerValue.timestamp, 
+      'createdAt': ServerValue.timestamp,
     });
+  }
+
+  /// 接続中プレイヤーとして登録（切断時に自動で presence から削除）
+  Future<void> registerPlayerPresence(String playerId) async {
+    final ref = _roomRef.child('presence/$playerId');
+    await ref.onDisconnect().remove();
+    await ref.set(ServerValue.timestamp);
+  }
+
+  Future<void> removePlayerPresence(String playerId) async {
+    final ref = _roomRef.child('presence/$playerId');
+    try {
+      await ref.onDisconnect().cancel();
+    } catch (_) {
+      // 未接続など
+    }
+    await ref.remove();
+  }
+
+  Future<void> deleteRoomIfAbandoned() async {
+    final snapshot = await getSnapshot();
+    if (!snapshot.exists || snapshot.value == null) return;
+    final data = Map<dynamic, dynamic>.from(snapshot.value as Map);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (RoomLifecycle.shouldAutoDeleteRoom(data, nowMs: now)) {
+      await deleteRoom();
+    }
   }
 
   Future<void> playCard(int nextTurn, CardWidget card, String myId) async {
@@ -285,20 +313,26 @@ class FirebaseDB {
 
   // --- 追加：ホスト不在や古いルームの一括クリーンアップ処理 ---
   // インスタンス化せずに呼べるように static メソッドとして定義します
-  static Future<void> cleanupOldRooms() async {
+  static Future<int> cleanupOldRooms() async {
     final ref = FirebaseDatabase.instance.ref('rooms');
     final snapshot = await ref.get();
 
-    if (!snapshot.exists || snapshot.value == null) return;
+    if (!snapshot.exists || snapshot.value == null) return 0;
 
     final rooms = snapshot.value as Map;
     final now = DateTime.now().millisecondsSinceEpoch;
+    final deletions = <Future<void>>[];
 
-    rooms.forEach((key, value) {
-      if (value is! Map) return;
+    for (final entry in rooms.entries) {
+      final value = entry.value;
+      if (value is! Map) continue;
       final roomData = Map<dynamic, dynamic>.from(value);
-      if (!RoomLifecycle.shouldAutoDeleteRoom(roomData, nowMs: now)) return;
-      FirebaseDatabase.instance.ref('rooms/$key').remove();
-    });
+      if (!RoomLifecycle.shouldAutoDeleteRoom(roomData, nowMs: now)) continue;
+      deletions.add(FirebaseDatabase.instance.ref('rooms/${entry.key}').remove());
+    }
+
+    if (deletions.isEmpty) return 0;
+    await Future.wait(deletions);
+    return deletions.length;
   }
 }
