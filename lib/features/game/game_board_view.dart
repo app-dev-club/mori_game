@@ -243,6 +243,7 @@ class OpponentArcLayout {
   final double panelHeight;
   final double nameFontSize;
   final double pointsFontSize;
+  final double handCountFontSize;
   final Offset arcCenter;
   final double radius;
   final List<double> angles;
@@ -255,6 +256,7 @@ class OpponentArcLayout {
     required this.panelHeight,
     required this.nameFontSize,
     required this.pointsFontSize,
+    required this.handCountFontSize,
     required this.arcCenter,
     required this.radius,
     required this.angles,
@@ -281,6 +283,7 @@ class OpponentArcLayout {
         panelHeight: 0,
         nameFontSize: 10,
         pointsFontSize: 11,
+        handCountFontSize: 10,
         arcCenter: Offset(area.width / 2, area.height),
         radius: 0,
         angles: const [],
@@ -302,9 +305,10 @@ class OpponentArcLayout {
       final ov = cw * 0.41;
       final handW = cw + (maxHandCards - 1) * ov;
       final panelW = handW + 10;
-      final panelH = 10 + 11 + ch + 10;
       final nameSize = (9.5 * scale).clamp(7.0, 10.0);
       final pointsSize = (10.5 * scale).clamp(8.0, 11.0);
+      final handCountSize = (9.5 * scale).clamp(7.0, 10.0);
+      final panelH = 10 + 11 + handCountSize + 4 + ch + 10;
 
       final angles = count == 1
           ? [math.pi / 2]
@@ -338,6 +342,7 @@ class OpponentArcLayout {
         panelHeight: panelH,
         nameFontSize: nameSize,
         pointsFontSize: pointsSize,
+        handCountFontSize: handCountSize,
         arcCenter: Offset(cx, cy),
         radius: radius,
         angles: angles,
@@ -926,13 +931,22 @@ class GameBoardView extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           OpponentHandVisual(
             count: handCount,
             isBurstWarning: isBurstWarning,
             cardWidth: layout.cardWidth,
             cardHeight: layout.cardHeight,
             overlap: layout.cardOverlap,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '$handCount枚',
+            style: TextStyle(
+              color: isBurstWarning ? Colors.red : Colors.white70,
+              fontSize: layout.handCountFontSize,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -1027,13 +1041,14 @@ class GameBoardView extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: const BoxDecoration(color: Colors.black26),
       child: Column(children: [
-        Text(
-          "手札: ${myHand.length} / 7 ${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}",
-          style: TextStyle(color: isBurstWarning ? Colors.red : Colors.white, fontWeight: FontWeight.bold),
-        ),
+        if (isMyTurn || inDrawCompetition)
+          Text(
+            '${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
         if (gameStarted)
           Padding(
-            padding: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.only(top: 2, bottom: 5),
             child: Text(
               '累計 ${playerPoints[myId] ?? 0}点',
               style: TextStyle(
@@ -1042,8 +1057,9 @@ class GameBoardView extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
-          ),
-        const SizedBox(height: 5),
+          )
+        else
+          const SizedBox(height: 5),
         LayoutBuilder(
           builder: (context, constraints) {
             final layout = HandCardLayout.compute(constraints.maxWidth, myHand.length);
@@ -1059,6 +1075,14 @@ class GameBoardView extends StatelessWidget {
               ),
             );
           },
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${myHand.length}枚',
+          style: TextStyle(
+            color: isBurstWarning ? Colors.red : Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ]),
     );
