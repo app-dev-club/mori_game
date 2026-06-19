@@ -11,7 +11,7 @@
       ".read": "auth != null",
       "$playerId": {
         ".write": "auth != null",
-        ".validate": "newData.hasChildren(['rating', 'gamesPlayed']) && newData.child('rating').isNumber() && newData.child('gamesPlayed').isNumber()"
+        ".validate": "newData.hasChildren(['rating', 'mu', 'sigma', 'gamesPlayed']) && newData.child('rating').isNumber() && newData.child('mu').isNumber() && newData.child('sigma').isNumber() && newData.child('gamesPlayed').isNumber()"
       }
     },
     "users": {

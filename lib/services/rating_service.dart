@@ -23,15 +23,40 @@ class RatingService {
   final DatabaseReference _ratingsRef =
       FirebaseDatabase.instance.ref('ratings');
 
+  Map<String, dynamic> _defaultRatingPayload({String? displayName}) {
+    final skill = RatingLogic.defaultSkillRating();
+    return {
+      'rating': RatingLogic.displayRating(skill),
+      'mu': skill.mu,
+      'sigma': skill.sigma,
+      'gamesPlayed': 0,
+      if (displayName != null && displayName.isNotEmpty) 'displayName': displayName,
+    };
+  }
+
+  OpenSkillRating _parseSkillFromSnapshot(DataSnapshot snap) {
+    if (!snap.exists || snap.value is! Map) {
+      return RatingLogic.defaultSkillRating();
+    }
+    final data = Map<dynamic, dynamic>.from(snap.value as Map);
+    return OpenSkill.parseStored(
+      muValue: data['mu'],
+      sigmaValue: data['sigma'],
+      ratingValue: data['rating'],
+    );
+  }
+
   Future<void> ensureBotRatings() async {
     for (var slot = 1; slot <= maxBotSlots; slot++) {
       final botId = BotLogic.botIdForSlot(slot);
       try {
         final snap = await _ratingsRef.child(botId).get();
-        if (snap.exists) continue;
+        if (snap.exists) {
+          await _migrateLegacyRatingIfNeeded(botId, snap);
+          continue;
+        }
         await _ratingsRef.child(botId).set({
-          'rating': RatingLogic.defaultRating,
-          'gamesPlayed': 0,
+          ..._defaultRatingPayload(),
           'isBot': true,
           'displayName': BotLogic.botDisplayName(botId),
         });
@@ -44,12 +69,13 @@ class RatingService {
   Future<void> ensureUserRating(String userId, {String? displayName}) async {
     try {
       final snap = await _ratingsRef.child(userId).get();
-      if (snap.exists) return;
+      if (snap.exists) {
+        await _migrateLegacyRatingIfNeeded(userId, snap);
+        return;
+      }
       await _ratingsRef.child(userId).set({
-        'rating': RatingLogic.defaultRating,
-        'gamesPlayed': 0,
+        ..._defaultRatingPayload(displayName: displayName),
         'isBot': false,
-        if (displayName != null && displayName.isNotEmpty) 'displayName': displayName,
       });
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
@@ -61,20 +87,46 @@ class RatingService {
     }
   }
 
-  Future<int> getRating(String playerId) async {
-    try {
-      final snap = await _ratingsRef.child(playerId).child('rating').get();
-      if (snap.value is num) return (snap.value as num).round();
-    } catch (_) {
-      // 未ログインで read 不可の場合など
-    }
-    return RatingLogic.defaultRating;
+  Future<void> _migrateLegacyRatingIfNeeded(String playerId, DataSnapshot snap) async {
+    if (snap.value is! Map) return;
+    final data = Map<dynamic, dynamic>.from(snap.value as Map);
+    if (data['mu'] is num && data['sigma'] is num) return;
+
+    final skill = OpenSkill.parseStored(
+      muValue: data['mu'],
+      sigmaValue: data['sigma'],
+      ratingValue: data['rating'],
+    );
+    await _ratingsRef.child(playerId).update({
+      'rating': RatingLogic.displayRating(skill),
+      'mu': skill.mu,
+      'sigma': skill.sigma,
+    });
   }
 
-  Future<Map<String, int>> getRatings(List<String> playerIds) async {
-    final ratings = <String, int>{};
+  Future<OpenSkillRating> getSkillRating(String playerId) async {
+    try {
+      final snap = await _ratingsRef.child(playerId).get();
+      return _parseSkillFromSnapshot(snap);
+    } catch (_) {
+      return RatingLogic.defaultSkillRating();
+    }
+  }
+
+  Future<int> getRating(String playerId) async {
+    final skill = await getSkillRating(playerId);
+    return RatingLogic.displayRating(skill);
+  }
+
+  Future<double> getSigma(String playerId) async {
+    final skill = await getSkillRating(playerId);
+    return skill.sigma;
+  }
+
+  Future<Map<String, OpenSkillRating>> getSkillRatings(List<String> playerIds) async {
+    final ratings = <String, OpenSkillRating>{};
     await Future.wait(playerIds.map((id) async {
-      ratings[id] = await getRating(id);
+      ratings[id] = await getSkillRating(id);
     }));
     return ratings;
   }
@@ -93,10 +145,18 @@ class RatingService {
       final ratingValue = value['rating'];
       if (ratingValue is! num) return;
 
+      final skill = OpenSkill.parseStored(
+        muValue: value['mu'],
+        sigmaValue: value['sigma'],
+        ratingValue: ratingValue,
+      );
+
       entries.add(RankingEntry(
         id: id,
         playerName: resolvePlayerName(id, value),
         rating: ratingValue.round(),
+        sigma: skill.sigma,
+        mu: skill.mu,
         gamesPlayed: value['gamesPlayed'] is num ? (value['gamesPlayed'] as num).round() : 0,
         isBot: value['isBot'] == true || BotLogic.isBot(id),
         rank: 0,
@@ -115,6 +175,8 @@ class RatingService {
           id: entries[i].id,
           playerName: entries[i].playerName,
           rating: entries[i].rating,
+          sigma: entries[i].sigma,
+          mu: entries[i].mu,
           gamesPlayed: entries[i].gamesPlayed,
           isBot: entries[i].isBot,
           rank: i + 1,
@@ -168,17 +230,22 @@ class RatingService {
       await ensureUserRating(id, displayName: displayNames[id]);
     }
 
-    final oldRatings = await getRatings(participantIds);
-    final deltas = RatingLogic.computeDeltas(oldRatings, participantIds, finalPoints);
+    final oldSkills = await getSkillRatings(participantIds);
+    final updates = RatingLogic.computeSkillUpdates(
+      oldRatings: oldSkills,
+      playerIds: participantIds,
+      finalPoints: finalPoints,
+    );
     final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);
     final summary = RatingLogic.buildSeriesSummary(
       ranked: ranked,
-      oldRatings: oldRatings,
-      deltas: deltas,
+      oldRatings: oldSkills,
+      updates: updates,
       displayNames: displayNames,
     );
 
     final newRatings = <String, int>{};
+    final deltas = <String, int>{};
     final ratingDetails = <String, dynamic>{};
     final rootUpdates = <String, dynamic>{
       'rooms/$roomId/seriesRatingApplied': true,
@@ -187,17 +254,26 @@ class RatingService {
 
     for (final entry in ranked) {
       final id = entry.id;
-      final old = oldRatings[id] ?? RatingLogic.defaultRating;
-      final delta = deltas[id] ?? 0;
-      final neu = old + delta;
-      newRatings[id] = neu;
+      final update = updates[id];
+      if (update == null) continue;
+
+      final neuSkill = update.newRating;
+      final delta = update.ratingDelta;
+      final display = RatingLogic.displayRating(neuSkill);
+
+      newRatings[id] = display;
+      deltas[id] = delta;
       ratingDetails[id] = {
         'rank': entry.rank,
         'points': entry.points,
-        'rating': neu,
+        'rating': display,
         'ratingDelta': delta,
+        'mu': neuSkill.mu,
+        'sigma': neuSkill.sigma,
       };
-      rootUpdates['ratings/$id/rating'] = neu;
+      rootUpdates['ratings/$id/rating'] = display;
+      rootUpdates['ratings/$id/mu'] = neuSkill.mu;
+      rootUpdates['ratings/$id/sigma'] = neuSkill.sigma;
       rootUpdates['ratings/$id/gamesPlayed'] = ServerValue.increment(1);
       if (BotLogic.isBot(id)) {
         rootUpdates['ratings/$id/isBot'] = true;

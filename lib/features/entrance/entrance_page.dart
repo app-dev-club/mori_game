@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/room_config.dart';
+import '../../logic/rating_logic.dart';
 import '../../services/firebase_db.dart';
 import '../../services/game_display_settings.dart';
 import '../../services/rating_service.dart';
@@ -40,6 +41,7 @@ class _EntrancePageState extends State<EntrancePage> {
 
   static const int _maxNameLength = UserProfileService.maxPlayerNameLength;
   int? _myRating;
+  double? _mySigma;
   bool _namePrefilled = false;
   bool _hideOpponentNames = false;
 
@@ -59,19 +61,40 @@ class _EntrancePageState extends State<EntrancePage> {
   Future<void> _loadUserProfile() async {
     final uid = _userId;
     if (uid == null) {
-      if (mounted) setState(() => _myRating = null);
+      if (mounted) {
+        setState(() {
+          _myRating = null;
+          _mySigma = null;
+        });
+      }
       return;
     }
 
     final playerName = await _userProfileService.getPlayerName(uid);
-    final rating = await _ratingService.getRating(uid);
+    final skill = await _ratingService.getSkillRating(uid);
+    final rating = RatingLogic.displayRating(skill);
     if (!mounted) return;
 
     if (!_namePrefilled && playerName != null && playerName.isNotEmpty) {
       _nameController.text = playerName;
       _namePrefilled = true;
     }
-    setState(() => _myRating = rating);
+    setState(() {
+      _myRating = rating;
+      _mySigma = skill.sigma;
+    });
+  }
+
+  Future<void> _refreshRating() async {
+    final uid = _userId;
+    if (uid == null) return;
+    final skill = await _ratingService.getSkillRating(uid);
+    if (mounted) {
+      setState(() {
+        _myRating = RatingLogic.displayRating(skill);
+        _mySigma = skill.sigma;
+      });
+    }
   }
 
   Future<void> _loadDisplaySettings() async {
@@ -88,13 +111,6 @@ class _EntrancePageState extends State<EntrancePage> {
     await _gameDisplaySettings.setHideOpponentNames(value);
     if (!mounted) return;
     setState(() => _hideOpponentNames = value);
-  }
-
-  Future<void> _refreshRating() async {
-    final uid = _userId;
-    if (uid == null) return;
-    final rating = await _ratingService.getRating(uid);
-    if (mounted) setState(() => _myRating = rating);
   }
 
   @override
@@ -505,7 +521,9 @@ class _EntrancePageState extends State<EntrancePage> {
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             if (_myRating != null)
               Text(
-                'レート $_myRating',
+                _mySigma != null
+                    ? 'レート $_myRating · σ ${RatingLogic.formatSigma(_mySigma!)}'
+                    : 'レート $_myRating',
                 style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
               ),
           ],
