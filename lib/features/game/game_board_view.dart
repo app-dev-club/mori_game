@@ -681,13 +681,6 @@ class GameBoardView extends StatelessWidget {
     return 'ルーム: $roomId';
   }
 
-  String _playerDisplayLabel(String playerId) {
-    final name = playerNames[playerId];
-    if (name != null && name.isNotEmpty) return name;
-    if (playerId.startsWith('bot_')) return 'Bot ${playerId.replaceFirst('bot_', '')}';
-    return 'プレイヤー';
-  }
-
   Widget _buildSpectatorPovBar() {
     return Container(
       width: double.infinity,
@@ -713,7 +706,7 @@ class GameBoardView extends StatelessWidget {
                 .map(
                   (id) => DropdownMenuItem(
                     value: id,
-                    child: Text(_playerDisplayLabel(id)),
+                    child: Text(_playerLabel(id)),
                   ),
                 )
                 .toList(),
@@ -729,8 +722,15 @@ class GameBoardView extends StatelessWidget {
   }
 
   Widget _buildSpectatorNoticeBanner() {
-    final labels = spectatorNames.values.where((n) => n.isNotEmpty).join('、');
     final count = spectatorNames.length;
+    final message = hideOpponentNames
+        ? '観戦者が $count 人います'
+        : () {
+            final labels = spectatorNames.values.where((n) => n.isNotEmpty).join('、');
+            return labels.isNotEmpty
+                ? '観戦中: $labels（$count人）'
+                : '観戦者が $count 人います';
+          }();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -741,9 +741,7 @@ class GameBoardView extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              labels.isNotEmpty
-                  ? '観戦中: $labels（$count人）'
-                  : '観戦者が $count 人います',
+              message,
               style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),

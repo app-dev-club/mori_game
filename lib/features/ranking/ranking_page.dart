@@ -32,9 +32,8 @@ class _RankingPageState extends State<RankingPage> {
 
   Future<void> _toggleHideOpponentNames() async {
     final next = !_hideOpponentNames;
-    await _gameDisplaySettings.setHideOpponentNames(next);
-    if (!mounted) return;
     setState(() => _hideOpponentNames = next);
+    await _gameDisplaySettings.setHideOpponentNames(next);
   }
 
   Color _rankColor(int rank) {

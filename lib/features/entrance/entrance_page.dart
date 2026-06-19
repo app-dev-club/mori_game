@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../logic/room_lifecycle.dart';
 import '../../logic/rating_logic.dart';
@@ -127,9 +128,8 @@ class _EntrancePageState extends State<EntrancePage> {
   }
 
   Future<void> _setHideOpponentNames(bool value) async {
-    await _gameDisplaySettings.setHideOpponentNames(value);
-    if (!mounted) return;
     setState(() => _hideOpponentNames = value);
+    await _gameDisplaySettings.setHideOpponentNames(value);
   }
 
   @override
@@ -309,6 +309,7 @@ class _EntrancePageState extends State<EntrancePage> {
   Future<String?> _showSpectatorPlayerPicker({
     required List<String> players,
     required Map<String, String> names,
+    String? hostId,
   }) {
     String selected = players.first;
     return showDialog<String>(
@@ -329,7 +330,7 @@ class _EntrancePageState extends State<EntrancePage> {
                     .map(
                       (id) => DropdownMenuItem(
                         value: id,
-                        child: Text(_playerLabelForSpectator(id, names)),
+                        child: Text(_playerLabelForSpectator(id, players, names, hostId: hostId)),
                       ),
                     )
                     .toList(),
@@ -354,11 +355,20 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
-  String _playerLabelForSpectator(String playerId, Map<String, String> names) {
-    final name = names[playerId];
-    if (name != null && name.isNotEmpty) return name;
-    if (playerId.startsWith('bot_')) return 'Bot ${playerId.replaceFirst('bot_', '')}';
-    return 'プレイヤー';
+  String _playerLabelForSpectator(
+    String playerId,
+    List<String> players,
+    Map<String, String> names, {
+    String? hostId,
+  }) {
+    return PlayerDisplayName.resolve(
+      playerId: playerId,
+      playerIds: players,
+      myId: _userId ?? '',
+      playerNames: names,
+      hostId: hostId,
+      hideOpponentNames: _hideOpponentNames,
+    );
   }
 
   Future<void> _spectateRoom(String roomId, Map data) async {
@@ -381,9 +391,11 @@ class _EntrancePageState extends State<EntrancePage> {
         ? namesRaw.map((k, v) => MapEntry(k.toString(), v.toString()))
         : <String, String>{};
 
+    final hostId = data['host'] as String?;
     final viewAsPlayerId = await _showSpectatorPlayerPicker(
       players: players,
       names: names,
+      hostId: hostId,
     );
     if (viewAsPlayerId == null || !mounted) return;
 
@@ -455,9 +467,10 @@ class _EntrancePageState extends State<EntrancePage> {
   }
 
   String _formatRoomPlayers(Map data) {
-    final players = data['players'] as List?;
-    if (players == null || players.isEmpty) return '待機中: 0 人';
+    final playersRaw = data['players'] as List?;
+    if (playersRaw == null || playersRaw.isEmpty) return '待機中: 0 人';
 
+    final players = playersRaw.map((id) => id.toString()).toList();
     final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
     final countLabel = '${players.length}/$maxPlayers 人';
 
@@ -465,10 +478,20 @@ class _EntrancePageState extends State<EntrancePage> {
     if (namesRaw is! Map) return '待機中: $countLabel';
 
     final names = namesRaw.map((k, v) => MapEntry(k.toString(), v.toString()));
-    final labels = players.map((id) {
-      final name = names[id.toString()];
-      return (name != null && name.isNotEmpty) ? name : 'プレイヤー';
-    }).join('、');
+    final hostId = data['host'] as String?;
+    final myId = _userId ?? '';
+    final labels = players
+        .map(
+          (id) => PlayerDisplayName.resolve(
+            playerId: id,
+            playerIds: players,
+            myId: myId,
+            playerNames: names,
+            hostId: hostId,
+            hideOpponentNames: _hideOpponentNames,
+          ),
+        )
+        .join('、');
 
     return '待機中: $countLabel（$labels）';
   }

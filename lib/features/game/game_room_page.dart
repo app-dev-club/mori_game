@@ -187,10 +187,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   Future<void> _toggleHideOpponentNames() async {
     final next = !_hideOpponentNames;
-    await _gameDisplaySettings.setHideOpponentNames(next);
-    if (!mounted) return;
     setState(() => _hideOpponentNames = next);
     if (_postGameEntered) _syncPostGameSummary();
+    await _gameDisplaySettings.setHideOpponentNames(next);
   }
 
   @override
@@ -2378,10 +2377,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   String _spectatorViewLabel() {
-    final name = playerNames[_povPlayerId];
-    if (name != null && name.isNotEmpty) return name;
-    if (BotLogic.isBot(_povPlayerId)) return BotLogic.botDisplayName(_povPlayerId);
-    return 'プレイヤー';
+    return _displayName(_povPlayerId);
   }
 
   void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
