@@ -13,6 +13,7 @@ import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
 import '../ranking/ranking_page.dart';
+import '../replay/match_replay_list_page.dart';
 import '../common/app_side_bar.dart';
 
 class RoomCreationSettings {
@@ -551,6 +552,13 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
+  void _openReplayList() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MatchReplayListPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -784,6 +792,12 @@ class _EntrancePageState extends State<EntrancePage> {
           icon: Icons.leaderboard,
           accent: Colors.amberAccent,
           onTap: _openRanking,
+        ),
+        AppSideBarItem(
+          label: 'リプレイ',
+          icon: Icons.replay,
+          accent: Colors.lightBlueAccent,
+          onTap: _openReplayList,
         ),
         AppSideBarItem(
           label: 'ログアウト',
