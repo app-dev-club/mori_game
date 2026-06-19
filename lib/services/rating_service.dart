@@ -18,7 +18,7 @@ class RatingUpdateResult {
 
 /// Firebase Realtime Database 上のレート管理
 class RatingService {
-  static const int maxBotSlots = 8;
+  static const int maxBotSlots = BotLogic.maxBotSlot;
 
   final DatabaseReference _ratingsRef =
       FirebaseDatabase.instance.ref('ratings');
@@ -135,6 +135,8 @@ class RatingService {
     return _ratingsRef.onValue.map((event) => parseRankingSnapshot(event.snapshot.value));
   }
 
+  static bool _isRetiredBotId(String id) => BotLogic.isRetiredBotId(id);
+
   static List<RankingEntry> parseRankingSnapshot(dynamic raw) {
     if (raw is! Map) return [];
 
@@ -142,6 +144,7 @@ class RatingService {
     raw.forEach((key, value) {
       if (value is! Map) return;
       final id = key.toString();
+      if (_isRetiredBotId(id)) return;
       final ratingValue = value['rating'];
       if (ratingValue is! num) return;
 

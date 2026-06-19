@@ -4,6 +4,9 @@ class RoomConfig {
   static const int defaultMaxPlayers = 4;
   static const int absoluteMaxPlayers = 8;
 
+  /// 対戦人数上限に合わせた Bot 上限（[BotLogic.maxBotSlot] と同値）
+  static const int maxBotCount = 7;
+
   static const List<int> maxPlayerOptions = [2, 3, 4, 5, 6, 7, 8];
 
   /// ルーム作成時に選べる対戦回数

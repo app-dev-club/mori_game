@@ -22,7 +22,20 @@ class BotDecision {
 class BotLogic {
   static const String idPrefix = 'bot_';
 
+  /// 8人対戦のため、Bot は最大7体（bot_1 … bot_7）まで
+  static const int maxBotSlot = 7;
+
   static bool isBot(String playerId) => playerId.startsWith(idPrefix);
+
+  static bool isRetiredBotId(String playerId) {
+    final slot = slotFromBotId(playerId);
+    return slot != null && slot > maxBotSlot;
+  }
+
+  static bool isAssignableBotSlot(int slot) => slot >= 1 && slot <= maxBotSlot;
+
+  static bool hasAvailableBotSlot(Iterable<String> playerIds) =>
+      tryNextBotId(playerIds) != null;
 
   static String botIdForSlot(int slot) => '$idPrefix$slot';
 
@@ -36,21 +49,23 @@ class BotLogic {
     return slot != null ? 'Bot $slot' : 'Bot';
   }
 
-  /// 未使用の bot_N ID を返す（bot_1, bot_2, …）
-  static String nextBotId(Iterable<String> playerIds) {
+  /// 未使用の bot_N ID を返す（bot_1 … bot_7）。空きがなければ null
+  static String? tryNextBotId(Iterable<String> playerIds) {
     final usedSlots = playerIds
         .where(isBot)
         .map(slotFromBotId)
         .whereType<int>()
         .toSet();
-    for (var slot = 1; slot <= 64; slot++) {
+    for (var slot = 1; slot <= maxBotSlot; slot++) {
       if (!usedSlots.contains(slot)) return botIdForSlot(slot);
     }
-    return botIdForSlot(usedSlots.length + 1);
+    return null;
   }
 
-  static String nextBotName(Iterable<String> playerIds) =>
-      botDisplayName(nextBotId(playerIds));
+  static String nextBotName(Iterable<String> playerIds) {
+    final botId = tryNextBotId(playerIds);
+    return botId != null ? botDisplayName(botId) : 'Bot';
+  }
 
   static bool canDeclareMori({
     required int fieldNumber,

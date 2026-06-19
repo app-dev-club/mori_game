@@ -1125,7 +1125,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return;
     }
 
-    final botId = BotLogic.nextBotId(playerIds);
+    final botId = BotLogic.tryNextBotId(playerIds);
+    if (botId == null) {
+      _showGameMessage('Botは最大${BotLogic.maxBotSlot}体まで追加できます');
+      return;
+    }
+
     final botName = BotLogic.botDisplayName(botId);
     final deckCopy = List<CardWidget>.from(deck);
     final botHand = <CardWidget>[];
@@ -2420,7 +2425,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       onHostReturnToLobby: isSpectator ? _noop : _onHostReturnToLobby,
       onGuestStayInRoom: isSpectator ? _noop : _onGuestStayInRoom,
       onLeaveToLobby: _leaveRoomToLobby,
-      canAddBot: !isSpectator && isHost && !gameStarted && !RoomConfig.isRoomFull(playerIds.length, maxPlayers),
+      canAddBot: !isSpectator &&
+          isHost &&
+          !gameStarted &&
+          !RoomConfig.isRoomFull(playerIds.length, maxPlayers) &&
+          BotLogic.hasAvailableBotSlot(playerIds),
       onAddBot: isSpectator ? null : _addBot,
       hideOpponentNames: _hideOpponentNames,
       onToggleHideOpponentNames: _toggleHideOpponentNames,

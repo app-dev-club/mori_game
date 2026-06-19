@@ -19,11 +19,26 @@ void main() {
       expect(BotLogic.isBot('host'), isFalse);
     });
 
-    test('nextBotId は bot_1, bot_2 ... を割り当てる', () {
-      expect(BotLogic.nextBotId([]), 'bot_1');
-      expect(BotLogic.nextBotId(['bot_1']), 'bot_2');
-      expect(BotLogic.nextBotId(['bot_1', 'bot_3']), 'bot_2');
+    test('tryNextBotId は bot_1, bot_2 ... bot_7 を割り当てる', () {
+      expect(BotLogic.tryNextBotId([]), 'bot_1');
+      expect(BotLogic.tryNextBotId(['bot_1']), 'bot_2');
+      expect(BotLogic.tryNextBotId(['bot_1', 'bot_3']), 'bot_2');
       expect(BotLogic.botDisplayName('bot_2'), 'Bot 2');
+    });
+
+    test('tryNextBotId は bot_7 までで null を返す', () {
+      expect(
+        BotLogic.tryNextBotId([
+          'bot_1',
+          'bot_2',
+          'bot_3',
+          'bot_4',
+          'bot_5',
+          'bot_6',
+          'bot_7',
+        ]),
+        isNull,
+      );
     });
 
     test('canDeclareMori は直前に出した相手にもりできる', () {

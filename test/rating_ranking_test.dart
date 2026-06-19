@@ -43,6 +43,28 @@ void main() {
     test('空データは空リスト', () {
       expect(RatingService.parseRankingSnapshot(null), isEmpty);
     });
+
+    test('退避した bot_8 はランキングに含めない', () {
+      final entries = RatingService.parseRankingSnapshot({
+        'bot_7': {
+          'rating': 1500,
+          'mu': 25,
+          'sigma': 8.33,
+          'gamesPlayed': 1,
+          'isBot': true,
+        },
+        'bot_8': {
+          'rating': 1600,
+          'mu': 125,
+          'sigma': 8.33,
+          'gamesPlayed': 2,
+          'isBot': true,
+        },
+      });
+
+      expect(entries.length, 1);
+      expect(entries.single.id, 'bot_7');
+    });
   });
 
   group('resolvePlayerName', () {
