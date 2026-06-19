@@ -77,7 +77,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = formatMatchRecordLoadError(e);
       });
     }
   }
@@ -153,7 +153,21 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
           ? const Center(child: CircularProgressIndicator(color: Colors.orangeAccent))
           : _error != null
               ? Center(
-                  child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.redAccent),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(onPressed: _load, child: const Text('再試行')),
+                      ],
+                    ),
+                  ),
                 )
               : Column(
                   children: [

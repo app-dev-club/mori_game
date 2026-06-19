@@ -26,6 +26,14 @@
     "matchRecords": {
       ".read": "auth != null",
       "$recordId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "matchRecordSummaries": {
+      ".read": "auth != null",
+      "$recordId": {
+        ".read": "auth != null",
         ".write": "auth != null"
       }
     }

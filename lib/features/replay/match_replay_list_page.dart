@@ -49,7 +49,7 @@ class _MatchReplayListPageState extends State<MatchReplayListPage> {
       if (!mounted) return;
       setState(() {
         _hideOpponentNames = hide;
-        _error = e.toString();
+        _error = formatMatchRecordLoadError(e);
         _loading = false;
       });
     }
@@ -157,7 +157,14 @@ class _MatchReplayListPageState extends State<MatchReplayListPage> {
               style: const TextStyle(color: Colors.white70, fontSize: 16),
             ),
             const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _load, child: const Text('再試行')),
           ],
