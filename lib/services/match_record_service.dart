@@ -253,7 +253,7 @@ class MatchRecordService {
         ),
       );
       updates[recordId] = {
-        'meta': metaMap,
+        'meta': MatchRecordCodec.toFirebaseMap(metaMap),
         'result': result?.toJson(),
       };
     }
@@ -261,8 +261,8 @@ class MatchRecordService {
     if (writeIndex && updates.isNotEmpty) {
       try {
         await _summariesRoot.update(updates);
-      } on FirebaseException catch (e) {
-        if (e.code != 'permission-denied') rethrow;
+      } catch (_) {
+        // インデックス書き込み失敗でも一覧は返す（本番 Web の型問題等）
       }
     }
 

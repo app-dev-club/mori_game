@@ -35,6 +35,14 @@ class ReplayFrame {
 
 class MatchReplayEngine {
   static List<ReplayFrame> buildFrames(MatchRecord record) {
+    try {
+      return _buildFramesUnsafe(record);
+    } catch (e) {
+      throw StateError('試合記録の解析に失敗しました: $e');
+    }
+  }
+
+  static List<ReplayFrame> _buildFramesUnsafe(MatchRecord record) {
     final meta = record.meta;
     final frames = <ReplayFrame>[];
 

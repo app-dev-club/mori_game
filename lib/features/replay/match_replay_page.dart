@@ -65,7 +65,16 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
       final frames = MatchReplayEngine.buildFrames(record);
       final humanIds = record.meta.playerIds
           .where((id) => id != 'system' && !record.meta.botIds.contains(id));
-      final pov = humanIds.isNotEmpty ? humanIds.first : record.meta.playerIds.first;
+      final pov = humanIds.isNotEmpty
+          ? humanIds.first
+          : (record.meta.playerIds.isNotEmpty ? record.meta.playerIds.first : null);
+      if (pov == null) {
+        setState(() {
+          _loading = false;
+          _error = '試合記録にプレイヤー情報がありません';
+        });
+        return;
+      }
       setState(() {
         _record = record;
         _frames = frames;
@@ -212,7 +221,14 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     final meta = _record!.meta;
     if (frame == null) return const SizedBox.shrink();
 
-    final povId = _povPlayerId ?? meta.playerIds.first;
+    final povId = _povPlayerId != null && meta.playerIds.contains(_povPlayerId)
+        ? _povPlayerId!
+        : (meta.playerIds.isNotEmpty ? meta.playerIds.first : null);
+    if (povId == null) {
+      return const Center(
+        child: Text('プレイヤー情報がありません', style: TextStyle(color: Colors.white70)),
+      );
+    }
     final opponents = meta.playerIds.where((id) => id != povId).toList();
     final povHand = frame.hands[povId] ?? const <CardWidget>[];
 
@@ -324,7 +340,11 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 6),
-          OpponentHandVisual(count: hand.length, cardWidth: 36, cardHeight: 54),
+          OpponentHandVisual(
+            count: hand.length.clamp(0, 52),
+            cardWidth: 36,
+            cardHeight: 54,
+          ),
           Text(
             '${hand.length}枚',
             style: const TextStyle(color: Colors.white54, fontSize: 11),
