@@ -8,9 +8,12 @@ import '../../logic/bot_logic.dart';
 import '../../logic/room_config.dart';
 import '../../logic/scoring_rules.dart';
 import '../../logic/player_display_name.dart';
+import '../../logic/match_record_codec.dart';
 import '../../logic/post_game_summary_builder.dart';
+import '../../models/match_event.dart';
 import '../../models/post_game_summary.dart';
 import '../../services/game_display_settings.dart';
+import '../../services/match_record_service.dart';
 import '../../services/rating_service.dart';
 import 'game_board_view.dart';
 
@@ -43,6 +46,7 @@ class GameRoomPage extends StatefulWidget {
 class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
   late final FirebaseDB _db;
   late final RatingService _ratingService;
+  final MatchRecordService _matchRecordService = MatchRecordService();
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
   StreamSubscription? _sub;
   String myId = '';
@@ -1208,6 +1212,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'gameStarted': true,
       'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
     });
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.playCard,
+      actorId: botId,
+      payload: {
+        'card': _serializeHand([card]).first,
+        'isInitialPhase': isInitialPhase,
+      },
+      actorHand: hand,
+    ));
   }
 
   void _executeBotDraw(String botId) {
@@ -1253,6 +1266,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     if (GameRules.isBurst(tempHand.length, hasPlayableCard)) {
       _allPlayerCards[botId] = tempHand;
+      unawaited(_recordMatchEvent(
+        type: MatchEventType.draw,
+        actorId: botId,
+        payload: {
+          'card': _serializeHand([drawn]).first,
+          'isSeventhDraw': true,
+          'burst': true,
+          if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+        },
+        actorHand: tempHand,
+      ));
       _db.updateGameStatus({
         'burstPlayerId': botId,
         'deck': deckAfterDraw,
@@ -1268,6 +1292,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     _allPlayerCards[botId] = tempHand;
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.draw,
+      actorId: botId,
+      payload: {
+        'card': _serializeHand([drawn]).first,
+        'isSeventhDraw': isSeventhDraw,
+        'isDrawCompetitive': !isSeventhDraw,
+        if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+      },
+      actorHand: tempHand,
+    ));
     _db.updateGameStatus({
       'deck': deckAfterDraw,
       'deckIndex': deckAfterDraw,
@@ -1310,6 +1345,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriDeclarationFactors': [ScoringRules.handFactor(hand)],
       'moriDeclaredPlayerIds': [botId],
     });
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.mori,
+      actorId: botId,
+      payload: {
+        'hand': _serializeHand(hand),
+        'loserId': lastPlayerId,
+        'handFactor': ScoringRules.handFactor(hand),
+      },
+      actorHand: hand,
+    ));
   }
 
   void _executeBotMoriGaeshi(String botId) {
@@ -1341,6 +1386,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriDeclarationFactors': nextFactors,
       'moriDeclaredPlayerIds': nextDeclaredIds,
     });
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.moriGaeshi,
+      actorId: botId,
+      payload: {
+        'hand': _serializeHand(hand),
+        'loserId': previousMoriPlayerId,
+        'handFactor': handFactor,
+        'moriGaeshiCount': nextGaeshiCount,
+      },
+      actorHand: hand,
+    ));
   }
 
   void _executeBotBurst(String botId) {
@@ -1435,6 +1491,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     // 7枚目で出せるカードがなければバースト
     if (GameRules.isBurst(tempHand.length, hasPlayableCard)) {
       setState(() => myHand.add(drawn));
+      unawaited(_recordMatchEvent(
+        type: MatchEventType.draw,
+        actorId: myId,
+        payload: {
+          'card': _serializeHand([drawn]).first,
+          'isSeventhDraw': true,
+          'burst': true,
+          if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+        },
+        actorHand: tempHand,
+      ));
       _db.updateGameStatus({
         'burstPlayerId': myId,
         'deck': deckAfterDraw,
@@ -1453,6 +1520,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     // 手札6枚以下: 次のプレイヤーも出す/引く権利（早い者勝ち）。7枚目は競合なし。
     final bool enableDrawCompetition = !isSeventhDraw;
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.draw,
+      actorId: myId,
+      payload: {
+        'card': _serializeHand([drawn]).first,
+        'isSeventhDraw': isSeventhDraw,
+        'isDrawCompetitive': enableDrawCompetition,
+        if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+      },
+      actorHand: tempHand,
+    ));
     _db.updateGameStatus({
       'deck': deckAfterDraw,
       'deckIndex': deckAfterDraw,
@@ -1506,6 +1584,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'gameStarted': true,
       'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
     });
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.playCard,
+      actorId: myId,
+      payload: {
+        'card': _serializeHand([playedCard]).first,
+        'isInitialPhase': isInitialPhase,
+      },
+      actorHand: myHand,
+    ));
   }
 
   void _onMori() {
@@ -1570,6 +1657,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'moriDeclarationFactors': [handFactor],
         'moriDeclaredPlayerIds': [myId],
       });
+      unawaited(_recordMatchEvent(
+        type: MatchEventType.mori,
+        actorId: myId,
+        payload: {
+          'hand': revealedHand,
+          'loserId': lastPlayerId,
+          'handFactor': handFactor,
+        },
+        actorHand: myHand,
+      ));
     } else {
       final previousMoriPlayerId = lastMoriPlayerId;
       final nextGaeshiCount = moriGaeshiCount + 1;
@@ -1596,11 +1693,118 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'moriDeclarationFactors': nextFactors,
         'moriDeclaredPlayerIds': nextDeclaredIds,
       });
+      unawaited(_recordMatchEvent(
+        type: MatchEventType.moriGaeshi,
+        actorId: myId,
+        payload: {
+          'hand': revealedHand,
+          'loserId': previousMoriPlayerId,
+          'handFactor': handFactor,
+          'moriGaeshiCount': nextGaeshiCount,
+        },
+        actorHand: myHand,
+      ));
     }
   }
 
   List<Map<String, dynamic>> _serializeHand(List<CardWidget> hand) =>
       hand.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+
+  Map<String, List<Map<String, dynamic>>> _handsSnapshot({
+    String? actorId,
+    List<CardWidget>? actorHand,
+  }) {
+    final snapshot = <String, List<Map<String, dynamic>>>{};
+    for (final pid in playerIds) {
+      final List<CardWidget> cards;
+      if (actorId != null && pid == actorId && actorHand != null) {
+        cards = actorHand;
+      } else {
+        cards = List<CardWidget>.from(_allPlayerCards[pid] ?? []);
+      }
+      snapshot[pid] = _serializeHand(cards);
+    }
+    return snapshot;
+  }
+
+  Future<void> _startMatchRecording({
+    List<CardWidget>? deckOverride,
+    CardWidget? fieldCard,
+  }) async {
+    if (!isHost || isSpectator) return;
+    try {
+      final field = fieldCard ?? CardWidget(number: fieldNumber, suit: fieldSuit);
+      final deckCards = deckOverride ?? deck;
+      await _matchRecordService.startMatch(
+        roomId: widget.roomId,
+        matchIndex: _currentMatchNumber,
+        seriesTotal: totalMatches,
+        turnTimeoutSeconds: turnTimeoutSeconds,
+        playerIds: playerIds,
+        playerNames: playerNames,
+        botIds: playerIds.where(BotLogic.isBot).toList(),
+        hands: _handsSnapshot(),
+        deck: _serializeHand(deckCards),
+        field: MatchRecordCodec.field(field.number, field.suit),
+        fieldHistory: fieldHistory
+            .map((c) => {'number': c.number, 'suit': c.suit.name})
+            .toList(),
+        currentTurnIndex: currentTurn,
+        isInitialPhase: isInitialPhase,
+      );
+    } catch (_) {
+      // 記録失敗は対戦進行を妨げない
+    }
+  }
+
+  Future<void> _recordMatchEvent({
+    required MatchEventType type,
+    String? actorId,
+    Map<String, dynamic> payload = const {},
+    List<CardWidget>? actorHand,
+  }) async {
+    if (!isHost) return;
+    try {
+      await _matchRecordService.recordEvent(
+        type: type,
+        actorId: actorId,
+        payload: payload,
+        handsSnapshot: _handsSnapshot(actorId: actorId, actorHand: actorHand),
+        turnIndex: currentTurn,
+        field: MatchRecordCodec.field(fieldNumber, fieldSuit),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _finalizeMatchRecording() async {
+    if (!isHost || !_matchRecordService.isRecording) return;
+
+    var endReason = 'unknown';
+    String? winnerId;
+    String? loserId;
+    if (burstPlayerId != null) {
+      endReason = 'burst';
+      loserId = burstPlayerId;
+    } else if (lastMoriPlayerId != null) {
+      endReason = 'mori';
+      winnerId = lastMoriPlayerId;
+      loserId = loserPlayerId;
+    }
+
+    try {
+      await _matchRecordService.finalizeMatch(
+        MatchRecordResult(
+          endReason: endReason,
+          winnerId: winnerId,
+          loserId: loserId,
+          pointDeltas: Map<String, int>.from(_lastMatchPointDeltas),
+          moriGaeshiCount: moriGaeshiCount,
+          moriDeclarationFactors: List<int>.from(moriDeclarationFactors),
+          endedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    } catch (_) {}
+  }
 
   List<CardWidget> _parseHandFromFirebase(dynamic raw) {
     if (raw == null) return [];
@@ -1663,6 +1867,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         seriesPlayerIds = List<String>.from(playerIds);
       }
     });
+    unawaited(_onFlipRecorded(card, deck.sublist(0, deck.length - 1)));
+  }
+
+  Future<void> _onFlipRecorded(CardWidget card, List<CardWidget> deckAfter) async {
+    if (!isHost) return;
+    if (!_matchRecordService.isRecording) {
+      await _startMatchRecording(deckOverride: deckAfter, fieldCard: card);
+      return;
+    }
+    await _recordMatchEvent(
+      type: MatchEventType.fieldFlip,
+      actorId: 'system',
+      payload: {'card': _serializeHand([card]).first},
+    );
   }
 
   /// 山札が空のときだけ、場の履歴から「最新カード以外」を山札に戻してシャッフルします。
@@ -1698,6 +1916,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       ],
       'deckResetAt': ServerValue.timestamp,
     });
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.deckReset,
+      payload: {
+        'deck': _serializeHand(deck),
+        'field': MatchRecordCodec.field(fieldNumber, fieldSuit),
+      },
+    ));
   }
 
   void _cleanupRoomOnLeave() {
@@ -1990,6 +2215,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     });
     playerPoints = updatedPoints;
     if (mounted) _syncPostGameSummary();
+    await _finalizeMatchRecording();
   }
 
   Future<void> _onHostPostGameEntered() async {
@@ -2158,6 +2384,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           _allPlayerCards[pid] = _parseHandFromFirebase(playerCards[pid]);
           _botHasPlayedThisTurn[pid] = false;
         }
+        unawaited(_startMatchRecording(
+          deckOverride: List<CardWidget>.from(deckCards),
+          fieldCard: firstCard,
+        ));
       }
       _showGameMessage('第$_currentMatchNumber戦を開始しました');
     } catch (_) {

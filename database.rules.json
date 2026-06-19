@@ -22,6 +22,12 @@
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
         }
       }
+    },
+    "matchRecords": {
+      ".read": "auth != null",
+      "$recordId": {
+        ".write": "auth != null"
+      }
     }
   }
 }
