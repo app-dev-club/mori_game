@@ -5,15 +5,36 @@ void main() {
   group('parseRankingSnapshot', () {
     test('レート降順に順位付けする', () {
       final entries = RatingService.parseRankingSnapshot({
-        'user_a': {'rating': 1600, 'gamesPlayed': 3, 'playerName': 'Alice', 'isBot': false},
-        'bot_1': {'rating': 1500, 'gamesPlayed': 5, 'isBot': true},
-        'user_b': {'rating': 1700, 'gamesPlayed': 1, 'playerName': 'Bob', 'isBot': false},
+        'user_a': {
+          'rating': 1600,
+          'mu': 125,
+          'sigma': 8.33,
+          'gamesPlayed': 3,
+          'playerName': 'Alice',
+          'isBot': false,
+        },
+        'bot_1': {
+          'rating': 1500,
+          'mu': 25,
+          'sigma': 8.33,
+          'gamesPlayed': 5,
+          'isBot': true,
+        },
+        'user_b': {
+          'rating': 1700,
+          'mu': 225,
+          'sigma': 8.33,
+          'gamesPlayed': 1,
+          'playerName': 'Bob',
+          'isBot': false,
+        },
       });
 
       expect(entries.length, 3);
       expect(entries[0].rank, 1);
       expect(entries[0].playerName, 'Bob');
       expect(entries[0].rating, 1700);
+      expect(entries[0].sigma, closeTo(8.33, 0.01));
       expect(entries[1].playerName, 'Alice');
       expect(entries[2].playerName, 'Bot 1');
       expect(entries[2].isBot, isTrue);

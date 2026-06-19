@@ -68,6 +68,8 @@ void main() {
         id: 'host',
         playerName: 'ホスト太郎',
         rating: 1500,
+        sigma: 8.33,
+        mu: 25,
         gamesPlayed: 3,
         isBot: false,
         rank: 1,
