@@ -1505,14 +1505,44 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _onMori() {
-    if (!GameRules.isValidMori(fieldNumber, myHand)) { _showGameMessage('計算が合いません！'); return; }
-    if (moriDeclaredPlayerIds.contains(myId)) {
-      _showGameMessage('もり／もり返しは1回だけ宣言できます');
+    if (moriPhase == 'none') {
+      if (!GameRules.canDeclareMori(
+        fieldNumber: fieldNumber,
+        hand: myHand,
+        moriPhase: moriPhase,
+        lastPlayerId: lastPlayerId,
+        playerId: myId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      )) {
+        if (moriDeclaredPlayerIds.contains(myId)) {
+          _showGameMessage('もり／もり返しは1回だけ宣言できます');
+        } else if (lastPlayerId == myId) {
+          _showGameMessage('自滅はできません！');
+        } else if (lastPlayerId == 'system') {
+          _showGameMessage('山札に対してもりは宣言できません');
+        } else {
+          _showGameMessage('計算が合いません！');
+        }
+        return;
+      }
+    } else if (!GameRules.canDeclareMoriGaeshi(
+      fieldNumber: fieldNumber,
+      hand: myHand,
+      moriPhase: moriPhase,
+      lastMoriPlayerId: lastMoriPlayerId,
+      playerId: myId,
+      moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+    )) {
+      if (moriDeclaredPlayerIds.contains(myId)) {
+        _showGameMessage('もり／もり返しは1回だけ宣言できます');
+      } else {
+        _showGameMessage('計算が合いません！');
+      }
       return;
     }
+
     final revealedHand = _serializeHand(myHand);
     if (moriPhase == 'none') {
-      if (lastPlayerId == myId) { _showGameMessage('自滅はできません！'); return; }
       final handFactor = ScoringRules.handFactor(myHand);
       setState(() {
         moriPhase = 'mori_declared';

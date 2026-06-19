@@ -87,6 +87,38 @@ class GameRules {
     return false;
   }
 
+  /// もり宣言可否（相手が出したカードに対してのみ。山札めくり `system` には不可）
+  static bool canDeclareMori({
+    required int fieldNumber,
+    required List<CardWidget> hand,
+    required String moriPhase,
+    required String? lastPlayerId,
+    required String playerId,
+    required List<String> moriDeclaredPlayerIds,
+  }) {
+    if (moriPhase != 'none' || fieldNumber == -1) return false;
+    if (moriDeclaredPlayerIds.contains(playerId)) return false;
+    if (lastPlayerId == null || lastPlayerId == playerId || lastPlayerId == 'system') {
+      return false;
+    }
+    return isValidMori(fieldNumber, hand);
+  }
+
+  /// もり返し宣言可否
+  static bool canDeclareMoriGaeshi({
+    required int fieldNumber,
+    required List<CardWidget> hand,
+    required String moriPhase,
+    required String? lastMoriPlayerId,
+    required String playerId,
+    required List<String> moriDeclaredPlayerIds,
+  }) {
+    if (moriPhase != 'mori_declared' || fieldNumber == -1) return false;
+    if (moriDeclaredPlayerIds.contains(playerId)) return false;
+    if (lastMoriPlayerId == null || lastMoriPlayerId == playerId) return false;
+    return isValidMori(fieldNumber, hand);
+  }
+
   /// 場に実際のジョーカーが出ているか（未めくりのプレースホルダー `-1/joker` は除く）
   static bool isJokerOnField(int fieldNumber, Suit fieldSuit) {
     return fieldSuit == Suit.joker && fieldNumber != -1;

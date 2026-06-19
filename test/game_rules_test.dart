@@ -44,6 +44,53 @@ void main() {
     });
   });
 
+  group('canDeclareMori', () {
+    const heart3 = CardWidget(number: 3, suit: Suit.heart);
+    const heart4 = CardWidget(number: 4, suit: Suit.heart);
+
+    test('相手が出したカードに対してもりできる', () {
+      expect(
+        GameRules.canDeclareMori(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'none',
+          lastPlayerId: 'host',
+          playerId: 'guest',
+          moriDeclaredPlayerIds: const [],
+        ),
+        isTrue,
+      );
+    });
+
+    test('山札めくり（system）に対してもりできない', () {
+      expect(
+        GameRules.canDeclareMori(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'none',
+          lastPlayerId: 'system',
+          playerId: 'guest',
+          moriDeclaredPlayerIds: const [],
+        ),
+        isFalse,
+      );
+    });
+
+    test('自分が出したカードに対してもりできない', () {
+      expect(
+        GameRules.canDeclareMori(
+          fieldNumber: 7,
+          hand: [heart3, heart4],
+          moriPhase: 'none',
+          lastPlayerId: 'guest',
+          playerId: 'guest',
+          moriDeclaredPlayerIds: const [],
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('auto play', () {
     const players = ['host', 'guest'];
 

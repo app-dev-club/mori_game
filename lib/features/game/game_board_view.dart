@@ -468,9 +468,27 @@ class GameBoardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    bool canMori = !isSpectator && GameRules.isValidMori(fieldNumber, myHand);
-    if (moriPhase == 'none' && lastPlayerId == myId) canMori = false;
-    bool isButtonEnabled = canMori && !moriDeclaredPlayerIds.contains(myId);
+    bool canMori;
+    if (moriPhase == 'mori_declared') {
+      canMori = GameRules.canDeclareMoriGaeshi(
+        fieldNumber: fieldNumber,
+        hand: myHand,
+        moriPhase: moriPhase,
+        lastMoriPlayerId: lastMoriPlayerId,
+        playerId: myId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      );
+    } else {
+      canMori = GameRules.canDeclareMori(
+        fieldNumber: fieldNumber,
+        hand: myHand,
+        moriPhase: moriPhase,
+        lastPlayerId: lastPlayerId,
+        playerId: myId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      );
+    }
+    bool isButtonEnabled = !isSpectator && canMori;
 
     int myIdx = playerIds.indexOf(myId);
     bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);

@@ -59,14 +59,15 @@ class BotLogic {
     required String? lastPlayerId,
     required String playerId,
     required List<String> moriDeclaredPlayerIds,
-  }) {
-    if (moriPhase != 'none' || fieldNumber == -1) return false;
-    if (moriDeclaredPlayerIds.contains(playerId)) return false;
-    if (lastPlayerId == null || lastPlayerId == playerId || lastPlayerId == 'system') {
-      return false;
-    }
-    return GameRules.isValidMori(fieldNumber, hand);
-  }
+  }) =>
+      GameRules.canDeclareMori(
+        fieldNumber: fieldNumber,
+        hand: hand,
+        moriPhase: moriPhase,
+        lastPlayerId: lastPlayerId,
+        playerId: playerId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      );
 
   static bool canDeclareMoriGaeshi({
     required int fieldNumber,
@@ -75,12 +76,15 @@ class BotLogic {
     required String? lastMoriPlayerId,
     required String playerId,
     required List<String> moriDeclaredPlayerIds,
-  }) {
-    if (moriPhase != 'mori_declared' || fieldNumber == -1) return false;
-    if (moriDeclaredPlayerIds.contains(playerId)) return false;
-    if (lastMoriPlayerId == null || lastMoriPlayerId == playerId) return false;
-    return GameRules.isValidMori(fieldNumber, hand);
-  }
+  }) =>
+      GameRules.canDeclareMoriGaeshi(
+        fieldNumber: fieldNumber,
+        hand: hand,
+        moriPhase: moriPhase,
+        lastMoriPlayerId: lastMoriPlayerId,
+        playerId: playerId,
+        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      );
 
   /// 持ち時間内でランダムな操作遅延（ミリ秒）を返す
   static int randomActionDelayMs({
