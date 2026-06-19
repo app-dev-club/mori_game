@@ -15,6 +15,15 @@ class RatingLogic {
 
   static String formatSigma(double sigma) => sigma.toStringAsFixed(2);
 
+  static String formatMu(double mu) => mu.toStringAsFixed(2);
+
+  static String formatLobbyRatingLine({
+    required int rating,
+    required double mu,
+    required double sigma,
+  }) =>
+      'レート $rating (μ=${formatMu(mu)}、σ=${formatSigma(sigma)})';
+
   /// ポイント降順の順位（同点は同順位）
   static List<({String id, int points, int rank})> rankByPoints(
     List<String> playerIds,

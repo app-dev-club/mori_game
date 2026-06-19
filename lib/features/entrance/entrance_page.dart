@@ -41,6 +41,7 @@ class _EntrancePageState extends State<EntrancePage> {
 
   static const int _maxNameLength = UserProfileService.maxPlayerNameLength;
   int? _myRating;
+  double? _myMu;
   double? _mySigma;
   bool _namePrefilled = false;
   bool _hideOpponentNames = false;
@@ -64,6 +65,7 @@ class _EntrancePageState extends State<EntrancePage> {
       if (mounted) {
         setState(() {
           _myRating = null;
+          _myMu = null;
           _mySigma = null;
         });
       }
@@ -81,6 +83,7 @@ class _EntrancePageState extends State<EntrancePage> {
     }
     setState(() {
       _myRating = rating;
+      _myMu = skill.mu;
       _mySigma = skill.sigma;
     });
   }
@@ -92,6 +95,7 @@ class _EntrancePageState extends State<EntrancePage> {
     if (mounted) {
       setState(() {
         _myRating = RatingLogic.displayRating(skill);
+        _myMu = skill.mu;
         _mySigma = skill.sigma;
       });
     }
@@ -519,11 +523,18 @@ class _EntrancePageState extends State<EntrancePage> {
           children: [
             const Text('もり - オンラインロビー',
                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            if (_myRating != null)
+            if (_myRating != null && _myMu != null && _mySigma != null)
               Text(
-                _mySigma != null
-                    ? 'レート $_myRating · σ ${RatingLogic.formatSigma(_mySigma!)}'
-                    : 'レート $_myRating',
+                RatingLogic.formatLobbyRatingLine(
+                  rating: _myRating!,
+                  mu: _myMu!,
+                  sigma: _mySigma!,
+                ),
+                style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
+              )
+            else if (_myRating != null)
+              Text(
+                'レート $_myRating',
                 style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
               ),
           ],
