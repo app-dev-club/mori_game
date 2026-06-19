@@ -204,11 +204,16 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
           ),
           if (frame != null) ...[
             const SizedBox(height: 4),
-            Text(
-              '手番: ${frame.turnIndex != null && frame.turnIndex! < meta.playerIds.length ? _playerLabel(meta.playerIds[frame.turnIndex!]) : '—'}'
-              ' · 山札 ${frame.deckCount}枚'
-              '${frame.isInitialPhase ? ' · 初手フェーズ' : ''}',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            Builder(
+              builder: (context) {
+                final turnPlayer = frame.turnPlayerId(meta.playerIds);
+                return Text(
+                  '手番: ${turnPlayer != null ? _playerLabel(turnPlayer) : '—'}'
+                  ' · 山札 ${frame.deckCount}枚'
+                  '${frame.isInitialPhase ? ' · 初手フェーズ' : ''}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                );
+              },
             ),
           ],
         ],
@@ -259,7 +264,8 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: DropdownButton<String>(
-                      value: povId,
+                      value: meta.playerIds.contains(povId) ? povId : null,
+                      hint: const Text('視点を選択', style: TextStyle(color: Colors.white70)),
                       dropdownColor: const Color(0xFF2E7D32),
                       style: const TextStyle(color: Colors.white),
                       underline: Container(height: 1, color: Colors.white38),
@@ -310,9 +316,8 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
 
   Widget _buildOpponentPanel(String playerId, ReplayFrame frame) {
     final hand = frame.hands[playerId] ?? const <CardWidget>[];
-    final isActive = frame.turnIndex != null &&
-        _record!.meta.playerIds.length > frame.turnIndex! &&
-        _record!.meta.playerIds[frame.turnIndex!] == playerId;
+    final meta = _record!.meta;
+    final isActive = frame.turnPlayerId(meta.playerIds) == playerId;
     final isLastActor = frame.lastPlayerId == playerId;
 
     return Container(

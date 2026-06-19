@@ -1,16 +1,12 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'game_display_settings_storage.dart'
+    if (dart.library.io) 'game_display_settings_prefs_storage.dart'
+    if (dart.library.js_interop) 'game_display_settings_web_storage.dart'
+    if (dart.library.html) 'game_display_settings_web_storage.dart' as storage;
 
 /// 対戦画面の表示に関するローカル設定
 class GameDisplaySettings {
-  static const _hideOpponentNamesKey = 'hide_opponent_names';
+  Future<bool> getHideOpponentNames() => storage.getHideOpponentNamesStorage();
 
-  Future<bool> getHideOpponentNames() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_hideOpponentNamesKey) ?? false;
-  }
-
-  Future<void> setHideOpponentNames(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hideOpponentNamesKey, value);
-  }
+  Future<void> setHideOpponentNames(bool value) =>
+      storage.setHideOpponentNamesStorage(value);
 }

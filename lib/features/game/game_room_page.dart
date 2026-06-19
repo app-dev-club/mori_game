@@ -1752,8 +1752,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         currentTurnIndex: currentTurn,
         isInitialPhase: isInitialPhase,
       );
-    } catch (_) {
-      // 記録失敗は対戦進行を妨げない
+    } catch (e, st) {
+      assert(() {
+        debugPrint('試合記録の開始に失敗: $e');
+        debugPrint('$st');
+        return true;
+      }());
     }
   }
 

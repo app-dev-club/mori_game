@@ -31,9 +31,23 @@ class ReplayFrame {
     this.isInitialPhase = false,
     this.eventType,
   });
+
+  /// 手番プレイヤー ID（範囲外の turnIndex は null）
+  String? turnPlayerId(List<String> playerIds) {
+    final idx = turnIndex;
+    if (idx == null || idx < 0 || idx >= playerIds.length) return null;
+    return playerIds[idx];
+  }
 }
 
 class MatchReplayEngine {
+  static int? normalizeTurnIndex(dynamic raw, int playerCount) {
+    if (raw is! num || playerCount <= 0) return null;
+    final idx = raw.round();
+    if (idx < 0 || idx >= playerCount) return null;
+    return idx;
+  }
+
   static List<ReplayFrame> buildFrames(MatchRecord record) {
     try {
       return _buildFramesUnsafe(record);
@@ -52,9 +66,10 @@ class MatchReplayEngine {
     var fieldHistory = _parseHistory(record.initial['fieldHistory']);
     var deckCount = _deckLength(record.initial['deck']);
     var lastPlayerId = record.initial['lastPlayerId']?.toString();
-    var turnIndex = record.initial['currentTurnIndex'] is num
-        ? (record.initial['currentTurnIndex'] as num).round()
-        : 0;
+    var turnIndex = normalizeTurnIndex(
+      record.initial['currentTurnIndex'],
+      meta.playerIds.length,
+    );
     var isInitialPhase = record.initial['isInitialPhase'] == true;
 
     frames.add(
@@ -130,8 +145,8 @@ class MatchReplayEngine {
           break;
       }
 
-      if (event.payload['turnIndex'] is num) {
-        turnIndex = (event.payload['turnIndex'] as num).round();
+      if (event.payload.containsKey('turnIndex')) {
+        turnIndex = normalizeTurnIndex(event.payload['turnIndex'], meta.playerIds.length);
       }
 
       frames.add(

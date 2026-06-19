@@ -94,5 +94,41 @@ void main() {
       expect(frames[1].hands['p1']!.length, 0);
       expect(frames[1].turnIndex, 1);
     });
+
+    test('範囲外の turnIndex は null に正規化する', () {
+      final meta = MatchRecordMeta(
+        recordId: 'test',
+        roomId: 'test',
+        matchIndex: 1,
+        seriesTotal: 1,
+        turnTimeoutSeconds: 10,
+        playerIds: ['p1', 'p2'],
+        playerNames: const {},
+        botIds: const [],
+        startedAtMs: 1,
+      );
+
+      expect(MatchReplayEngine.normalizeTurnIndex(-1, 2), isNull);
+      expect(MatchReplayEngine.normalizeTurnIndex(99, 2), isNull);
+      expect(MatchReplayEngine.normalizeTurnIndex(1, 2), 1);
+
+      final record = MatchRecord(
+        meta: meta,
+        initial: {
+          'hands': <String, dynamic>{},
+          'deck': <dynamic>[],
+          'field': MatchRecordCodec.field(7, Suit.heart),
+          'fieldHistory': <dynamic>[],
+          'currentTurnIndex': -1,
+          'isInitialPhase': true,
+        },
+        events: const [],
+        result: null,
+      );
+
+      final frame = MatchReplayEngine.buildFrames(record).single;
+      expect(frame.turnIndex, isNull);
+      expect(frame.turnPlayerId(meta.playerIds), isNull);
+    });
   });
 }

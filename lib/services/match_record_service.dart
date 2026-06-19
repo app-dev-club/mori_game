@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 
 import '../logic/match_record_codec.dart';
 import '../models/match_event.dart';
@@ -20,6 +21,12 @@ String formatMatchRecordLoadError(Object error) {
   return msg;
 }
 
+void _logMatchRecordError(String action, Object error, [StackTrace? stack]) {
+  if (!kDebugMode) return;
+  debugPrint('MatchRecordService.$action failed: $error');
+  if (stack != null) debugPrint('$stack');
+}
+
 /// 試合内容を Firebase Realtime Database に記録（リプレイ・機械学習用）
 class MatchRecordService {
   static const _listTimeout = Duration(seconds: 20);
@@ -30,6 +37,7 @@ class MatchRecordService {
       FirebaseDatabase.instance.ref('matchRecordSummaries');
 
   String? _activeRecordId;
+  MatchRecordMeta? _activeMeta;
   int _eventSeq = 0;
   bool _finalized = false;
 
@@ -53,16 +61,17 @@ class MatchRecordService {
     required int currentTurnIndex,
     required bool isInitialPhase,
   }) async {
+    if (isRecording) {
+      _logMatchRecordError('startMatch', '前の試合記録が未確定のためリセットします');
+      reset();
+    }
+
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     final recordId = MatchRecordCodec.buildRecordId(
       roomId: roomId,
       matchIndex: matchIndex,
       startedAtMs: startedAtMs,
     );
-
-    _activeRecordId = recordId;
-    _eventSeq = 0;
-    _finalized = false;
 
     final meta = MatchRecordMeta(
       recordId: recordId,
@@ -76,31 +85,15 @@ class MatchRecordService {
       startedAtMs: startedAtMs,
     );
 
-    await _root.child(recordId).set({
-      'meta': meta.toJson(),
-      'initial': {
-        'hands': hands,
-        'deck': deck,
-        'field': field,
-        'fieldHistory': fieldHistory,
-        'currentTurnIndex': currentTurnIndex,
-        'isInitialPhase': isInitialPhase,
-      },
-      'events': {},
-      'result': null,
-    });
+    _activeRecordId = recordId;
+    _activeMeta = meta;
+    _eventSeq = 0;
+    _finalized = false;
 
-    await _summariesRoot.child(recordId).set({
-      'meta': meta.toJson(),
-      'result': null,
-    });
-
-    await _append(
-      MatchEvent(
-        seq: _nextSeq(),
-        type: MatchEventType.matchStart,
-        atMs: startedAtMs,
-        payload: {
+    try {
+      await _root.child(recordId).set({
+        'meta': meta.toJson(),
+        'initial': {
           'hands': hands,
           'deck': deck,
           'field': field,
@@ -108,8 +101,32 @@ class MatchRecordService {
           'currentTurnIndex': currentTurnIndex,
           'isInitialPhase': isInitialPhase,
         },
-      ),
-    );
+        'events': {},
+        'result': null,
+      });
+
+      await _upsertSummary(meta: meta, result: null);
+
+      await _append(
+        MatchEvent(
+          seq: _nextSeq(),
+          type: MatchEventType.matchStart,
+          atMs: startedAtMs,
+          payload: {
+            'hands': hands,
+            'deck': deck,
+            'field': field,
+            'fieldHistory': fieldHistory,
+            'currentTurnIndex': currentTurnIndex,
+            'isInitialPhase': isInitialPhase,
+          },
+        ),
+      );
+    } catch (e, st) {
+      reset();
+      _logMatchRecordError('startMatch', e, st);
+      rethrow;
+    }
   }
 
   Future<void> recordEvent({
@@ -129,15 +146,19 @@ class MatchRecordService {
     if (turnIndex != null) eventPayload['turnIndex'] = turnIndex;
     if (field != null) eventPayload['field'] = field;
 
-    await _append(
-      MatchEvent(
-        seq: _nextSeq(),
-        type: type,
-        atMs: DateTime.now().millisecondsSinceEpoch,
-        actorId: actorId,
-        payload: eventPayload,
-      ),
-    );
+    try {
+      await _append(
+        MatchEvent(
+          seq: _nextSeq(),
+          type: type,
+          atMs: DateTime.now().millisecondsSinceEpoch,
+          actorId: actorId,
+          payload: eventPayload,
+        ),
+      );
+    } catch (e, st) {
+      _logMatchRecordError('recordEvent', e, st);
+    }
   }
 
   /// 試合終了時に結果を書き込み、記録を確定
@@ -145,21 +166,34 @@ class MatchRecordService {
     if (_activeRecordId == null || _finalized) return;
 
     final recordId = _activeRecordId!;
+    final meta = _activeMeta;
 
-    await recordEvent(
-      type: MatchEventType.matchEnd,
-      payload: result.toJson(),
-    );
+    try {
+      await recordEvent(
+        type: MatchEventType.matchEnd,
+        payload: result.toJson(),
+      );
 
-    await _root.child('$recordId/result').set(result.toJson());
-    await _summariesRoot.child('$recordId/result').set(result.toJson());
-    _finalized = true;
-    _activeRecordId = null;
-    _eventSeq = 0;
+      await _root.child('$recordId/result').set(result.toJson());
+      if (meta != null) {
+        await _upsertSummary(meta: meta, result: result);
+      } else {
+        await _summariesRoot.child('$recordId/result').set(result.toJson());
+      }
+    } catch (e, st) {
+      _logMatchRecordError('finalizeMatch', e, st);
+      rethrow;
+    } finally {
+      _finalized = true;
+      _activeRecordId = null;
+      _activeMeta = null;
+      _eventSeq = 0;
+    }
   }
 
   void reset() {
     _activeRecordId = null;
+    _activeMeta = null;
     _eventSeq = 0;
     _finalized = false;
   }
@@ -172,20 +206,90 @@ class MatchRecordService {
     await _root.child('$recordId/events').push().set(event.toJson());
   }
 
-  /// 保存済み試合の一覧（新しい順）。軽量インデックスのみ読む。
+  Future<void> _upsertSummary({
+    required MatchRecordMeta meta,
+    MatchRecordResult? result,
+  }) async {
+    try {
+      await _summariesRoot.child(meta.recordId).set({
+        'meta': meta.toJson(),
+        'result': result?.toJson(),
+      });
+    } catch (e, st) {
+      _logMatchRecordError('_upsertSummary', e, st);
+    }
+  }
+
+  /// 保存済み試合の一覧（新しい順）。軽量インデックス + 未索引の記録を補完。
   Future<List<MatchRecordSummary>> listRecentRecords({int limit = 50}) async {
+    List<MatchRecordSummary> summaries;
     try {
       final snap = await _summariesRoot.get().timeout(_listTimeout);
-      final summaries = _loadSummaries(snap, limit: limit);
-      if (summaries.isNotEmpty) return summaries;
+      summaries = _loadSummaries(snap, limit: 9999);
     } on FirebaseException catch (e) {
       if (e.code != 'permission-denied') rethrow;
-      // summaries 未デプロイ時: フル記録から meta のみ抽出（書き込みなし）
-      return _backfillSummariesFromFullRecords(limit: limit, writeIndex: false);
+      summaries = await _backfillSummariesFromFullRecords(
+        limit: limit,
+        writeIndex: false,
+      );
+      return summaries;
     }
 
-    // インデックス未作成の既存記録を1回だけバックフィル
-    return _backfillSummariesFromFullRecords(limit: limit);
+    final indexedIds = summaries.map((s) => s.meta.recordId).toSet();
+    final merged = await _mergeMissingSummaries(summaries, indexedIds);
+    merged.sort((a, b) => b.meta.startedAtMs.compareTo(a.meta.startedAtMs));
+    if (merged.length <= limit) return merged;
+    return merged.sublist(0, limit);
+  }
+
+  Future<List<MatchRecordSummary>> _mergeMissingSummaries(
+    List<MatchRecordSummary> summaries,
+    Set<String> indexedIds,
+  ) async {
+    try {
+      final snap = await _root.get().timeout(_loadTimeout);
+      if (!snap.exists || snap.value is! Map) return summaries;
+
+      final merged = List<MatchRecordSummary>.from(summaries);
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      final updates = <String, dynamic>{};
+
+      for (final entry in raw.entries) {
+        if (entry.value is! Map) continue;
+        final recordId = entry.key.toString();
+        if (indexedIds.contains(recordId)) continue;
+
+        final data = Map<dynamic, dynamic>.from(entry.value as Map);
+        final metaRaw = data['meta'];
+        if (metaRaw is! Map) continue;
+
+        final metaMap = Map<dynamic, dynamic>.from(metaRaw);
+        if (metaMap['recordId'] == null || metaMap['recordId'].toString().isEmpty) {
+          metaMap['recordId'] = recordId;
+        }
+
+        final meta = MatchRecordMetaJson.fromJson(metaMap);
+        final result = MatchRecordResultJson.fromJson(data['result']);
+        merged.add(MatchRecordSummary(meta: meta, result: result));
+        updates[recordId] = {
+          'meta': meta.toJson(),
+          'result': result?.toJson(),
+        };
+      }
+
+      if (updates.isNotEmpty) {
+        try {
+          await _summariesRoot.update(updates);
+        } catch (e, st) {
+          _logMatchRecordError('_mergeMissingSummaries', e, st);
+        }
+      }
+
+      return merged;
+    } catch (e, st) {
+      _logMatchRecordError('_mergeMissingSummaries', e, st);
+      return summaries;
+    }
   }
 
   List<MatchRecordSummary> _loadSummaries(DataSnapshot snap, {required int limit}) {
@@ -245,15 +349,11 @@ class MatchRecordService {
         metaMap['recordId'] = recordId;
       }
 
+      final meta = MatchRecordMetaJson.fromJson(metaMap);
       final result = MatchRecordResultJson.fromJson(data['result']);
-      summaries.add(
-        MatchRecordSummary(
-          meta: MatchRecordMetaJson.fromJson(metaMap),
-          result: result,
-        ),
-      );
+      summaries.add(MatchRecordSummary(meta: meta, result: result));
       updates[recordId] = {
-        'meta': MatchRecordCodec.toFirebaseMap(metaMap),
+        'meta': meta.toJson(),
         'result': result?.toJson(),
       };
     }
@@ -261,8 +361,8 @@ class MatchRecordService {
     if (writeIndex && updates.isNotEmpty) {
       try {
         await _summariesRoot.update(updates);
-      } catch (_) {
-        // インデックス書き込み失敗でも一覧は返す（本番 Web の型問題等）
+      } catch (e, st) {
+        _logMatchRecordError('_backfillSummariesFromFullRecords', e, st);
       }
     }
 

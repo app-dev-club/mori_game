@@ -314,25 +314,29 @@ class FirebaseDB {
   // --- 追加：ホスト不在や古いルームの一括クリーンアップ処理 ---
   // インスタンス化せずに呼べるように static メソッドとして定義します
   static Future<int> cleanupOldRooms() async {
-    final ref = FirebaseDatabase.instance.ref('rooms');
-    final snapshot = await ref.get();
+    try {
+      final ref = FirebaseDatabase.instance.ref('rooms');
+      final snapshot = await ref.get();
 
-    if (!snapshot.exists || snapshot.value == null) return 0;
+      if (!snapshot.exists || snapshot.value == null) return 0;
 
-    final rooms = snapshot.value as Map;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final deletions = <Future<void>>[];
+      final rooms = snapshot.value as Map;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final deletions = <Future<void>>[];
 
-    for (final entry in rooms.entries) {
-      final value = entry.value;
-      if (value is! Map) continue;
-      final roomData = Map<dynamic, dynamic>.from(value);
-      if (!RoomLifecycle.shouldAutoDeleteRoom(roomData, nowMs: now)) continue;
-      deletions.add(FirebaseDatabase.instance.ref('rooms/${entry.key}').remove());
+      for (final entry in rooms.entries) {
+        final value = entry.value;
+        if (value is! Map) continue;
+        final roomData = Map<dynamic, dynamic>.from(value);
+        if (!RoomLifecycle.shouldAutoDeleteRoom(roomData, nowMs: now)) continue;
+        deletions.add(FirebaseDatabase.instance.ref('rooms/${entry.key}').remove());
+      }
+
+      if (deletions.isEmpty) return 0;
+      await Future.wait(deletions);
+      return deletions.length;
+    } catch (_) {
+      return 0;
     }
-
-    if (deletions.isEmpty) return 0;
-    await Future.wait(deletions);
-    return deletions.length;
   }
 }

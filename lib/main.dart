@@ -8,12 +8,34 @@ import 'firebase_options.dart';
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      // 本番 Web でもコンソールに詳細を出す
+      // ignore: avoid_print
+      print('FlutterError: ${details.exceptionAsString()}');
+    };
+    ErrorWidget.builder = (details) {
+      return Material(
+        color: const Color(0xFF1B5E20),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              '画面の描画エラー\n${details.exceptionAsString()}',
+              style: const TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    };
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
     runApp(const MoriGameApp());
   }, (error, stack) {
-    debugPrint('Uncaught error: $error\n$stack');
+    // ignore: avoid_print
+    print('Uncaught error: $error\n$stack');
   });
 }
 

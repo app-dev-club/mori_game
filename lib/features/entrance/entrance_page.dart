@@ -70,7 +70,7 @@ class _EntrancePageState extends State<EntrancePage> {
     if (FirebaseAuth.instance.currentUser == null) return;
     _roomCleanupRunning = true;
     unawaited(
-      FirebaseDB.cleanupOldRooms().whenComplete(() {
+      FirebaseDB.cleanupOldRooms().catchError((_) => 0).whenComplete(() {
         _roomCleanupRunning = false;
       }),
     );
