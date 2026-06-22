@@ -119,6 +119,28 @@ class GameRules {
     return isValidMori(fieldNumber, hand);
   }
 
+  static bool hasJoker(List<CardWidget> hand) =>
+      hand.any((c) => c.suit == Suit.joker);
+
+  /// ジョーカー + 通常カード1枚（係数計算の「1枚相当」）
+  static bool isJokerPlusOneHand(List<CardWidget> hand) {
+    if (!hasJoker(hand)) return false;
+    return hand.where((c) => c.suit != Suit.joker).length == 1;
+  }
+
+  /// オープンジョーカー宣言可否
+  static bool canOpenJoker({
+    required List<CardWidget> hand,
+    required String playerId,
+    required Set<String> openJokerPlayerIds,
+    required bool gameStarted,
+    required String moriPhase,
+  }) {
+    if (!gameStarted || moriPhase != 'none') return false;
+    if (openJokerPlayerIds.contains(playerId)) return false;
+    return hasJoker(hand);
+  }
+
   /// 場に実際のジョーカーが出ているか（未めくりのプレースホルダー `-1/joker` は除く）
   static bool isJokerOnField(int fieldNumber, Suit fieldSuit) {
     return fieldSuit == Suit.joker && fieldNumber != -1;

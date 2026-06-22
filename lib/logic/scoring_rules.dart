@@ -3,8 +3,9 @@ import '../features/game/game_board_view.dart';
 /// 試合終了時のポイント計算
 class ScoringRules {
   /// もり／もり返し宣言時の手札枚数に応じた掛け算係数
-  /// ジョーカーは枚数に含めない（1枚もりの例外: ジョーカーが含まれる場合は係数1）
-  static int handFactor(List<CardWidget> hand) {
+  /// ジョーカーは枚数に含めない。
+  /// ジョーカー+1枚は通常係数1。オープンジョーカー公開済みなら1枚もり扱いで係数3。
+  static int handFactor(List<CardWidget> hand, {bool openJoker = false}) {
     if (hand.isEmpty) return 0;
 
     final hasJoker = hand.any((c) => c.suit == Suit.joker);
@@ -12,8 +13,10 @@ class ScoringRules {
 
     // 1枚もり（ジョーカーなし）のみ係数3
     if (effectiveCount == 1 && !hasJoker) return 3;
-    // ジョーカーのみ、またはジョーカー+1枚など「1枚相当」は係数1
-    if (effectiveCount <= 1 && hasJoker) return 1;
+    // ジョーカー+1枚: 通常1、オープンジョーカー時は1枚もり扱いで3
+    if (effectiveCount == 1 && hasJoker) return openJoker ? 3 : 1;
+    // ジョーカーのみは係数1
+    if (effectiveCount == 0 && hasJoker) return 1;
 
     if (effectiveCount == 2 || effectiveCount == 3) return 1;
     if (effectiveCount == 4) return 2;

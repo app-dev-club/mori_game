@@ -22,6 +22,20 @@ void main() {
       expect(ScoringRules.handFactor([card(0, Suit.joker), card(4)]), 1);
     });
 
+    test('ジョーカー+1枚・オープンジョーカーは3', () {
+      expect(
+        ScoringRules.handFactor([card(0, Suit.joker), card(4)], openJoker: true),
+        3,
+      );
+    });
+
+    test('ジョーカーのみ・オープンジョーカーでも1', () {
+      expect(
+        ScoringRules.handFactor([card(0, Suit.joker)], openJoker: true),
+        1,
+      );
+    });
+
     test('ジョーカー2枚+通常2枚は2枚もりとして係数1', () {
       expect(
         ScoringRules.handFactor([

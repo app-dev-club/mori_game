@@ -71,6 +71,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int moriGaeshiCount = 0;
   List<int> moriDeclarationFactors = [];
   List<String> moriDeclaredPlayerIds = [];
+  Set<String> openJokerPlayerIds = {};
   List<CardWidget> moriRevealedHand = [];
   String? moriRevealedType;
   int? moriDeclaredAt;
@@ -519,6 +520,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
             .toList();
       } else if (moriPhase == 'none') {
         moriDeclaredPlayerIds = [];
+      }
+      if (data['openJokerPlayerIds'] is Map) {
+        openJokerPlayerIds = (data['openJokerPlayerIds'] as Map)
+            .entries
+            .where((e) => e.value == true)
+            .map((e) => e.key.toString())
+            .toSet();
+      } else {
+        openJokerPlayerIds = {};
       }
       if (data['moriDeclarationFactors'] is List) {
         moriDeclarationFactors = (data['moriDeclarationFactors'] as List)
@@ -1342,7 +1352,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriRevealedHand': _serializeHand(hand),
       'moriRevealedType': 'mori',
       'moriGaeshiCount': 0,
-      'moriDeclarationFactors': [ScoringRules.handFactor(hand)],
+      'moriDeclarationFactors': [ScoringRules.handFactor(hand, openJoker: openJokerPlayerIds.contains(botId))],
       'moriDeclaredPlayerIds': [botId],
     });
     unawaited(_recordMatchEvent(
@@ -1351,7 +1361,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       payload: {
         'hand': _serializeHand(hand),
         'loserId': lastPlayerId,
-        'handFactor': ScoringRules.handFactor(hand),
+        'handFactor': _handFactorFor(botId, hand),
       },
       actorHand: hand,
     ));
@@ -1372,7 +1382,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     final previousMoriPlayerId = lastMoriPlayerId;
     final nextGaeshiCount = moriGaeshiCount + 1;
-    final handFactor = ScoringRules.handFactor(hand);
+    final handFactor = _handFactorFor(botId, hand);
     final nextFactors = [...moriDeclarationFactors, handFactor];
     final nextDeclaredIds = [...moriDeclaredPlayerIds, botId];
 
@@ -1634,7 +1644,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     final revealedHand = _serializeHand(myHand);
     if (moriPhase == 'none') {
-      final handFactor = ScoringRules.handFactor(myHand);
+      final handFactor = _handFactorFor(myId, myHand);
       setState(() {
         moriPhase = 'mori_declared';
         lastMoriPlayerId = myId;
@@ -1670,7 +1680,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     } else {
       final previousMoriPlayerId = lastMoriPlayerId;
       final nextGaeshiCount = moriGaeshiCount + 1;
-      final handFactor = ScoringRules.handFactor(myHand);
+      final handFactor = _handFactorFor(myId, myHand);
       final nextFactors = [...moriDeclarationFactors, handFactor];
       final nextDeclaredIds = [...moriDeclaredPlayerIds, myId];
       setState(() {
@@ -1725,6 +1735,44 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       snapshot[pid] = _serializeHand(cards);
     }
     return snapshot;
+  }
+
+  int _handFactorFor(String playerId, List<CardWidget> hand) =>
+      ScoringRules.handFactor(hand, openJoker: openJokerPlayerIds.contains(playerId));
+
+  void _onOpenJoker() {
+    if (!GameRules.canOpenJoker(
+      hand: myHand,
+      playerId: myId,
+      openJokerPlayerIds: openJokerPlayerIds,
+      gameStarted: gameStarted,
+      moriPhase: moriPhase,
+    )) {
+      if (openJokerPlayerIds.contains(myId)) {
+        _showGameMessage('すでにオープンジョーカーしています');
+      } else if (!GameRules.hasJoker(myHand)) {
+        _showGameMessage('ジョーカーがないため公開できません');
+      } else {
+        _showGameMessage('今はオープンジョーカーできません');
+      }
+      return;
+    }
+
+    setState(() => openJokerPlayerIds = {...openJokerPlayerIds, myId});
+    _showGameMessage(
+      GameRules.isJokerPlusOneHand(myHand)
+          ? 'ジョーカーを公開しました（もり係数が3になります）'
+          : 'ジョーカーを公開しました',
+    );
+    _db.updateGameStatus({'openJokerPlayerIds/$myId': true});
+    unawaited(_recordMatchEvent(
+      type: MatchEventType.openJoker,
+      actorId: myId,
+      payload: {
+        'jokerPlusOne': GameRules.isJokerPlusOneHand(myHand),
+      },
+      actorHand: myHand,
+    ));
   }
 
   Future<void> _startMatchRecording({
@@ -1851,6 +1899,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriGaeshiCount': null,
       'moriDeclarationFactors': null,
       'moriDeclaredPlayerIds': null,
+      'openJokerPlayerIds': null,
       'lastMatchPointSummary': null,
       'lastMatchPointDeltas': null,
       'seriesRatingApplied': null,
@@ -2669,6 +2718,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       onToggleHideOpponentNames: _toggleHideOpponentNames,
       onCardTap: isSpectator ? _noopCardTap : _onCardTap,
       onMori: isSpectator ? _noop : _onMori,
+      onOpenJoker: isSpectator ? _noop : _onOpenJoker,
+      openJokerPlayerIds: openJokerPlayerIds,
       onDraw: isSpectator ? _noop : _onDraw,
       onFlip: isSpectator ? _noop : _onFlip,
     );
