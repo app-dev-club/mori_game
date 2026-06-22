@@ -7,6 +7,7 @@ enum MatchEventType {
   deckReset('deck_reset'),
   mori('mori'),
   moriGaeshi('mori_gaeshi'),
+  openJoker('open_joker'),
   matchEnd('match_end');
 
   const MatchEventType(this.value);

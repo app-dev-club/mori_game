@@ -234,6 +234,72 @@ class OpponentHandVisual extends StatelessWidget {
   }
 }
 
+/// オープンジョーカー公開の表示（文言 + 表ジョーカー1枚 + 残りは裏向き）
+class OpenJokerIndicator extends StatelessWidget {
+  final int handCount;
+  final double cardWidth;
+  final double cardHeight;
+  final double overlap;
+  final bool showFactorThreeHint;
+  final double fontSize;
+
+  const OpenJokerIndicator({
+    super.key,
+    required this.handCount,
+    this.cardWidth = 40,
+    this.cardHeight = 60,
+    this.overlap = 9,
+    this.showFactorThreeHint = false,
+    this.fontSize = 12,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final backCount = (handCount - 1).clamp(0, 52);
+    final totalWidth = backCount > 0 ? cardWidth + backCount * overlap : cardWidth;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          showFactorThreeHint ? 'オープンジョーカー（係数3）' : 'オープンジョーカー',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.yellowAccent,
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          width: totalWidth,
+          height: cardHeight + 2,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < backCount; i++)
+                Positioned(
+                  left: i * overlap,
+                  child: CardBackWidget(width: cardWidth, height: cardHeight),
+                ),
+              Positioned(
+                left: backCount * overlap,
+                child: CardWidget(
+                  number: 0,
+                  suit: Suit.joker,
+                  width: cardWidth,
+                  height: cardHeight,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// 相手プレイヤーを半円上に配置するためのレイアウト計算
 class OpponentArcLayout {
   final double cardWidth;
@@ -424,7 +490,8 @@ class GameBoardView extends StatelessWidget {
   final VoidCallback? onAddBot;
   final bool hideOpponentNames;
   final VoidCallback? onToggleHideOpponentNames;
-  final VoidCallback onMori, onDraw, onFlip;
+  final Set<String> openJokerPlayerIds;
+  final VoidCallback onMori, onDraw, onFlip, onOpenJoker;
   final Function(int) onCardTap;
 
   const GameBoardView({
@@ -462,8 +529,10 @@ class GameBoardView extends StatelessWidget {
     this.onAddBot,
     this.hideOpponentNames = false,
     this.onToggleHideOpponentNames,
+    this.openJokerPlayerIds = const {},
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
+    required this.onOpenJoker,
   });
 
   @override
@@ -489,6 +558,14 @@ class GameBoardView extends StatelessWidget {
       );
     }
     bool isButtonEnabled = !isSpectator && canMori;
+    final bool canOpenJoker = !isSpectator &&
+        GameRules.canOpenJoker(
+          hand: myHand,
+          playerId: myId,
+          openJokerPlayerIds: openJokerPlayerIds,
+          gameStarted: gameStarted,
+          moriPhase: moriPhase,
+        );
 
     int myIdx = playerIds.indexOf(myId);
     bool isMyTurn = playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == myIdx);
@@ -602,18 +679,40 @@ class GameBoardView extends StatelessWidget {
           const Spacer(),
           if (!isSpectator)
           Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: ElevatedButton(
-              onPressed: isButtonEnabled ? onMori : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange,
-                disabledBackgroundColor: Colors.grey[700],
-                padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15)
-              ),
-              child: Text(
-                moriPhase == 'mori_declared' ? "もり返し！！" : "もり！", 
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isButtonEnabled ? Colors.white : Colors.white38)
-              ),
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (canOpenJoker)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: OutlinedButton(
+                      onPressed: onOpenJoker,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.yellowAccent,
+                        side: const BorderSide(color: Colors.yellowAccent),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      child: const Text('オープンジョーカー'),
+                    ),
+                  ),
+                ElevatedButton(
+                  onPressed: isButtonEnabled ? onMori : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange,
+                    disabledBackgroundColor: Colors.grey[700],
+                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                  ),
+                  child: Text(
+                    moriPhase == 'mori_declared' ? "もり返し！！" : "もり！",
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: isButtonEnabled ? Colors.white : Colors.white38,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           if (isSpectator)
@@ -889,6 +988,7 @@ class GameBoardView extends StatelessWidget {
             final isHisTurn =
                 playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == entry.key);
             final isBurstWarning = handCount >= 6;
+            final hasOpenJoker = openJokerPlayerIds.contains(playerId);
             final center = centers[i];
 
             return Positioned(
@@ -901,6 +1001,7 @@ class GameBoardView extends StatelessWidget {
                 handCount: handCount,
                 isHisTurn: isHisTurn,
                 isBurstWarning: isBurstWarning,
+                hasOpenJoker: hasOpenJoker,
                 layout: layout,
               ),
             );
@@ -916,6 +1017,7 @@ class GameBoardView extends StatelessWidget {
     required int handCount,
     required bool isHisTurn,
     required bool isBurstWarning,
+    required bool hasOpenJoker,
     required OpponentArcLayout layout,
   }) {
     return Container(
@@ -948,13 +1050,25 @@ class GameBoardView extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 2),
-          OpponentHandVisual(
-            count: handCount,
-            isBurstWarning: isBurstWarning,
-            cardWidth: layout.cardWidth,
-            cardHeight: layout.cardHeight,
-            overlap: layout.cardOverlap,
-          ),
+          if (hasOpenJoker)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: OpenJokerIndicator(
+                handCount: handCount,
+                cardWidth: layout.cardWidth,
+                cardHeight: layout.cardHeight,
+                overlap: layout.cardOverlap,
+                fontSize: layout.handCountFontSize,
+              ),
+            )
+          else
+            OpponentHandVisual(
+              count: handCount,
+              isBurstWarning: isBurstWarning,
+              cardWidth: layout.cardWidth,
+              cardHeight: layout.cardHeight,
+              overlap: layout.cardOverlap,
+            ),
           const SizedBox(height: 2),
           Text(
             '$handCount枚',

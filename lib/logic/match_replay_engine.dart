@@ -139,6 +139,8 @@ class MatchReplayEngine {
         case MatchEventType.mori:
         case MatchEventType.moriGaeshi:
           lastPlayerId = event.actorId;
+        case MatchEventType.openJoker:
+          lastPlayerId = event.actorId;
         case MatchEventType.matchEnd:
           break;
         case MatchEventType.matchStart:
@@ -253,6 +255,10 @@ class MatchReplayEngine {
         return '$actor がもり宣言';
       case MatchEventType.moriGaeshi:
         return '$actor がもり返し';
+      case MatchEventType.openJoker:
+        return event.payload['jokerPlusOne'] == true
+            ? '$actor がオープンジョーカー（係数3）'
+            : '$actor がオープンジョーカー';
       case MatchEventType.matchEnd:
         return resultLabel(MatchRecordResultJson.fromJson(event.payload), meta);
       case MatchEventType.matchStart:

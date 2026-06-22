@@ -91,6 +91,47 @@ void main() {
     });
   });
 
+  group('canOpenJoker', () {
+    test('ジョーカー所持かつ未公開なら可能', () {
+      expect(
+        GameRules.canOpenJoker(
+          hand: [joker, heart5],
+          playerId: 'guest',
+          openJokerPlayerIds: const {},
+          gameStarted: true,
+          moriPhase: 'none',
+        ),
+        isTrue,
+      );
+    });
+
+    test('公開済みなら不可', () {
+      expect(
+        GameRules.canOpenJoker(
+          hand: [joker, heart5],
+          playerId: 'guest',
+          openJokerPlayerIds: const {'guest'},
+          gameStarted: true,
+          moriPhase: 'none',
+        ),
+        isFalse,
+      );
+    });
+
+    test('もり宣言中は不可', () {
+      expect(
+        GameRules.canOpenJoker(
+          hand: [joker, heart5],
+          playerId: 'guest',
+          openJokerPlayerIds: const {},
+          gameStarted: true,
+          moriPhase: 'mori_declared',
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('auto play', () {
     const players = ['host', 'guest'];
 
