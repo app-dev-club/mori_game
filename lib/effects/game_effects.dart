@@ -1,11 +1,10 @@
 import 'dart:async';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 
 import '../features/game/game_board_view.dart';
 import 'app_sound_effects.dart';
+import 'asset_sound_player.dart';
 
 enum MoriVisualEffect {
   mori,
@@ -28,7 +27,7 @@ class GameEffects extends ChangeNotifier {
 
   MoriVisualEffect? _activeVisual;
   int _visualToken = 0;
-  AudioPlayer? _moriSoundPlayer;
+  AssetSoundHandle? _moriSoundHandle;
 
   MoriVisualEffect? get activeVisual => _activeVisual;
   int get visualToken => _visualToken;
@@ -75,33 +74,19 @@ class GameEffects extends ChangeNotifier {
   }
 
   Future<void> _stopMoriSound() async {
-    final player = _moriSoundPlayer;
-    _moriSoundPlayer = null;
-    if (player == null) return;
+    final handle = _moriSoundHandle;
+    _moriSoundHandle = null;
+    if (handle == null) return;
     try {
-      await player.stop();
-      await player.dispose();
+      await handle.stop();
+      await handle.dispose();
     } catch (_) {}
   }
 
   Future<void> _playSound(String assetPath) async {
     try {
       await _stopMoriSound();
-      final player = AudioPlayer();
-      _moriSoundPlayer = player;
-      final data = await rootBundle.load(assetPath);
-      await player.play(
-        BytesSource(
-          data.buffer.asUint8List(),
-          mimeType: 'audio/mpeg',
-        ),
-      );
-      player.onPlayerComplete.listen((_) async {
-        if (_moriSoundPlayer == player) {
-          _moriSoundPlayer = null;
-        }
-        await player.dispose();
-      });
+      _moriSoundHandle = await playAssetSound(assetPath);
     } catch (e) {
       assert(() {
         debugPrint('効果音の再生に失敗: $e');
