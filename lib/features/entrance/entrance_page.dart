@@ -14,6 +14,7 @@ import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
 import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
+import '../../effects/app_sound_effects.dart';
 import '../common/app_side_bar.dart';
 
 class RoomCreationSettings {
@@ -743,7 +744,7 @@ class _EntrancePageState extends State<EntrancePage> {
                         ),
                         trailing: isStarted
                             ? TextButton(
-                                onPressed: () => _spectateRoom(rid, data),
+                                onPressed: () => withButtonSound(() => _spectateRoom(rid, data)),
                                 style: TextButton.styleFrom(
                                   foregroundColor: Colors.lightBlueAccent,
                                   backgroundColor: Colors.lightBlueAccent.withValues(alpha: 0.15),
@@ -764,7 +765,7 @@ class _EntrancePageState extends State<EntrancePage> {
                                   )
                                 : null),
                         enabled: canJoin,
-                        onTap: canJoin ? () => _joinRoom(rid) : null,
+                        onTap: canJoin ? () => withButtonSound(() => _joinRoom(rid)) : null,
                       ),
                     );
                   },
@@ -810,7 +811,7 @@ class _EntrancePageState extends State<EntrancePage> {
 
   Widget _buildActionBtn(String label, IconData icon, Color color, VoidCallback onTap) {
     return ElevatedButton.icon(
-      onPressed: onTap,
+      onPressed: () => withButtonSound(onTap),
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: ElevatedButton.styleFrom(
@@ -844,7 +845,7 @@ class _EntrancePageState extends State<EntrancePage> {
           ),
           const SizedBox(width: 10),
           ElevatedButton(
-            onPressed: () => _joinRoom(_roomIdController.text),
+            onPressed: () => withButtonSound(() => _joinRoom(_roomIdController.text)),
             child: const Text('合流'),
           ),
         ],

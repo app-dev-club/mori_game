@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../effects/app_sound_effects.dart';
+
 class AppSideBarItem {
   final String label;
   final IconData icon;
@@ -43,7 +45,7 @@ class AppSideBar extends StatelessWidget {
               label: hideOpponentNames ? '名前非表示' : '名前表示',
               icon: hideOpponentNames ? Icons.visibility_off : Icons.visibility,
               accent: hideOpponentNames ? Colors.amberAccent : Colors.white70,
-              onTap: onToggleHideOpponentNames!,
+              onTap: () => withButtonSound(onToggleHideOpponentNames!),
             ),
             if (items.isNotEmpty)
               const Padding(
@@ -56,7 +58,7 @@ class AppSideBar extends StatelessWidget {
               label: items[i].label,
               icon: items[i].icon,
               accent: items[i].accent,
-              onTap: items[i].onTap,
+              onTap: () => withButtonSound(items[i].onTap),
             ),
             if (i < items.length - 1)
               const Padding(

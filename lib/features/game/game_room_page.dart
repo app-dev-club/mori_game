@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'dart:math';
+import '../../effects/game_effects.dart';
+import '../../effects/game_effects_overlay.dart';
 import '../../services/firebase_db.dart';
 import '../../logic/game_rules.dart';
 import '../../logic/bot_logic.dart';
@@ -48,6 +50,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   late final RatingService _ratingService;
   final MatchRecordService _matchRecordService = MatchRecordService();
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
+  final GameEffects _gameEffects = GameEffects();
   StreamSubscription? _sub;
   String myId = '';
 
@@ -137,6 +140,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Map<String, String> spectatorNames = {};
   Map<String, List<CardWidget>> _spectatorPlayerCards = {};
   bool _hostDisconnectHandlerRegistered = false;
+  String? _lastEffectEventKey;
 
   bool get isSpectator => widget.isSpectator;
 
@@ -216,6 +220,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _cancelAllBotTimers();
     _seriesContinueTimer?.cancel();
     _seriesUiCountdownTimer?.cancel();
+    _gameEffects.dispose();
     super.dispose();
   }
 
@@ -364,6 +369,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     if (!mounted) return;
     final int? deckResetAt = data['deckResetAt'] as int?;
+    final prevFieldNumber = fieldNumber;
+    final prevFieldSuit = fieldSuit;
+    final prevLastPlayerId = lastPlayerId;
+    final prevLastDrawerId = lastDrawerId;
+    final prevMoriPhase = moriPhase;
+    final prevMoriGaeshiCount = moriGaeshiCount;
     final bool dataPostGameActive = data['postGameActive'] == true;
     final bool dataSeriesRestarting = data['seriesRestarting'] == true;
     final int? seriesNextMatchAt = _parseFirebaseTimestamp(data['seriesNextMatchAt']);
@@ -694,6 +705,114 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _syncInitialPhaseAutoFlipTimer();
       if (isHost) {
         _syncAllBotTimers();
+      }
+    }
+
+    _syncSyncedGameEffects(
+      prevFieldNumber: prevFieldNumber,
+      prevFieldSuit: prevFieldSuit,
+      prevLastPlayerId: prevLastPlayerId,
+      prevLastDrawerId: prevLastDrawerId,
+      prevMoriPhase: prevMoriPhase,
+      prevMoriGaeshiCount: prevMoriGaeshiCount,
+    );
+  }
+
+  void _onUiButtonPress(VoidCallback action) {
+    _gameEffects.playButton();
+    action();
+  }
+
+  void _emitCardPlayEffect({
+    required String actorId,
+    required int previousFieldNumber,
+    required int newFieldNumber,
+  }) {
+    if (!gameStarted || newFieldNumber == -1) return;
+    final key = 'play|$actorId|$previousFieldNumber|$newFieldNumber';
+    if (_lastEffectEventKey == key) return;
+    _lastEffectEventKey = key;
+    _gameEffects.playCard();
+  }
+
+  void _emitDrawEffect({required String actorId}) {
+    if (!gameStarted) return;
+    final key = 'draw|$actorId|${lastDrawerId ?? ''}';
+    if (_lastEffectEventKey == key) return;
+    _lastEffectEventKey = key;
+    _gameEffects.playCard();
+  }
+
+  void _emitMoriEffect({
+    required String actorId,
+    required bool isGaeshi,
+    required List<CardWidget> hand,
+  }) {
+    final handKey = hand.map((c) => '${c.number}${c.suit.name}').join(',');
+    final key = 'mori|$actorId|${isGaeshi ? 'gaeshi' : 'mori'}|$handKey';
+    if (_lastEffectEventKey == key) return;
+    _lastEffectEventKey = key;
+
+    if (isGaeshi) {
+      _gameEffects.playMorigaeshi();
+    } else {
+      _gameEffects.playMoriDeclaration(hand: hand);
+    }
+  }
+
+  void _syncSyncedGameEffects({
+    required int prevFieldNumber,
+    required Suit prevFieldSuit,
+    required String? prevLastPlayerId,
+    required String? prevLastDrawerId,
+    required String prevMoriPhase,
+    required int prevMoriGaeshiCount,
+  }) {
+    if (!gameStarted) return;
+
+    final actor = lastPlayerId;
+    final fieldChanged =
+        fieldNumber != prevFieldNumber || fieldSuit != prevFieldSuit;
+    final skipPlay = !isInitialPhase &&
+        prevFieldNumber != -1 &&
+        fieldNumber == prevFieldNumber &&
+        actor != null &&
+        actor != prevLastPlayerId;
+    if (actor != null &&
+        actor != 'system' &&
+        (fieldChanged || skipPlay)) {
+      _emitCardPlayEffect(
+        actorId: actor,
+        previousFieldNumber: prevFieldNumber,
+        newFieldNumber: fieldNumber,
+      );
+    }
+
+    final drawer = lastDrawerId;
+    if (drawer != null &&
+        drawer != prevLastDrawerId &&
+        fieldNumber == prevFieldNumber &&
+        fieldSuit == prevFieldSuit) {
+      _emitDrawEffect(actorId: drawer);
+    }
+
+    if (prevMoriPhase == 'none' && moriPhase == 'mori_declared') {
+      final actorId = lastMoriPlayerId;
+      if (actorId != null) {
+        _emitMoriEffect(
+          actorId: actorId,
+          isGaeshi: false,
+          hand: moriRevealedHand,
+        );
+      }
+    } else if (moriGaeshiCount > prevMoriGaeshiCount) {
+      final actorId = lastMoriPlayerId;
+      if (actorId != null) {
+        _emitMoriEffect(
+          actorId: actorId,
+          isGaeshi: true,
+          hand: moriRevealedHand,
+        );
       }
     }
   }
@@ -1176,6 +1295,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!isInitialPhase && hand.length == 1) return;
 
     final card = hand[index];
+    final previousFieldNumber = fieldNumber;
     if (isInitialPhase) {
       if (!GameRules.canPlayNormal(fieldNumber, fieldSuit, card, isInitialPhase: true)) return;
     } else {
@@ -1236,6 +1356,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       },
       actorHand: hand,
     ));
+    _emitCardPlayEffect(
+      actorId: botId,
+      previousFieldNumber: previousFieldNumber,
+      newFieldNumber: card.number,
+    );
   }
 
   void _executeBotDraw(String botId) {
@@ -1303,6 +1428,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'isDrawCompetitive': false,
         ...resetMetaUpdates,
       });
+      _emitDrawEffect(actorId: botId);
       return;
     }
 
@@ -1334,6 +1460,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       },
       ...resetMetaUpdates,
     });
+    _emitDrawEffect(actorId: botId);
   }
 
   void _executeBotMori(String botId) {
@@ -1370,6 +1497,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       },
       actorHand: hand,
     ));
+    _emitMoriEffect(actorId: botId, isGaeshi: false, hand: hand);
   }
 
   void _executeBotMoriGaeshi(String botId) {
@@ -1412,6 +1540,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       },
       actorHand: hand,
     ));
+    _emitMoriEffect(actorId: botId, isGaeshi: true, hand: hand);
   }
 
   void _executeBotBurst(String botId) {
@@ -1528,6 +1657,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'isDrawCompetitive': false,
         ...resetMetaUpdates,
       });
+      _emitDrawEffect(actorId: myId);
       return;
     }
 
@@ -1562,6 +1692,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       },
       ...resetMetaUpdates,
     });
+    _emitDrawEffect(actorId: myId);
   }
 
   List<CardWidget> _rebuildDeckFromFieldHistoryWithoutLatest() {
@@ -1584,6 +1715,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     setState(() { for (var c in cards) { myHand.removeWhere((h) => h.number == c.number && h.suit == c.suit); } });
 
     final CardWidget playedCard = cards.last;
+    final previousFieldNumber = fieldNumber;
     final updatedHistory = List<CardWidget>.from(fieldHistory)..add(playedCard);
     fieldNumber = playedCard.number;
     fieldSuit = playedCard.suit;
@@ -1610,6 +1742,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       },
       actorHand: myHand,
     ));
+    _emitCardPlayEffect(
+      actorId: myId,
+      previousFieldNumber: previousFieldNumber,
+      newFieldNumber: playedCard.number,
+    );
   }
 
   void _onMori() {
@@ -1684,6 +1821,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         },
         actorHand: myHand,
       ));
+      _emitMoriEffect(actorId: myId, isGaeshi: false, hand: myHand);
     } else {
       final previousMoriPlayerId = lastMoriPlayerId;
       final nextGaeshiCount = moriGaeshiCount + 1;
@@ -1721,6 +1859,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         },
         actorHand: myHand,
       ));
+      _emitMoriEffect(actorId: myId, isGaeshi: true, hand: myHand);
     }
   }
 
@@ -2693,7 +2832,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    return GameBoardView(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        GameBoardView(
       roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: _povPlayerId,
       playerNames: playerNames,
       playerPoints: playerPoints,
@@ -2725,24 +2867,27 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           rematchEligiblePlayers.contains(myId) &&
           !myStayResponseSubmitted,
       myStayResponseSubmitted: myStayResponseSubmitted,
-      onHostRematch: isSpectator ? _noop : _onHostRematchRequest,
-      onHostReturnToLobby: isSpectator ? _noop : _onHostReturnToLobby,
-      onGuestStayInRoom: isSpectator ? _noop : _onGuestStayInRoom,
-      onLeaveToLobby: _leaveRoomToLobby,
+      onHostRematch: isSpectator ? _noop : () => _onUiButtonPress(() { unawaited(_onHostRematchRequest()); }),
+      onHostReturnToLobby: isSpectator ? _noop : () => _onUiButtonPress(_onHostReturnToLobby),
+      onGuestStayInRoom: isSpectator ? _noop : () => _onUiButtonPress(_onGuestStayInRoom),
+      onLeaveToLobby: () => _onUiButtonPress(_leaveRoomToLobby),
       canAddBot: !isSpectator &&
           isHost &&
           !gameStarted &&
           !RoomConfig.isRoomFull(playerIds.length, maxPlayers) &&
           BotLogic.hasAvailableBotSlot(playerIds),
-      onAddBot: isSpectator ? null : _addBot,
+      onAddBot: isSpectator ? null : () => _onUiButtonPress(_addBot),
       hideOpponentNames: _hideOpponentNames,
       onToggleHideOpponentNames: _toggleHideOpponentNames,
       onCardTap: isSpectator ? _noopCardTap : _onCardTap,
-      onMori: isSpectator ? _noop : _onMori,
-      onOpenJoker: isSpectator ? _noop : _onOpenJoker,
+      onMori: isSpectator ? _noop : () => _onUiButtonPress(_onMori),
+      onOpenJoker: isSpectator ? _noop : () => _onUiButtonPress(_onOpenJoker),
       openJokerPlayerIds: openJokerPlayerIds,
-      onDraw: isSpectator ? _noop : _onDraw,
-      onFlip: isSpectator ? _noop : _onFlip,
+      onDraw: isSpectator ? _noop : () => _onUiButtonPress(_onDraw),
+      onFlip: isSpectator ? _noop : () => _onUiButtonPress(_onFlip),
+        ),
+        GameEffectsOverlay(effects: _gameEffects),
+      ],
     );
   }
 }

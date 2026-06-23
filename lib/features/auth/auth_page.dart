@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../effects/app_sound_effects.dart';
 import '../../services/firebase_auth_service.dart';
 import '../../services/rating_service.dart';
 
@@ -166,7 +167,9 @@ class _AuthPageState extends State<AuthPage> {
                   ],
                   const SizedBox(height: 28),
                   FilledButton(
-                    onPressed: _busy ? null : () => _submit(isRegister: false),
+                    onPressed: _busy
+                        ? null
+                        : () => withButtonSound(() => _submit(isRegister: false)),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.orangeAccent,
                       foregroundColor: Colors.white,
@@ -181,7 +184,9 @@ class _AuthPageState extends State<AuthPage> {
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
-                    onPressed: _busy ? null : () => _submit(isRegister: true),
+                    onPressed: _busy
+                        ? null
+                        : () => withButtonSound(() => _submit(isRegister: true)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white54),
