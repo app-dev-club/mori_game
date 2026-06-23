@@ -968,7 +968,7 @@ class GameBoardView extends StatelessWidget {
   }
 
   Widget _buildOthersStatus(Map<String, GlobalKey> opponentKeys) {
-    final others = playerIds.asMap().entries.where((e) => e.value != myId).toList();
+    final others = GameRules.opponentEntriesClockwiseFrom(myId, playerIds);
     if (others.isEmpty) return const SizedBox.shrink();
 
     return LayoutBuilder(

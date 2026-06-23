@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../logic/game_rules.dart';
 import '../../logic/match_replay_engine.dart';
 import '../../models/match_record.dart';
 import '../../services/match_record_service.dart';
@@ -234,7 +235,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
         child: Text('プレイヤー情報がありません', style: TextStyle(color: Colors.white70)),
       );
     }
-    final opponents = meta.playerIds.where((id) => id != povId).toList();
+    final opponents = GameRules.opponentsClockwiseFrom(povId, meta.playerIds);
     final povHand = frame.hands[povId] ?? const <CardWidget>[];
 
     return LayoutBuilder(

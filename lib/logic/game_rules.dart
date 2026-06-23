@@ -26,6 +26,26 @@ class GameRules {
     return players[(drawerIdx + 1) % players.length] == myId;
   }
 
+  /// 盤面表示用: 自分の次の手番から時計回りに並べた相手（playerIds の index 付き）
+  static List<MapEntry<int, String>> opponentEntriesClockwiseFrom(
+    String myId,
+    List<String> playerIds,
+  ) {
+    final myIdx = playerIds.indexOf(myId);
+    if (myIdx < 0 || playerIds.length <= 1) return const [];
+    return List.generate(
+      playerIds.length - 1,
+      (i) {
+        final idx = (myIdx + i + 1) % playerIds.length;
+        return MapEntry(idx, playerIds[idx]);
+      },
+    );
+  }
+
+  /// 盤面表示用: 自分の次の手番から時計回りに並べた相手 ID 一覧
+  static List<String> opponentsClockwiseFrom(String myId, List<String> playerIds) =>
+      opponentEntriesClockwiseFrom(myId, playerIds).map((e) => e.value).toList();
+
   /// ドロー競合中にカードを出せるか（ドローした人 or 次のプレイヤー）
   static bool canPlayInDrawCompetition({
     required bool isDrawCompetitive,

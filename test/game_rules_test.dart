@@ -266,4 +266,20 @@ void main() {
       );
     });
   });
+
+  group('opponentsClockwiseFrom', () {
+    const ids = ['host', 'guest1', 'guest2'];
+
+    test('自分の次の手番から時計回りに並べる', () {
+      expect(GameRules.opponentsClockwiseFrom('host', ids), ['guest1', 'guest2']);
+      expect(GameRules.opponentsClockwiseFrom('guest1', ids), ['guest2', 'host']);
+      expect(GameRules.opponentsClockwiseFrom('guest2', ids), ['host', 'guest1']);
+    });
+
+    test('index 付きエントリは手番判定に使える', () {
+      final entries = GameRules.opponentEntriesClockwiseFrom('guest1', ids);
+      expect(entries.map((e) => e.key).toList(), [2, 0]);
+      expect(entries.map((e) => e.value).toList(), ['guest2', 'host']);
+    });
+  });
 }
