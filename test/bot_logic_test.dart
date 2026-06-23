@@ -11,6 +11,9 @@ void main() {
   const heart3 = CardWidget(number: 3, suit: Suit.heart);
   const heart4 = CardWidget(number: 4, suit: Suit.heart);
   const players = ['host', 'bot_1'];
+  const handCountsAllFive = {'host': 5, 'bot_1': 5};
+  const handCountsHostTwo = {'host': 2, 'bot_1': 5};
+  const handCountsHostTwoBotThree = {'host': 2, 'bot_1': 3};
 
   group('BotLogic', () {
     test('isBot は bot_ プレフィックスを判定する', () {
@@ -142,6 +145,7 @@ void main() {
         players: players,
         botId: 'bot_1',
         hand: [heart3, heart4],
+        handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
@@ -162,6 +166,7 @@ void main() {
         players: players,
         botId: 'bot_1',
         hand: [CardWidget(number: 3, suit: Suit.club)],
+        handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
@@ -182,6 +187,7 @@ void main() {
         players: players,
         botId: 'bot_1',
         hand: [CardWidget(number: 3, suit: Suit.club)],
+        handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
@@ -202,6 +208,7 @@ void main() {
         players: players,
         botId: 'bot_1',
         hand: [spade7],
+        handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
@@ -222,6 +229,7 @@ void main() {
         players: players,
         botId: 'bot_1',
         hand: [spade7],
+        handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
@@ -242,6 +250,7 @@ void main() {
         players: players,
         botId: 'bot_1',
         hand: [spade7, CardWidget(number: 3, suit: Suit.club)],
+        handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
         hasPlayedThisTurn: false,
@@ -250,6 +259,110 @@ void main() {
       );
       expect(decision.type, BotActionType.play);
       expect(decision.cardIndex, 0);
+    });
+
+    test('decideAction は相手が2枚のとき手札4枚なら出せてもドローする', () {
+      final hand = [
+        spade7,
+        CardWidget(number: 3, suit: Suit.club),
+        CardWidget(number: 5, suit: Suit.diamond),
+        CardWidget(number: 9, suit: Suit.spade),
+      ];
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: hand,
+        handCounts: handCountsHostTwo,
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
+      );
+      expect(decision.type, BotActionType.draw);
+    });
+
+    test('decideAction は相手が2枚でも自分が3枚なら出す', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: [spade7, heart3, heart4],
+        handCounts: handCountsHostTwoBotThree,
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
+      );
+      expect(decision.type, BotActionType.play);
+    });
+
+    test('decideAction は相手が2枚でも自分が6枚なら出す', () {
+      final hand = [
+        spade7,
+        heart3,
+        heart4,
+        CardWidget(number: 5, suit: Suit.diamond),
+        CardWidget(number: 9, suit: Suit.spade),
+        CardWidget(number: 10, suit: Suit.club),
+        CardWidget(number: 2, suit: Suit.heart),
+      ];
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: hand,
+        handCounts: handCountsHostTwo,
+        lastDrawerId: 'bot_1',
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
+      );
+      expect(decision.type, BotActionType.play);
+    });
+
+    test('decideAction は相手が2枚のとき同数字の割り込み出しをしない', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 0,
+        players: players,
+        botId: 'bot_1',
+        hand: [
+          spade7,
+          CardWidget(number: 3, suit: Suit.club),
+          CardWidget(number: 5, suit: Suit.diamond),
+          CardWidget(number: 9, suit: Suit.spade),
+        ],
+        handCounts: handCountsHostTwo,
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
+      );
+      expect(decision.type, BotActionType.none);
     });
   });
 }

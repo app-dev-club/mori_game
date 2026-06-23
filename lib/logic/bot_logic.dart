@@ -122,6 +122,7 @@ class BotLogic {
     required List<String> players,
     required String botId,
     required List<CardWidget> hand,
+    required Map<String, int> handCounts,
     required String? lastDrawerId,
     required bool isDrawCompetitive,
     required bool hasPlayedThisTurn,
@@ -152,12 +153,44 @@ class BotLogic {
       players: players,
       botId: botId,
       hand: hand,
+      handCounts: handCounts,
       lastDrawerId: lastDrawerId,
       isDrawCompetitive: isDrawCompetitive,
       hasPlayedThisTurn: hasPlayedThisTurn,
       lastPlayerId: lastPlayerId,
       moriDeclaredPlayerIds: moriDeclaredPlayerIds,
     ).type != BotActionType.none;
+  }
+
+  /// 他プレイヤーに手札2枚の人がいるか
+  static bool anotherPlayerHasTwoCards({
+    required String botId,
+    required List<String> players,
+    required Map<String, int> handCounts,
+  }) {
+    for (final playerId in players) {
+      if (playerId == botId) continue;
+      if ((handCounts[playerId] ?? 0) == 2) return true;
+    }
+    return false;
+  }
+
+  /// 手札2枚・3枚・6枚以上のときは、相手が2枚でもカードを出す
+  static bool shouldPlayDespiteTwoCardOpponent(int botHandLength) =>
+      botHandLength == 2 || botHandLength == 3 || botHandLength >= 6;
+
+  static bool shouldDrawBecauseOpponentHasTwoCards({
+    required String botId,
+    required int botHandLength,
+    required List<String> players,
+    required Map<String, int> handCounts,
+  }) {
+    if (shouldPlayDespiteTwoCardOpponent(botHandLength)) return false;
+    return anotherPlayerHasTwoCards(
+      botId: botId,
+      players: players,
+      handCounts: handCounts,
+    );
   }
 
   static BotDecision decideAction({
@@ -170,6 +203,7 @@ class BotLogic {
     required List<String> players,
     required String botId,
     required List<CardWidget> hand,
+    required Map<String, int> handCounts,
     required String? lastDrawerId,
     required bool isDrawCompetitive,
     required bool hasPlayedThisTurn,
@@ -220,17 +254,40 @@ class BotLogic {
       return const BotDecision.mori();
     }
 
-    final playIndex = GameRules.findPlayableCardIndex(
+    final preferDrawForTwoCardOpponent = shouldDrawBecauseOpponentHasTwoCards(
+      botId: botId,
+      botHandLength: hand.length,
+      players: players,
+      handCounts: handCounts,
+    );
+
+    if (preferDrawForTwoCardOpponent) {
+      final drawDecision = _tryDrawDecision(
+        isInitialPhase: isInitialPhase,
+        handLength: hand.length,
+        lastDrawerId: lastDrawerId,
+        botId: botId,
+        currentTurnIndex: currentTurnIndex,
+        players: players,
+        isDrawCompetitive: isDrawCompetitive,
+      );
+      if (drawDecision != null) return drawDecision;
+      // 通常フェーズでは割り込み（同数字）含め出さない
+      if (!isInitialPhase) return const BotDecision.none();
+    }
+
+    final playIndex = _findPlayableCardIndex(
       fieldNumber: fieldNumber,
       fieldSuit: fieldSuit,
       hand: hand,
       isInitialPhase: isInitialPhase,
       currentTurnIndex: currentTurnIndex,
       players: players,
-      myId: botId,
+      botId: botId,
       lastDrawerId: lastDrawerId,
       isDrawCompetitive: isDrawCompetitive,
       hasPlayedThisTurn: hasPlayedThisTurn,
+      excludeInterruptBecauseOpponentHasTwoCards: preferDrawForTwoCardOpponent,
     );
     if (playIndex != null) return BotDecision.play(playIndex);
 
@@ -256,6 +313,71 @@ class BotLogic {
     }
 
     return const BotDecision.none();
+  }
+
+  /// 相手が2枚のときは割り込み（同数字）を除外して合法手を探す
+  static int? _findPlayableCardIndex({
+    required int fieldNumber,
+    required Suit fieldSuit,
+    required List<CardWidget> hand,
+    required bool isInitialPhase,
+    required int currentTurnIndex,
+    required List<String> players,
+    required String botId,
+    required String? lastDrawerId,
+    required bool isDrawCompetitive,
+    required bool hasPlayedThisTurn,
+    required bool excludeInterruptBecauseOpponentHasTwoCards,
+  }) {
+    if (fieldNumber == -1 || hand.isEmpty) return null;
+
+    final myIdx = players.indexOf(botId);
+    if (myIdx < 0) return null;
+
+    final isJokerField = GameRules.isJokerOnField(fieldNumber, fieldSuit);
+
+    if (isInitialPhase) {
+      for (var i = 0; i < hand.length; i++) {
+        if (GameRules.canPlayNormal(fieldNumber, fieldSuit, hand[i], isInitialPhase: true)) {
+          return i;
+        }
+      }
+      return null;
+    }
+
+    final isServerTurn = currentTurnIndex % players.length == myIdx;
+    final isLastDrawer = lastDrawerId == botId;
+    final isCompetitiveParticipant = GameRules.canPlayInDrawCompetition(
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      players: players,
+      myId: botId,
+    );
+
+    for (var i = 0; i < hand.length; i++) {
+      final card = hand[i];
+      final isInterrupt = card.number == fieldNumber;
+      if (excludeInterruptBecauseOpponentHasTwoCards && isInterrupt) continue;
+
+      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+
+      if (usesTurnPlayLimit && hasPlayedThisTurn && !isInterrupt && !isJokerField) {
+        continue;
+      }
+
+      if (isServerTurn ||
+          isLastDrawer ||
+          isCompetitiveParticipant ||
+          isInterrupt ||
+          isJokerField) {
+        if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) ||
+            isInterrupt ||
+            isJokerField) {
+          return i;
+        }
+      }
+    }
+    return null;
   }
 
   static BotDecision? _tryDrawDecision({
@@ -298,6 +420,7 @@ class BotLogic {
     required int handLength,
     required String moriPhase,
     required String handSignature,
+    required String handCountsSignature,
     required String? lastPlayerId,
     required String? lastMoriPlayerId,
     required int moriGaeshiCount,
@@ -306,6 +429,12 @@ class BotLogic {
     return '$botId|$currentTurnIndex|$lastDrawerId|$isDrawCompetitive|$fieldNumber|'
         '${fieldSuit.name}|$isInitialPhase|$hasPlayedThisTurn|$handLength|$moriPhase|'
         '$lastPlayerId|$lastMoriPlayerId|$moriGaeshiCount|'
-        '${moriDeclaredPlayerIds.join(",")}|$handSignature';
+        '${moriDeclaredPlayerIds.join(",")}|$handSignature|$handCountsSignature';
   }
+
+  static String buildHandCountsSignature(
+    List<String> players,
+    Map<String, int> handCounts,
+  ) =>
+      players.map((id) => '${id}:${handCounts[id] ?? 0}').join('|');
 }
