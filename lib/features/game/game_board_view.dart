@@ -240,7 +240,6 @@ class OpenJokerIndicator extends StatelessWidget {
   final double cardWidth;
   final double cardHeight;
   final double overlap;
-  final bool showFactorThreeHint;
   final double fontSize;
 
   const OpenJokerIndicator({
@@ -249,7 +248,6 @@ class OpenJokerIndicator extends StatelessWidget {
     this.cardWidth = 40,
     this.cardHeight = 60,
     this.overlap = 9,
-    this.showFactorThreeHint = false,
     this.fontSize = 12,
   });
 
@@ -262,7 +260,7 @@ class OpenJokerIndicator extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          showFactorThreeHint ? 'オープンジョーカー（係数3）' : 'オープンジョーカー',
+          'オープンジョーカー',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.yellowAccent,

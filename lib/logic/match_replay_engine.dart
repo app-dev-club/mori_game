@@ -256,9 +256,7 @@ class MatchReplayEngine {
       case MatchEventType.moriGaeshi:
         return '$actor がもり返し';
       case MatchEventType.openJoker:
-        return event.payload['jokerPlusOne'] == true
-            ? '$actor がオープンジョーカー（係数3）'
-            : '$actor がオープンジョーカー';
+        return '$actor がオープンジョーカー';
       case MatchEventType.matchEnd:
         return resultLabel(MatchRecordResultJson.fromJson(event.payload), meta);
       case MatchEventType.matchStart:

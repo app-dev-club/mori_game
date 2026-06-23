@@ -1759,11 +1759,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     setState(() => openJokerPlayerIds = {...openJokerPlayerIds, myId});
-    _showGameMessage(
-      GameRules.isJokerPlusOneHand(myHand)
-          ? 'ジョーカーを公開しました（もり係数が3になります）'
-          : 'ジョーカーを公開しました',
-    );
+    _showGameMessage('ジョーカーを公開しました');
     _db.updateGameStatus({'openJokerPlayerIds/$myId': true});
     unawaited(_recordMatchEvent(
       type: MatchEventType.openJoker,
