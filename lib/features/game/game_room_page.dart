@@ -1208,6 +1208,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     final botIdx = playerIds.indexOf(botId);
     final updatedHistory = List<CardWidget>.from(fieldHistory)..add(card);
+    fieldNumber = card.number;
+    fieldSuit = card.suit;
     fieldHistory = updatedHistory;
 
     _db.updateGameStatus({
@@ -1580,6 +1582,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     final CardWidget playedCard = cards.last;
     final updatedHistory = List<CardWidget>.from(fieldHistory)..add(playedCard);
+    fieldNumber = playedCard.number;
+    fieldSuit = playedCard.suit;
     fieldHistory = updatedHistory;
 
     _db.updateGameStatus({
@@ -1877,6 +1881,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     final card = deck.last;
     final updatedHistory = List<CardWidget>.from(fieldHistory)..add(card);
+    fieldNumber = card.number;
+    fieldSuit = card.suit;
     fieldHistory = updatedHistory;
     _db.updateGameStatus({
       'field': {'number': card.number, 'suit': card.suit.name},

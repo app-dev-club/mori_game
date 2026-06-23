@@ -92,6 +92,8 @@ void main() {
       expect(frames[0].hands['p1']!.length, 1);
       expect(frames[1].description, contains('A'));
       expect(frames[1].hands['p1']!.length, 0);
+      expect(frames[1].fieldNumber, 3);
+      expect(frames[1].fieldSuit, Suit.spade);
       expect(frames[1].turnIndex, 1);
     });
 

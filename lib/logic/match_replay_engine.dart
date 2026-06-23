@@ -105,6 +105,8 @@ class MatchReplayEngine {
         case MatchEventType.fieldFlip:
           final card = _parseSingleCard(event.payload['card']);
           if (card != null) {
+            fieldNumber = card.number;
+            fieldSuit = card.suit;
             fieldHistory = [...fieldHistory, card];
             lastPlayerId = 'system';
             isInitialPhase = true;
@@ -113,6 +115,8 @@ class MatchReplayEngine {
         case MatchEventType.playCard:
           final card = _parseSingleCard(event.payload['card']);
           if (card != null) {
+            fieldNumber = card.number;
+            fieldSuit = card.suit;
             fieldHistory = [...fieldHistory, card];
             lastPlayerId = event.actorId;
             if (event.payload.containsKey('isInitialPhase')) {
