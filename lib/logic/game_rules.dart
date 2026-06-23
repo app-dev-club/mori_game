@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../features/game/game_board_view.dart';
 
 class GameRules {
@@ -45,6 +47,13 @@ class GameRules {
   /// 盤面表示用: 自分の次の手番から時計回りに並べた相手 ID 一覧
   static List<String> opponentsClockwiseFrom(String myId, List<String> playerIds) =>
       opponentEntriesClockwiseFrom(myId, playerIds).map((e) => e.value).toList();
+
+  /// 新しい1戦の手番順（players 配列の並び）をランダムに決める
+  static List<String> shuffledPlayerOrder(List<String> playerIds, [Random? random]) {
+    final ordered = List<String>.from(playerIds);
+    ordered.shuffle(random ?? Random());
+    return ordered;
+  }
 
   /// ドロー競合中にカードを出せるか（ドローした人 or 次のプレイヤー）
   static bool canPlayInDrawCompetition({

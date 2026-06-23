@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mori_game/features/game/game_board_view.dart';
 import 'package:mori_game/logic/game_rules.dart';
@@ -280,6 +282,16 @@ void main() {
       final entries = GameRules.opponentEntriesClockwiseFrom('guest1', ids);
       expect(entries.map((e) => e.key).toList(), [2, 0]);
       expect(entries.map((e) => e.value).toList(), ['guest2', 'host']);
+    });
+  });
+
+  group('shuffledPlayerOrder', () {
+    test('メンバーは変えず順序だけ入れ替える', () {
+      const ids = ['a', 'b', 'c', 'd'];
+      final shuffled = GameRules.shuffledPlayerOrder(ids, Random(42));
+      expect(shuffled.toSet(), ids.toSet());
+      expect(shuffled.length, ids.length);
+      expect(shuffled, isNot(equals(ids)));
     });
   });
 }

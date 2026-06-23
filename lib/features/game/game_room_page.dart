@@ -1884,6 +1884,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     fieldNumber = card.number;
     fieldSuit = card.suit;
     fieldHistory = updatedHistory;
+    final isNewGame = !gameStarted;
+    final playOrder =
+        isNewGame ? GameRules.shuffledPlayerOrder(playerIds) : playerIds;
     _db.updateGameStatus({
       'field': {'number': card.number, 'suit': card.suit.name},
       'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
@@ -1893,8 +1896,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'lastPlayerId': 'system',
       'roomStatus': 'closed',
       'gameStarted': true,
+      if (isNewGame) ...{
+        'players': playOrder,
+        'currentTurnIndex': 0,
+      },
       if (totalMatches > 1 && completedMatches == 0)
-        'seriesPlayerIds': List<String>.from(playerIds),
+        'seriesPlayerIds': List<String>.from(playOrder),
       'rematchHostRequested': false,
       'postGameActive': false,
       'burstPlayerId': null,
@@ -1918,8 +1925,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _postGameSummary = null;
       _postGameEntered = false;
       _seriesAutoContinueScheduled = false;
-      if (totalMatches > 1 && completedMatches == 0) {
-        seriesPlayerIds = List<String>.from(playerIds);
+      if (isNewGame) {
+        playerIds = playOrder;
+        currentTurn = 0;
+        if (totalMatches > 1 && completedMatches == 0) {
+          seriesPlayerIds = List<String>.from(playOrder);
+        }
+        _showGameMessage('${_displayName(playOrder.first)} から開始（手番順をシャッフル）');
       }
     });
     unawaited(_onFlipRecorded(card, deck.sublist(0, deck.length - 1)));
@@ -2360,7 +2372,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       final snap = await _db.getSnapshot();
       if (!snap.exists || !mounted) return;
 
-      final roster = _readSeriesRosterFromSnapshot(snap);
+      final roster = GameRules.shuffledPlayerOrder(
+        _readSeriesRosterFromSnapshot(snap),
+      );
 
       if (!RoomConfig.hasMinPlayers(roster.length)) {
         await _db.updateGameStatus({
@@ -2444,7 +2458,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           fieldCard: firstCard,
         ));
       }
-      _showGameMessage('第$_currentMatchNumber戦を開始しました');
+      _showGameMessage(
+        '第$_currentMatchNumber戦を開始（${_displayName(roster.first)} から）',
+      );
     } catch (_) {
       if (mounted) {
         await _db.updateGameStatus({
