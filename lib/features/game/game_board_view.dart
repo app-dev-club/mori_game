@@ -1406,7 +1406,7 @@ class PostGameOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final cardWidth = (size.width * 0.9).clamp(280.0, 420.0);
+    final cardWidth = (size.width * 0.94).clamp(300.0, 520.0);
     final maxCardHeight = size.height * 0.72;
     final titleSize = (size.width / 24).clamp(16.0, 20.0);
     final bodySize = (size.width / 28).clamp(12.0, 15.0);
@@ -1425,7 +1425,8 @@ class PostGameOverlay extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.orangeAccent, width: 2),
           ),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
@@ -1448,32 +1449,20 @@ class PostGameOverlay extends StatelessWidget {
                     border: Border.all(color: Colors.redAccent, width: 1.5),
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: headerSize + 4),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'バースト',
-                              style: TextStyle(
-                                color: Colors.redAccent,
-                                fontSize: bodySize,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              summary!.resultMessage!,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: bodySize,
-                                height: 1.3,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          'バースト: ${summary!.resultMessage!}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: bodySize,
+                            height: 1.25,
+                          ),
                         ),
                       ),
                     ],
@@ -1481,11 +1470,7 @@ class PostGameOverlay extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 12),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: _buildResultsTable(bodySize, headerSize),
-                ),
-              ),
+              _buildResultsTable(bodySize, headerSize),
               const SizedBox(height: 10),
               Text(
                 _subtitle(),
@@ -1620,6 +1605,7 @@ class PostGameOverlay extends StatelessWidget {
                   ),
                 ),
             ],
+            ),
           ),
         ),
       ),
@@ -1639,75 +1625,127 @@ class PostGameOverlay extends StatelessWidget {
       );
     }
 
-    return Table(
-      columnWidths: const {
-        0: IntrinsicColumnWidth(),
-        1: FlexColumnWidth(),
-        2: IntrinsicColumnWidth(),
-        3: IntrinsicColumnWidth(),
-        4: IntrinsicColumnWidth(),
-        5: IntrinsicColumnWidth(),
-      },
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        TableRow(
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Colors.white24)),
-          ),
-          children: [
-            _headerCell('順位', headerSize),
-            _headerCell('名前', headerSize),
-            _headerCell('今回', headerSize),
-            _headerCell('累計', headerSize),
-            _headerCell(showMorrie ? 'モリー' : '', headerSize),
-            _headerCell(showRating ? 'レート' : '', headerSize),
-          ],
-        ),
-        for (final row in players)
-          TableRow(
-            children: [
-              _bodyCell('${row.rank}', bodySize, align: TextAlign.center),
-              _bodyCell(row.name, bodySize),
-              _bodyCell(_formatDelta(row.matchDelta), bodySize, align: TextAlign.center),
-              _bodyCell('${row.totalPoints}', bodySize, align: TextAlign.center),
-              _bodyCell(
-                showMorrie && row.morrieDelta != null
-                    ? '${_formatDelta(row.morrieDelta)}'
-                        '${row.morrieBalance != null ? ' → ${row.morrieBalance}' : ''}'
-                    : '—',
-                bodySize,
-                align: TextAlign.end,
-              ),
-              _bodyCell(
-                showRating && row.rating != null
-                    ? '${row.rating} (${_formatDelta(row.ratingDelta)})'
-                    : '—',
-                bodySize,
-                align: TextAlign.end,
-              ),
-            ],
-          ),
-      ],
-    );
-  }
+    const colRank = 40.0;
+    const colName = 88.0;
+    const colMatch = 52.0;
+    const colTotal = 52.0;
+    const colMorrieDelta = 60.0;
+    const colMorrieBalance = 68.0;
+    const colRating = 96.0;
+    const rowHeight = 34.0;
 
-  Widget _headerCell(String text, double size) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      child: Text(
-        text,
-        style: TextStyle(color: Colors.white70, fontSize: size, fontWeight: FontWeight.bold),
+    final headers = <String>[
+      '順位',
+      '名前',
+      '今回',
+      '累計',
+      if (showMorrie) 'モリー',
+      if (showMorrie) '残高',
+      if (showRating) 'レート',
+    ];
+    final widths = <double>[
+      colRank,
+      colName,
+      colMatch,
+      colTotal,
+      if (showMorrie) colMorrieDelta,
+      if (showMorrie) colMorrieBalance,
+      if (showRating) colRating,
+    ];
+
+    final tableHeight = rowHeight * (players.length + 1) + 4;
+
+    return SizedBox(
+      height: tableHeight.clamp(rowHeight * 2, 260),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white24),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _resultTableRow(
+                  widths: widths,
+                  height: rowHeight,
+                  cells: headers,
+                  fontSize: headerSize,
+                  isHeader: true,
+                ),
+                for (final row in players)
+                  _resultTableRow(
+                    widths: widths,
+                    height: rowHeight,
+                    fontSize: bodySize,
+                    cells: [
+                      '${row.rank}',
+                      row.name,
+                      _formatDelta(row.matchDelta),
+                      '${row.totalPoints}',
+                      if (showMorrie)
+                        row.morrieDelta != null ? _formatDelta(row.morrieDelta) : '—',
+                      if (showMorrie)
+                        row.morrieBalance != null ? '${row.morrieBalance}' : '—',
+                      if (showRating)
+                        row.rating != null
+                            ? '${row.rating} (${_formatDelta(row.ratingDelta)})'
+                            : '—',
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _bodyCell(String text, double size, {TextAlign align = TextAlign.start}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      child: Text(
-        text,
-        textAlign: align,
-        style: TextStyle(color: Colors.white, fontSize: size),
+  Widget _resultTableRow({
+    required List<double> widths,
+    required double height,
+    required List<String> cells,
+    required double fontSize,
+    bool isHeader = false,
+  }) {
+    assert(widths.length == cells.length);
+    final color = isHeader ? Colors.white70 : Colors.white;
+    final weight = isHeader ? FontWeight.bold : FontWeight.normal;
+    final border = isHeader
+        ? const Border(bottom: BorderSide(color: Colors.white24))
+        : null;
+
+    return Container(
+      height: height,
+      decoration: BoxDecoration(border: border),
+      child: Row(
+        children: [
+          for (var i = 0; i < cells.length; i++)
+            SizedBox(
+              width: widths[i],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Align(
+                  alignment: i == 1 ? Alignment.centerLeft : Alignment.center,
+                  child: Text(
+                    cells[i],
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: fontSize,
+                      fontWeight: weight,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
