@@ -7,6 +7,7 @@ import '../../models/match_record.dart';
 import '../../services/game_display_settings.dart';
 import '../../services/match_record_service.dart';
 import '../common/app_side_bar.dart';
+import '../common/morrie_ad_reward.dart';
 import 'match_replay_page.dart';
 
 class MatchReplayListPage extends StatefulWidget {
@@ -129,6 +130,7 @@ class _MatchReplayListPageState extends State<MatchReplayListPage> {
             hideOpponentNames: _hideOpponentNames,
             onToggleHideOpponentNames: _toggleHideOpponentNames,
             items: [
+              MorrieAdReward.sideBarItem(context),
               AppSideBarItem(
                 label: 'ログアウト',
                 icon: Icons.logout,

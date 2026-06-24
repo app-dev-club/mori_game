@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'dart:math';
@@ -197,8 +198,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   Future<void> _loadMorrieBalance() async {
-    if (isSpectator || BotLogic.isBot(myId)) return;
-    final balance = await _morrieService.getBalance(myId);
+    if (BotLogic.isBot(myId)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final balance = await _morrieService.getBalance(uid);
     if (mounted) setState(() => _myMorrieBalance = balance);
   }
 
@@ -2998,6 +3001,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       onAddBot: isSpectator ? null : () => _onUiButtonPress(_addBot),
       hideOpponentNames: _hideOpponentNames,
       onToggleHideOpponentNames: _toggleHideOpponentNames,
+      onMorrieBalanceChanged: BotLogic.isBot(myId) ? null : _loadMorrieBalance,
       onCardTap: isSpectator ? _noopCardTap : _onCardTap,
       onMori: isSpectator ? _noop : () => _onUiButtonPress(_onMori),
       onOpenJoker: isSpectator ? _noop : () => _onUiButtonPress(_onOpenJoker),

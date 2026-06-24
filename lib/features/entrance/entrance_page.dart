@@ -17,6 +17,7 @@ import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
 import '../../effects/app_sound_effects.dart';
 import '../common/app_side_bar.dart';
+import '../common/morrie_ad_reward.dart';
 
 class RoomCreationSettings {
   final int maxPlayers;
@@ -851,6 +852,10 @@ class _EntrancePageState extends State<EntrancePage> {
       hideOpponentNames: _hideOpponentNames,
       onToggleHideOpponentNames: _toggleHideOpponentNames,
       items: [
+        MorrieAdReward.sideBarItem(
+          context,
+          onBalanceUpdated: _refreshRating,
+        ),
         AppSideBarItem(
           label: 'ランキング',
           icon: Icons.leaderboard,

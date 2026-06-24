@@ -4,6 +4,7 @@ import 'bot_logic.dart';
 class MorrieRules {
   static const int defaultStartingBalance = 10;
   static const int botFixedBalance = 5;
+  static const int adRewardAmount = 5;
 
   static int morrieDeltaForPoints(int points, int rate) => points * rate;
 

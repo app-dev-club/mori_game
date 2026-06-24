@@ -8,6 +8,7 @@ import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
 import '../common/app_side_bar.dart';
+import '../common/morrie_ad_reward.dart';
 import 'play_arrow_overlay.dart';
 import 'spectator_circle_board.dart';
 
@@ -521,6 +522,7 @@ class GameBoardView extends StatelessWidget {
   final VoidCallback? onAddBot;
   final bool hideOpponentNames;
   final VoidCallback? onToggleHideOpponentNames;
+  final VoidCallback? onMorrieBalanceChanged;
   final Set<String> openJokerPlayerIds;
   final VoidCallback onMori, onDraw, onFlip, onOpenJoker;
   final Function(int) onCardTap;
@@ -563,6 +565,7 @@ class GameBoardView extends StatelessWidget {
     this.onAddBot,
     this.hideOpponentNames = false,
     this.onToggleHideOpponentNames,
+    this.onMorrieBalanceChanged,
     this.openJokerPlayerIds = const {},
     this.lastMoriPlayerId, required this.moriRevealedHand, this.moriRevealedType,
     required this.onCardTap, required this.onMori, required this.onDraw, required this.onFlip,
@@ -840,7 +843,7 @@ class GameBoardView extends StatelessWidget {
         ],
       ),
           ),
-          _buildSideBar(),
+          _buildSideBar(context),
         ],
       ),
     );
@@ -919,10 +922,16 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
-  Widget _buildSideBar() {
+  Widget _buildSideBar(BuildContext context) {
     return AppSideBar(
       hideOpponentNames: hideOpponentNames,
       onToggleHideOpponentNames: onToggleHideOpponentNames,
+      items: [
+        MorrieAdReward.sideBarItem(
+          context,
+          onBalanceUpdated: onMorrieBalanceChanged,
+        ),
+      ],
     );
   }
 

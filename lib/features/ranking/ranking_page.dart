@@ -7,6 +7,7 @@ import '../../services/game_display_settings.dart';
 import '../../services/morrie_service.dart';
 import '../../services/rating_service.dart';
 import '../common/app_side_bar.dart';
+import '../common/morrie_ad_reward.dart';
 
 class RankingPage extends StatefulWidget {
   const RankingPage({super.key});
@@ -327,6 +328,7 @@ class _RankingPageState extends State<RankingPage> {
               hideOpponentNames: _hideOpponentNames,
               onToggleHideOpponentNames: _toggleHideOpponentNames,
               items: [
+                MorrieAdReward.sideBarItem(context),
                 AppSideBarItem(
                   label: 'ランキング',
                   icon: Icons.leaderboard,

@@ -128,6 +128,19 @@ class MorrieService {
     }
   }
 
+  /// 広告視聴報酬でモリーを加算する
+  Future<int> grantAdReward(String userId) async {
+    await ensureBalance(userId);
+    final current = await getBalance(userId);
+    final next = current + MorrieRules.adRewardAmount;
+    await _usersRef.child(userId).update({
+      'morrieBalance': next,
+      'updatedAt': ServerValue.timestamp,
+    });
+    await syncRankingEntry(userId, morrieBalance: next);
+    return next;
+  }
+
   /// シリーズ終了時にモリーを精算（二重適用防止付き）
   Future<MorrieSettlementResult?> applySeriesMorrie({
     required String roomId,
