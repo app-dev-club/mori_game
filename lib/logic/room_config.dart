@@ -89,26 +89,25 @@ class RoomConfig {
     return n;
   }
 
-  /// 最低入室モリー。1以上の整数。
-  static const int defaultMinMorrieBalance = 1;
-  static const int minMinMorrieBalance = 1;
+  /// 最低入室モリー（0 = 制限なし）。0以上の整数。
+  static const int defaultMinMorrieBalance = 0;
 
   static int resolveMinMorrieBalance(dynamic value) {
     if (value is num) {
       final n = value.round();
-      if (n >= minMinMorrieBalance) return n;
+      if (n >= 0) return n;
     }
     return defaultMinMorrieBalance;
   }
 
   static int? parseMinMorrieBalanceInput(String text) {
     final n = int.tryParse(text.trim());
-    if (n == null || n < minMinMorrieBalance) return null;
+    if (n == null || n < 0) return null;
     return n;
   }
 
   static bool meetsMinMorrieRequirement(int balance, int minRequired) =>
-      balance >= minRequired;
+      minRequired <= 0 || balance >= minRequired;
 
   /// ホストが再戦を選ぶまでの制限時間（秒）
   static const int hostRematchDecisionSeconds = 60;

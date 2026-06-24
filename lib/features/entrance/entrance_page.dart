@@ -359,7 +359,7 @@ class _EntrancePageState extends State<EntrancePage> {
               const Text('最低入室モリー'),
               const SizedBox(height: 8),
               const Text(
-                '1以上の整数。このモリー未満のプレイヤーは入室・再戦できません。',
+                '0以上の整数。0は制限なし。このモリー未満のプレイヤーは入室・作成・再戦できません。',
                 style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
               const SizedBox(height: 8),
@@ -396,7 +396,7 @@ class _EntrancePageState extends State<EntrancePage> {
                     morrieRateError =
                         morrieRate == null ? '1以上の整数を入力してください' : null;
                     minMorrieError =
-                        minMorrieBalance == null ? '1以上の整数を入力してください' : null;
+                        minMorrieBalance == null ? '0以上の整数を入力してください' : null;
                   });
                   return;
                 }
@@ -507,7 +507,7 @@ class _EntrancePageState extends State<EntrancePage> {
         snapshot.child('minMorrieBalance').value,
       );
       final alreadyJoined = players.map((p) => p.toString()).contains(uid);
-      if (!alreadyJoined) {
+      if (!alreadyJoined && minMorrie > 0) {
         await _morrieService.ensureBalance(uid);
         final balance = await _morrieService.getBalance(uid);
         if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrie)) {
@@ -592,7 +592,8 @@ class _EntrancePageState extends State<EntrancePage> {
     final minMorrie = RoomConfig.resolveMinMorrieBalance(data['minMorrieBalance']);
     final timeoutLabel = '持ち時間 $turnTimeout 秒';
     final morrieLabel = ' · レート ×$morrieRate';
-    final minMorrieLabel = ' · 最低 $minMorrie モリー';
+    final minMorrieLabel =
+        minMorrie > 0 ? ' · 最低 $minMorrie モリー' : '';
     final spectators = data['spectators'] as Map?;
     final spectatorCount = spectators?.length ?? 0;
     final spectatorLabel = spectatorCount > 0 ? ' · 観戦 $spectatorCount人' : '';

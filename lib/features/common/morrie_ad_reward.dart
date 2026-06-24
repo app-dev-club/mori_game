@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../logic/morrie_rules.dart';
 import '../../services/morrie_service.dart';
+import '../../services/rewarded_ad_config.dart';
 import '../../services/rewarded_ad_service.dart';
 import 'app_side_bar.dart';
 
@@ -23,10 +24,13 @@ class MorrieAdReward {
       label: '広告視聴',
       icon: Icons.play_circle_outline,
       accent: Colors.lightGreenAccent,
-      onTap: () => watchAndGrant(
-        context,
-        onBalanceUpdated: onBalanceUpdated,
-      ),
+      enabled: RewardedAdConfig.adsEnabled,
+      onTap: RewardedAdConfig.adsEnabled
+          ? () => watchAndGrant(
+                context,
+                onBalanceUpdated: onBalanceUpdated,
+              )
+          : null,
     );
   }
 
@@ -34,6 +38,7 @@ class MorrieAdReward {
     BuildContext context, {
     VoidCallback? onBalanceUpdated,
   }) async {
+    if (!RewardedAdConfig.adsEnabled) return;
     if (_watching) return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;

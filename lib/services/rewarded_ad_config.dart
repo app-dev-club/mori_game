@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 class RewardedAdConfig {
   RewardedAdConfig._();
 
+  /// 広告視聴機能を有効にするか（AdSense 承認前は false）
+  static const bool adsEnabled = false;
+
   /// AdSense パブリッシャー ID（数字のみ、`pub-` や `ca-pub-` は付けない）
   ///
   /// 取得: AdSense → アカウント → アカウント情報 → パブリッシャー ID

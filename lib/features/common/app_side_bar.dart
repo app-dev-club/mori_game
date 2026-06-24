@@ -5,14 +5,16 @@ import '../../effects/app_sound_effects.dart';
 class AppSideBarItem {
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Color accent;
+  final bool enabled;
 
   const AppSideBarItem({
     required this.label,
     required this.icon,
     required this.onTap,
     this.accent = Colors.white70,
+    this.enabled = true,
   });
 }
 
@@ -57,8 +59,8 @@ class AppSideBar extends StatelessWidget {
             _SideTabButton(
               label: items[i].label,
               icon: items[i].icon,
-              accent: items[i].accent,
-              onTap: () => withButtonSound(items[i].onTap),
+              accent: items[i].enabled ? items[i].accent : Colors.white24,
+              onTap: items[i].enabled ? items[i].onTap : null,
             ),
             if (i < items.length - 1)
               const Padding(
@@ -75,7 +77,7 @@ class AppSideBar extends StatelessWidget {
 class _SideTabButton extends StatelessWidget {
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Color accent;
 
   const _SideTabButton({
@@ -90,7 +92,7 @@ class _SideTabButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: onTap == null ? null : () => withButtonSound(onTap!),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
           child: Column(

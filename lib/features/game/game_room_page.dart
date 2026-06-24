@@ -376,17 +376,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           );
           return;
         }
-        await _morrieService.ensureBalance(myId);
-        final balance = await _morrieService.getBalance(myId);
-        if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrieBalance)) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _showErrorDialog(
-              '最低入室モリー $minMorrieBalance が必要です（所持: $balance）',
-            ),
-          );
-          return;
+        if (minMorrieBalance > 0) {
+          await _morrieService.ensureBalance(myId);
+          final balance = await _morrieService.getBalance(myId);
+          if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrieBalance)) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _showErrorDialog(
+                '最低入室モリー $minMorrieBalance が必要です（所持: $balance）',
+              ),
+            );
+            return;
+          }
+          _myMorrieBalance = balance;
         }
-        _myMorrieBalance = balance;
         p.add(myId);
       }
       List<dynamic> rawDeck = snap.child('deck').value as List<dynamic>? ?? [];
