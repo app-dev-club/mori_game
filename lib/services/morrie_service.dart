@@ -142,16 +142,23 @@ class MorrieService {
     final appliedSnap = await roomRef.child('seriesMorrieSettled').get();
     if (appliedSnap.value == true) return null;
 
-    final humanUpdates = MorrieRules.humanBalanceUpdates(
-      participantIds: participantIds,
-      finalPoints: finalPoints,
-      rate: morrieRate,
-    );
-
     for (final id in participantIds) {
       if (BotLogic.isBot(id)) continue;
       await ensureBalance(id);
     }
+
+    final humanBalances = <String, int>{};
+    for (final id in participantIds) {
+      if (BotLogic.isBot(id)) continue;
+      humanBalances[id] = await getBalance(id);
+    }
+
+    final humanUpdates = MorrieRules.humanBalanceUpdates(
+      participantIds: participantIds,
+      finalPoints: finalPoints,
+      rate: morrieRate,
+      humanBalances: humanBalances,
+    );
 
     final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);
     final rawDeltas = MorrieRules.rawMorrieDeltas(finalPoints, morrieRate);
@@ -177,8 +184,8 @@ class MorrieService {
       }
 
       final delta = humanUpdates[id] ?? 0;
-      final current = await getBalance(id);
-      final next = (current + delta).clamp(0, 1 << 30);
+      final current = humanBalances[id] ?? await getBalance(id);
+      final next = current + delta;
       appliedDeltas[id] = delta;
       newBalances[id] = next;
 
