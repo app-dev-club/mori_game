@@ -312,6 +312,14 @@ class _EntrancePageState extends State<EntrancePage> {
     final uid = _userId;
     if (uid == null) return;
 
+    if (!RoomConfig.canUserSpectateRoom(data, uid)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('自分が参加しているルームは観戦できません')),
+      );
+      return;
+    }
+
     final playerName = await _validatedAndSavedPlayerName();
     if (playerName == null || !mounted) return;
 
@@ -355,6 +363,13 @@ class _EntrancePageState extends State<EntrancePage> {
       if (status == 'closed' || isStarted) {
         if (isStarted) {
           final data = Map<String, dynamic>.from(snapshot.value as Map);
+          if (!RoomConfig.canUserSpectateRoom(data, uid)) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('自分が参加しているルームは観戦できません')),
+            );
+            return;
+          }
           await _spectateRoom(roomId, data);
           return;
         }
@@ -597,6 +612,9 @@ class _EntrancePageState extends State<EntrancePage> {
                     final isStarted = data['gameStarted'] == true;
                     final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
                     final canJoin = !isStarted && !isFull;
+                    final canSpectate = isStarted &&
+                        _userId != null &&
+                        RoomConfig.canUserSpectateRoom(data, _userId!);
 
                     final Color cardColor;
                     final Color titleColor;
@@ -663,7 +681,7 @@ class _EntrancePageState extends State<EntrancePage> {
                           _roomListSubtitle(data),
                           style: const TextStyle(color: Colors.white70),
                         ),
-                        trailing: isStarted
+                        trailing: canSpectate
                             ? TextButton(
                                 onPressed: () => withButtonSound(() => _spectateRoom(rid, data)),
                                 style: TextButton.styleFrom(

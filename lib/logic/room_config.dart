@@ -61,6 +61,17 @@ class RoomConfig {
 
   static bool hasMinPlayers(int currentCount) => currentCount >= minPlayers;
 
+  /// 指定ユーザーがルームを観戦できるか（ホスト・参加プレイヤーは不可）
+  static bool canUserSpectateRoom(Map<dynamic, dynamic> data, String userId) {
+    final hostId = data['host']?.toString();
+    if (hostId != null && hostId == userId) return false;
+    final players = data['players'] as List? ?? [];
+    for (final player in players) {
+      if (player.toString() == userId) return false;
+    }
+    return true;
+  }
+
   /// ホストが再戦を選ぶまでの制限時間（秒）
   static const int hostRematchDecisionSeconds = 60;
 

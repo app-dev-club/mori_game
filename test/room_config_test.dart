@@ -30,5 +30,26 @@ void main() {
       expect(RoomConfig.resolveTurnTimeoutSeconds(2), RoomConfig.defaultTurnTimeoutSeconds);
       expect(RoomConfig.resolveTurnTimeoutSeconds(121), RoomConfig.defaultTurnTimeoutSeconds);
     });
+
+    test('canUserSpectateRoom はホストと参加プレイヤーを観戦不可にする', () {
+      const uid = 'user1';
+      const other = 'user2';
+      final hostRoom = {
+        'host': uid,
+        'players': [uid, other],
+      };
+      final guestRoom = {
+        'host': other,
+        'players': [uid, other],
+      };
+      final outsiderRoom = {
+        'host': other,
+        'players': [other, 'user3'],
+      };
+
+      expect(RoomConfig.canUserSpectateRoom(hostRoom, uid), isFalse);
+      expect(RoomConfig.canUserSpectateRoom(guestRoom, uid), isFalse);
+      expect(RoomConfig.canUserSpectateRoom(outsiderRoom, uid), isTrue);
+    });
   });
 }

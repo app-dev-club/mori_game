@@ -266,6 +266,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return;
     }
 
+    final roomData = Map<String, dynamic>.from(snap.value as Map);
+    if (!RoomConfig.canUserSpectateRoom(roomData, myId)) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showErrorDialog('自分が参加しているルームは観戦できません。'),
+      );
+      return;
+    }
+
     await _db.joinAsSpectator(myId, widget.playerName);
     FirebaseDatabase.instance
         .ref('rooms/${widget.roomId}/spectators/$myId')
