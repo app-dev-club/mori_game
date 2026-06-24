@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../entrance/entrance_page.dart';
+import '../entrance/orphan_room_automation_host.dart';
 import 'auth_page.dart';
 
 /// 認証状態に応じてログイン画面またはロビーへ遷移する
@@ -21,7 +22,9 @@ class AppGate extends StatelessWidget {
           );
         }
         if (snapshot.data != null) {
-          return const EntrancePage();
+          return const OrphanRoomAutomationScope(
+            child: EntrancePage(),
+          );
         }
         return const AuthPage();
       },

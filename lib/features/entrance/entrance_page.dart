@@ -13,7 +13,6 @@ import '../../services/morrie_service.dart';
 import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
-import 'orphan_room_automation_host.dart';
 import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
 import '../rules/mori_rules_page.dart';
@@ -777,24 +776,7 @@ class _EntrancePageState extends State<EntrancePage> {
                   return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
                 }
 
-                final orphanRoomIds = rooms.entries
-                    .where(
-                      (e) => RoomLifecycle.needsBackgroundAutomation(
-                        Map<dynamic, dynamic>.from(e.value as Map),
-                      ),
-                    )
-                    .map((e) => e.key.toString())
-                    .where((id) => id != _spectatingRoomId)
-                    .take(3)
-                    .toList();
-
-                return OrphanRoomAutomationHost(
-                  roomIds: orphanRoomIds,
-                  userId: _userId,
-                  playerName: _nameController.text.trim().isEmpty
-                      ? '自動進行'
-                      : _nameController.text.trim(),
-                  child: ListView.builder(
+                return ListView.builder(
                   itemCount: publicRooms.length,
                   itemBuilder: (context, index) {
                     final entry = publicRooms[index];
@@ -922,7 +904,6 @@ class _EntrancePageState extends State<EntrancePage> {
                       ),
                     );
                   },
-                ),
                 );
               },
             );

@@ -191,6 +191,77 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         hasAutomatedPlayers: playerIds.any(_isAutomatedPlayer),
       );
 
+  /// 対局中の Bot / 離脱代走（ポストゲームの steward とは別）
+  bool get _needsBackgroundBotRunner =>
+      _needsSubstituteRunnerNow && !postGameActive;
+
+  String? get _automationRunnerId {
+    if (widget.automationOnly) return myId;
+    if (isSpectator) return _spectatorBotLeaseId;
+    return null;
+  }
+
+  bool get _usesAutomationLease => widget.automationOnly || isSpectator;
+
+  Future<void> _releaseAutomationLeaseIfHeld() async {
+    if (widget.automationOnly && _automationLeaseHeld) {
+      _automationLeaseHeld = false;
+      _automationLeaseTimer?.cancel();
+      _automationLeaseTimer = null;
+      await _db.releaseAutomationLease(myId);
+    }
+    if (isSpectator && _spectatorBotLeaseHeld) {
+      _spectatorBotLeaseHeld = false;
+      _spectatorBotLeaseTimer?.cancel();
+      _spectatorBotLeaseTimer = null;
+      await _db.releaseAutomationLease(_spectatorBotLeaseId);
+    }
+    if (mounted) _cancelAllBotTimers();
+  }
+
+  Future<void> _ensureAutomationLease() async {
+    if (!_usesAutomationLease || !mounted) return;
+
+    if (!_needsBackgroundBotRunner) {
+      await _releaseAutomationLeaseIfHeld();
+      return;
+    }
+
+    final runnerId = _automationRunnerId;
+    if (runnerId == null) return;
+
+    final held = await _db.tryClaimAutomationLease(runnerId);
+    if (!mounted) return;
+    if (!held) {
+      if (widget.automationOnly && _automationLeaseHeld) {
+        setState(() => _automationLeaseHeld = false);
+      }
+      if (isSpectator && _spectatorBotLeaseHeld) {
+        setState(() => _spectatorBotLeaseHeld = false);
+      }
+      _cancelAllBotTimers();
+      return;
+    }
+
+    if (widget.automationOnly) {
+      _automationLeaseHeld = true;
+      _automationLeaseTimer ??= Timer.periodic(const Duration(seconds: 8), (_) {
+        unawaited(_ensureAutomationLease());
+      });
+    }
+    if (isSpectator) {
+      _spectatorBotLeaseHeld = true;
+      _spectatorBotLeaseTimer ??= Timer.periodic(const Duration(seconds: 8), (_) {
+        unawaited(_db.tryClaimAutomationLease(_spectatorBotLeaseId));
+      });
+    }
+
+    if (mounted) {
+      _syncAllBotTimers();
+      _syncInitialPhaseAutoFlipTimer();
+    }
+  }
+
   bool get _hasRoomAuthority {
     if (widget.automationOnly) return false;
     return !isSpectator && _roomAuthorityId == myId;
@@ -304,16 +375,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   @override
   void dispose() {
     if (widget.automationOnly) {
-      _automationLeaseTimer?.cancel();
-      if (_automationLeaseHeld) {
-        unawaited(_db.releaseAutomationLease(myId));
-      }
+      unawaited(_releaseAutomationLeaseIfHeld());
     } else if (isSpectator) {
-      _spectatorBotLeaseTimer?.cancel();
-      if (_spectatorBotLeaseHeld) {
-        unawaited(_db.releaseAutomationLease(_spectatorBotLeaseId));
-      }
       if (!_isIntentionalLeave) _db.leaveAsSpectator(myId);
+      unawaited(_releaseAutomationLeaseIfHeld());
     } else if (!_isIntentionalLeave) {
       _cleanupRoomOnLeave();
     }
@@ -380,13 +445,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   Future<void> _init() async {
     if (widget.automationOnly) {
-      _automationLeaseHeld = await _db.tryClaimAutomationLease(myId);
-      if (!_automationLeaseHeld || !mounted) return;
-      _automationLeaseTimer?.cancel();
-      _automationLeaseTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-        unawaited(_db.tryClaimAutomationLease(myId));
-      });
       _sub = _db.roomStream.listen(_onData);
+      unawaited(_ensureAutomationLease());
       return;
     }
     if (isSpectator) {
@@ -623,7 +683,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (_hasBotRunnerAuthority) _allPlayerCards = parsedAll;
         if (isSpectator) {
           _spectatorPlayerCards = parsedAll;
-          if (_needsSubstituteRunnerNow || _needsSubstituteSteward) {
+          if (_needsBackgroundBotRunner) {
             _allPlayerCards = parsedAll;
           }
         }
@@ -811,6 +871,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _lastMatchPointDeltas = {};
         _seriesRatingDetails = {};
         _seriesMorrieDetails = {};
+        _moriFinishRequested = false;
+        _moriResolutionKey = '';
+        _cancelMoriResolutionTimers();
+        _botHasPlayedThisTurn.clear();
         _cancelPostGameTimers();
         _cancelGuestStayTimers();
       }
@@ -892,8 +956,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _syncAutoPlayTimer();
       _syncInitialPhaseAutoFlipTimer();
     }
-    unawaited(_syncSpectatorBotLease());
-    if (_hasBotRunnerAuthority) {
+    if (_usesAutomationLease) {
+      unawaited(_ensureAutomationLease());
+    } else if (_hasBotRunnerAuthority) {
       _syncAllBotTimers();
     }
     if (_hasMatchRecordingAuthority) {
@@ -910,19 +975,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     );
 
     if ((_hasStewardAuthority || widget.automationOnly) && mounted) {
-      if (widget.automationOnly &&
-          !_needsSubstituteSteward &&
-          _automationLeaseHeld) {
-        _automationLeaseHeld = false;
-        _automationLeaseTimer?.cancel();
-        unawaited(_db.releaseAutomationLease(myId));
-      }
       _scheduleCloseIfFullyConcluded(data);
     }
   }
 
   Future<void> _resumeStewardDuties(Map data) async {
     if (!_hasStewardAuthority || _postGameStewardInProgress) return;
+    if (!_shouldClientRunPostGameSteward(data)) return;
 
     final moriEnded = data['moriPhase'] == 'finished';
     final burstId = data['burstPlayerId'];
@@ -937,43 +996,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   Future<void> _syncSpectatorBotLease() async {
-    if (!isSpectator || widget.automationOnly) return;
-
-    if (!_needsSubstituteSteward) {
-      if (_spectatorBotLeaseHeld) {
-        _spectatorBotLeaseHeld = false;
-        _spectatorBotLeaseTimer?.cancel();
-        _spectatorBotLeaseTimer = null;
-        await _db.releaseAutomationLease(_spectatorBotLeaseId);
-        if (mounted) _cancelAllBotTimers();
-      }
-      return;
-    }
-
-    if (_spectatorBotLeaseHeld) {
-      unawaited(_resumeStewardDutiesFromLease());
-      return;
-    }
-
-    final held = await _db.tryClaimAutomationLease(_spectatorBotLeaseId);
-    if (!mounted) return;
-    if (!held) return;
-
-    setState(() => _spectatorBotLeaseHeld = true);
-    _spectatorBotLeaseTimer ??= Timer.periodic(const Duration(seconds: 8), (_) {
-      unawaited(_db.tryClaimAutomationLease(_spectatorBotLeaseId));
-    });
-    if (mounted) {
-      _syncAllBotTimers();
-      unawaited(_resumeStewardDutiesFromLease());
-    }
-  }
-
-  Future<void> _resumeStewardDutiesFromLease() async {
-    if (!_hasStewardAuthority) return;
-    final snap = await _db.getSnapshot();
-    if (!snap.exists || !mounted) return;
-    await _resumeStewardDuties(Map<dynamic, dynamic>.from(snap.value as Map));
+    await _ensureAutomationLease();
   }
 
   void _ensureSeriesAutoContinueScheduled(
@@ -1002,6 +1025,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final roomData = Map<dynamic, dynamic>.from(data);
     if (!RoomLifecycle.isGameFullyConcluded(roomData, nowMs: nowMs)) return;
+    if (!RoomLifecycle.hasPresentHumanPlayers(roomData)) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _postGameClosing) return;
       unawaited(_closeFinishedRoom());
@@ -2427,6 +2451,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'settlementRequested': null,
       'settlementError': null,
       'settlementCompletedAt': null,
+      'postGameSeriesAdvanced': null,
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
@@ -2778,6 +2803,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (mounted) setState(() => _postGameSummary = summary);
   }
 
+  bool _shouldClientRunPostGameSteward(Map<dynamic, dynamic> data) {
+    if (!_hasStewardAuthority) return false;
+    return RoomLifecycle.hasPresentHumanPlayers(data);
+  }
+
   void _enterPostGame() {
     if (_postGameEntered) return;
     _postGameEntered = true;
@@ -2844,6 +2874,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       final snap = await _db.getSnapshot();
       if (!snap.exists || !mounted) return;
       final data = Map<dynamic, dynamic>.from(snap.value as Map);
+      if (!_shouldClientRunPostGameSteward(data)) return;
 
       if (data['lastMatchPointDeltas'] == null) {
         await _applyMatchScoring();
@@ -2897,6 +2928,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           DateTime.now().millisecondsSinceEpoch + RoomConfig.seriesNextMatchMs;
       final updates = <String, dynamic>{
         'completedMatches': nextCompleted,
+        'postGameSeriesAdvanced': true,
       };
       if (nextCompleted < resolvedTotal) {
         updates['seriesNextMatchAt'] = deadline;
@@ -3111,6 +3143,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _checkPostGameTimeouts() {
     if (rematchHostRequested || postGameEndedAt == null) return;
     if (_hasRemainingSeriesMatches) return;
+    if (isSpectator && !isHost) return;
     final canAutoClose =
         isHost || (_hasStewardAuthority && _needsSubstituteSteward);
     if (!canAutoClose) return;
