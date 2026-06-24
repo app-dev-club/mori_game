@@ -46,15 +46,17 @@ void main() {
 
     test('resolveMinMorrieBalance と meetsMinMorrieRequirement', () {
       expect(RoomConfig.resolveMinMorrieBalance(10), 10);
-      expect(RoomConfig.resolveMinMorrieBalance(null), 0);
-      expect(RoomConfig.meetsMinMorrieRequirement(10, 0), isTrue);
+      expect(RoomConfig.resolveMinMorrieBalance(null), 1);
+      expect(RoomConfig.resolveMinMorrieBalance(0), 1);
+      expect(RoomConfig.meetsMinMorrieRequirement(10, 1), isTrue);
       expect(RoomConfig.meetsMinMorrieRequirement(10, 10), isTrue);
       expect(RoomConfig.meetsMinMorrieRequirement(9, 10), isFalse);
     });
 
-    test('parseMinMorrieBalanceInput は0以上の整数のみ受け付ける', () {
-      expect(RoomConfig.parseMinMorrieBalanceInput('0'), 0);
+    test('parseMinMorrieBalanceInput は1以上の整数のみ受け付ける', () {
+      expect(RoomConfig.parseMinMorrieBalanceInput('1'), 1);
       expect(RoomConfig.parseMinMorrieBalanceInput('25'), 25);
+      expect(RoomConfig.parseMinMorrieBalanceInput('0'), isNull);
       expect(RoomConfig.parseMinMorrieBalanceInput('-1'), isNull);
       expect(RoomConfig.parseMinMorrieBalanceInput(''), isNull);
     });
