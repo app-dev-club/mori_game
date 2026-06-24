@@ -11,11 +11,13 @@ import '../../logic/room_config.dart';
 import '../../logic/scoring_rules.dart';
 import '../../logic/player_display_name.dart';
 import '../../logic/match_record_codec.dart';
+import '../../logic/morrie_rules.dart';
 import '../../logic/post_game_summary_builder.dart';
 import '../../models/match_event.dart';
 import '../../models/post_game_summary.dart';
 import '../../services/game_display_settings.dart';
 import '../../services/match_record_service.dart';
+import '../../services/morrie_service.dart';
 import '../../services/rating_service.dart';
 import 'game_board_view.dart';
 
@@ -26,6 +28,7 @@ class GameRoomPage extends StatefulWidget {
   final int? maxPlayers;
   final int? totalMatches;
   final int? turnTimeoutSeconds;
+  final int? morrieRate;
   final String? userId;
   final bool isSpectator;
   const GameRoomPage({
@@ -36,6 +39,7 @@ class GameRoomPage extends StatefulWidget {
     this.maxPlayers,
     this.totalMatches,
     this.turnTimeoutSeconds,
+    this.morrieRate,
     this.userId,
     this.isSpectator = false,
   });
@@ -46,6 +50,7 @@ class GameRoomPage extends StatefulWidget {
 class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
   late final FirebaseDB _db;
   late final RatingService _ratingService;
+  final MorrieService _morrieService = MorrieService();
   final MatchRecordService _matchRecordService = MatchRecordService();
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
   final GameEffects _gameEffects = GameEffects();
@@ -84,6 +89,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   PostGameSummary? _postGameSummary;
   Map<String, int> _lastMatchPointDeltas = {};
   Map<String, Map<String, dynamic>> _seriesRatingDetails = {};
+  Map<String, Map<String, dynamic>> _seriesMorrieDetails = {};
+  int morrieRate = RoomConfig.defaultMorrieRate;
+  int? _myMorrieBalance;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
   bool _gameOverDialogShown = false;
@@ -174,7 +182,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _ratingService = RatingService();
     myId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
     _loadDisplaySettings();
+    _loadMorrieBalance();
     _init();
+  }
+
+  Future<void> _loadMorrieBalance() async {
+    if (isSpectator || BotLogic.isBot(myId)) return;
+    final balance = await _morrieService.getBalance(myId);
+    if (mounted) setState(() => _myMorrieBalance = balance);
   }
 
   Future<void> _loadDisplaySettings() async {
@@ -302,6 +317,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         totalMatches: widget.totalMatches ?? RoomConfig.defaultMatchCount,
         turnTimeoutSeconds:
             widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds,
+        morrieRate: widget.morrieRate ?? RoomConfig.defaultMorrieRate,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
@@ -309,6 +325,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       totalMatches = widget.totalMatches ?? RoomConfig.defaultMatchCount;
       turnTimeoutSeconds =
           widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds;
+      morrieRate = widget.morrieRate ?? RoomConfig.defaultMorrieRate;
       _registerHostDisconnectClose();
       await _db.registerPlayerPresence(myId);
       setState(() => myHand = hand);
@@ -378,6 +395,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
       totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       turnTimeoutSeconds = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
+      morrieRate = RoomConfig.resolveMorrieRate(data['morrieRate']);
       completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (data['seriesPlayerIds'] is List) {
         seriesPlayerIds = List<String>.from(
@@ -617,6 +635,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _postGameEntered = false;
         _lastMatchPointDeltas = {};
         _seriesRatingDetails = {};
+        _seriesMorrieDetails = {};
         _cancelPostGameTimers();
       }
 
@@ -628,6 +647,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _postGameEntered = false;
         _lastMatchPointDeltas = {};
         _seriesRatingDetails = {};
+        _seriesMorrieDetails = {};
         _cancelPostGameTimers();
         _cancelGuestStayTimers();
       }
@@ -657,6 +677,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{},
         ),
       );
+    }
+    if (data['seriesMorrieDetails'] is Map) {
+      _seriesMorrieDetails = (data['seriesMorrieDetails'] as Map).map(
+        (k, v) => MapEntry(
+          k.toString(),
+          v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{},
+        ),
+      );
+      final myDetail = _seriesMorrieDetails[myId];
+      final balance = myDetail?['morrieBalance'];
+      if (balance is num) {
+        _myMorrieBalance = balance.round();
+      }
     }
     if (_postGameEntered) {
       _syncPostGameSummary();
@@ -1285,6 +1318,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'playerNames/$botId': botName,
       'playerPoints/$botId': 0,
       'bots/$botId': true,
+      'botMorrieBalances/$botId': MorrieRules.botFixedBalance,
       'deck': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'deckIndex': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
     });
@@ -2059,6 +2093,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'seriesRatingApplied': null,
       'seriesRatingSummary': null,
       'seriesRatingDetails': null,
+      'seriesMorrieSettled': null,
+      'seriesMorrieSummary': null,
+      'seriesMorrieDetails': null,
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
@@ -2338,6 +2375,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         seriesPlayerIds = [];
         _lastMatchPointDeltas = {};
         _seriesRatingDetails = {};
+        _seriesMorrieDetails = {};
         playerPoints = {for (final p in players) p: 0};
         _seriesAutoContinueScheduled = false;
         _seriesRestartInProgress = false;
@@ -2363,6 +2401,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerPoints: playerPoints,
       lastMatchPointDeltas: _lastMatchPointDeltas,
       seriesRatingDetails: _seriesRatingDetails,
+      seriesMorrieDetails: _seriesMorrieDetails,
+      morrieRate: morrieRate,
       totalMatches: totalMatches,
       completedMatches: completedMatches,
       seriesComplete: seriesComplete,
@@ -2437,7 +2477,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final willCompleteSeries = totalMatches <= 1 || completedMatches + 1 >= totalMatches;
 
     if (totalMatches <= 1) {
-      if (willCompleteSeries) await _applySeriesRatingUpdate();
+      if (willCompleteSeries) {
+        await _applySeriesRatingUpdate();
+        await _applySeriesMorrieSettlement();
+      }
       return;
     }
 
@@ -2465,6 +2508,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     await _applySeriesRatingUpdate();
+    await _applySeriesMorrieSettlement();
     if (mounted) _syncPostGameSummary();
   }
 
@@ -2766,6 +2810,32 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _syncPostGameSummary();
   }
 
+  Future<void> _applySeriesMorrieSettlement() async {
+    if (!isHost || morrieRate <= 0) return;
+
+    final roster = seriesPlayerIds.isNotEmpty
+        ? List<String>.from(seriesPlayerIds)
+        : List<String>.from(playerIds);
+    if (roster.length < 2) return;
+
+    final finalPoints = Map<String, int>.from(playerPoints);
+    for (final pid in roster) {
+      finalPoints.putIfAbsent(pid, () => 0);
+    }
+
+    final displayNames = <String, String>{
+      for (final pid in roster) pid: _displayNameForRating(pid),
+    };
+
+    await _morrieService.applySeriesMorrie(
+      roomId: widget.roomId,
+      participantIds: roster,
+      finalPoints: finalPoints,
+      displayNames: displayNames,
+      morrieRate: morrieRate,
+    );
+  }
+
   String _displayNameForRating(String playerId) {
     return PlayerDisplayName.resolveForRating(
       playerId: playerId,
@@ -2840,6 +2910,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       spectatorNames: spectatorNames,
       allPlayerHands: isSpectator ? _spectatorPlayerCards : const {},
       matchProgressLabel: _matchProgressLabel,
+      morrieRate: morrieRate,
+      myMorrieBalance: _myMorrieBalance,
       seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
       statusMessage: _statusMessage,
       autoPlayCountdownSeconds: _autoPlayCountdownSeconds,

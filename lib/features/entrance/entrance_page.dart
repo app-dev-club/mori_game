@@ -9,6 +9,7 @@ import '../../logic/room_lifecycle.dart';
 import '../../logic/rating_logic.dart';
 import '../../services/firebase_db.dart';
 import '../../services/game_display_settings.dart';
+import '../../services/morrie_service.dart';
 import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
@@ -21,11 +22,13 @@ class RoomCreationSettings {
   final int maxPlayers;
   final int totalMatches;
   final int turnTimeoutSeconds;
+  final int morrieRate;
 
   const RoomCreationSettings({
     required this.maxPlayers,
     required this.totalMatches,
     required this.turnTimeoutSeconds,
+    required this.morrieRate,
   });
 }
 
@@ -42,10 +45,12 @@ class _EntrancePageState extends State<EntrancePage> {
   final DatabaseReference _roomsRef = FirebaseDatabase.instance.ref('rooms');
   final RatingService _ratingService = RatingService();
   final UserProfileService _userProfileService = UserProfileService();
+  final MorrieService _morrieService = MorrieService();
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
 
   static const int _maxNameLength = UserProfileService.maxPlayerNameLength;
   int? _myRating;
+  int? _myMorrieBalance;
   double? _myMu;
   double? _mySigma;
   bool _namePrefilled = false;
@@ -85,6 +90,7 @@ class _EntrancePageState extends State<EntrancePage> {
           _myRating = null;
           _myMu = null;
           _mySigma = null;
+          _myMorrieBalance = null;
         });
       }
       return;
@@ -93,6 +99,7 @@ class _EntrancePageState extends State<EntrancePage> {
     final playerName = await _userProfileService.getPlayerName(uid);
     final skill = await _ratingService.getSkillRating(uid);
     final rating = RatingLogic.displayRating(skill);
+    final morrieBalance = await _morrieService.getBalance(uid);
     if (!mounted) return;
 
     if (!_namePrefilled && playerName != null && playerName.isNotEmpty) {
@@ -103,6 +110,7 @@ class _EntrancePageState extends State<EntrancePage> {
       _myRating = rating;
       _myMu = skill.mu;
       _mySigma = skill.sigma;
+      _myMorrieBalance = morrieBalance;
     });
   }
 
@@ -110,11 +118,13 @@ class _EntrancePageState extends State<EntrancePage> {
     final uid = _userId;
     if (uid == null) return;
     final skill = await _ratingService.getSkillRating(uid);
+    final morrieBalance = await _morrieService.getBalance(uid);
     if (mounted) {
       setState(() {
         _myRating = RatingLogic.displayRating(skill);
         _myMu = skill.mu;
         _mySigma = skill.sigma;
+        _myMorrieBalance = morrieBalance;
       });
     }
   }
@@ -183,6 +193,7 @@ class _EntrancePageState extends State<EntrancePage> {
     int? maxPlayers,
     int? totalMatches,
     int? turnTimeoutSeconds,
+    int? morrieRate,
   }) async {
     final playerName = await _validatedAndSavedPlayerName();
     if (playerName == null || !mounted) return;
@@ -198,6 +209,7 @@ class _EntrancePageState extends State<EntrancePage> {
           maxPlayers: maxPlayers,
           totalMatches: totalMatches,
           turnTimeoutSeconds: turnTimeoutSeconds,
+          morrieRate: morrieRate,
         ),
       ),
     );
@@ -219,6 +231,7 @@ class _EntrancePageState extends State<EntrancePage> {
       maxPlayers: settings.maxPlayers,
       totalMatches: settings.totalMatches,
       turnTimeoutSeconds: settings.turnTimeoutSeconds,
+      morrieRate: settings.morrieRate,
     );
   }
 
@@ -226,6 +239,7 @@ class _EntrancePageState extends State<EntrancePage> {
     int selectedMaxPlayers = RoomConfig.defaultMaxPlayers;
     int selectedMatchCount = RoomConfig.defaultMatchCount;
     int selectedTurnTimeout = RoomConfig.defaultTurnTimeoutSeconds;
+    int selectedMorrieRate = RoomConfig.defaultMorrieRate;
     final label = isPrivate ? '非公開ルーム' : '公開ルーム';
 
     return showDialog<RoomCreationSettings>(
@@ -285,6 +299,24 @@ class _EntrancePageState extends State<EntrancePage> {
                   if (value != null) setDialogState(() => selectedTurnTimeout = value);
                 },
               ),
+              const SizedBox(height: 20),
+              const Text('モリーレートを選んでください'),
+              const SizedBox(height: 8),
+              const Text(
+                '最終ポイント × レート分のモリーが増減します。Botは常に5モリーです。',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              DropdownButton<int>(
+                isExpanded: true,
+                value: selectedMorrieRate,
+                items: RoomConfig.morrieRateOptions
+                    .map((n) => DropdownMenuItem(value: n, child: Text('×$n')))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedMorrieRate = value);
+                },
+              ),
             ],
           ),
           actions: [
@@ -298,6 +330,7 @@ class _EntrancePageState extends State<EntrancePage> {
                   maxPlayers: selectedMaxPlayers,
                   totalMatches: selectedMatchCount,
                   turnTimeoutSeconds: selectedTurnTimeout,
+                  morrieRate: selectedMorrieRate,
                 ),
               ),
               child: const Text('ルームを作成'),
@@ -455,7 +488,9 @@ class _EntrancePageState extends State<EntrancePage> {
     final isStarted = data['gameStarted'] == true;
     final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
     final turnTimeout = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
+    final morrieRate = RoomConfig.resolveMorrieRate(data['morrieRate']);
     final timeoutLabel = '持ち時間 $turnTimeout 秒';
+    final morrieLabel = ' · レート ×$morrieRate';
     final spectators = data['spectators'] as Map?;
     final spectatorCount = spectators?.length ?? 0;
     final spectatorLabel = spectatorCount > 0 ? ' · 観戦 $spectatorCount人' : '';
@@ -464,12 +499,12 @@ class _EntrancePageState extends State<EntrancePage> {
       final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (totalMatches > 1) {
-        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$spectatorLabel';
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$spectatorLabel';
       }
-      return '対戦中: $countLabel · $timeoutLabel$spectatorLabel';
+      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$spectatorLabel';
     }
-    if (isFull) return '満員（$countLabel） · $timeoutLabel$spectatorLabel';
-    return '${_formatRoomPlayers(data)} · $timeoutLabel$spectatorLabel';
+    if (isFull) return '満員（$countLabel） · $timeoutLabel$morrieLabel$spectatorLabel';
+    return '${_formatRoomPlayers(data)} · $timeoutLabel$morrieLabel$spectatorLabel';
   }
 
   int _roomListSortOrder(Map data) {
@@ -501,25 +536,9 @@ class _EntrancePageState extends State<EntrancePage> {
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
-        title: Column(
-          children: [
-            const Text('もり - オンラインロビー',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            if (_myRating != null && _myMu != null && _mySigma != null)
-              Text(
-                RatingLogic.formatLobbyRatingLine(
-                  rating: _myRating!,
-                  mu: _myMu!,
-                  sigma: _mySigma!,
-                ),
-                style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
-              )
-            else if (_myRating != null)
-              Text(
-                'レート $_myRating',
-                style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
-              ),
-          ],
+        title: const Text(
+          'もり - オンラインロビー',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -531,6 +550,7 @@ class _EntrancePageState extends State<EntrancePage> {
           Expanded(
             child: Column(
         children: [
+          _buildPlayerStatusBar(),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: TextField(
@@ -745,6 +765,101 @@ class _EntrancePageState extends State<EntrancePage> {
           onTap: () => FirebaseAuth.instance.signOut(),
         ),
       ],
+    );
+  }
+
+  Widget _buildPlayerStatusBar() {
+    final hasRating = _myRating != null;
+    final hasMorrie = _myMorrieBalance != null;
+    if (!hasRating && !hasMorrie) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 360;
+          return Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (hasRating)
+                _buildStatusChip(
+                  icon: Icons.leaderboard,
+                  color: Colors.amberAccent,
+                  child: compact || _myMu == null || _mySigma == null
+                      ? Text(
+                          'レート $_myRating',
+                          style: const TextStyle(
+                            color: Colors.amberAccent,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'レート $_myRating',
+                              style: const TextStyle(
+                                color: Colors.amberAccent,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'μ=${RatingLogic.formatMu(_myMu!)} · σ=${RatingLogic.formatSigma(_mySigma!)}',
+                              style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                ),
+              if (hasMorrie)
+                _buildStatusChip(
+                  icon: Icons.paid,
+                  color: Colors.lightGreenAccent,
+                  child: Text(
+                    'モリー $_myMorrieBalance',
+                    style: const TextStyle(
+                      color: Colors.lightGreenAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStatusChip({
+    required IconData icon,
+    required Color color,
+    required Widget child,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 280),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: child,
+          ),
+        ],
+      ),
     );
   }
 

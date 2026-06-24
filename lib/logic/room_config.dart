@@ -72,6 +72,20 @@ class RoomConfig {
     return true;
   }
 
+  /// ルーム作成時に選べるモリーレート（ポイント×レートが増減額）
+  static const List<int> morrieRateOptions = [1, 5, 10, 20, 50];
+
+  static const int defaultMorrieRate = 1;
+
+  static int resolveMorrieRate(dynamic value) {
+    if (value is num) {
+      final n = value.round();
+      if (morrieRateOptions.contains(n)) return n;
+      if (n >= 1 && n <= 1000) return n;
+    }
+    return defaultMorrieRate;
+  }
+
   /// ホストが再戦を選ぶまでの制限時間（秒）
   static const int hostRematchDecisionSeconds = 60;
 

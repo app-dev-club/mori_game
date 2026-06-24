@@ -7,6 +7,8 @@ class PostGameSummaryBuilder {
     required Map<String, int> playerPoints,
     required Map<String, int> lastMatchPointDeltas,
     required Map<String, Map<String, dynamic>> seriesRatingDetails,
+    required Map<String, Map<String, dynamic>> seriesMorrieDetails,
+    required int morrieRate,
     required int totalMatches,
     required int completedMatches,
     required bool seriesComplete,
@@ -17,14 +19,18 @@ class PostGameSummaryBuilder {
     }
 
     final showRating = seriesComplete && seriesRatingDetails.isNotEmpty;
+    final showMorrie = seriesComplete && seriesMorrieDetails.isNotEmpty && morrieRate > 0;
     final rows = <PostGamePlayerRow>[];
 
     for (final id in roster) {
       final detail = seriesRatingDetails[id];
+      final morrieDetail = seriesMorrieDetails[id];
       final ratingValue = detail?['rating'];
       final deltaValue = detail?['ratingDelta'];
-      final rankValue = detail?['rank'];
-      final pointsValue = detail?['points'];
+      final rankValue = detail?['rank'] ?? morrieDetail?['rank'];
+      final pointsValue = detail?['points'] ?? morrieDetail?['points'];
+      final morrieDeltaValue = morrieDetail?['morrieDelta'];
+      final morrieBalanceValue = morrieDetail?['morrieBalance'];
 
       rows.add(
         PostGamePlayerRow(
@@ -36,11 +42,13 @@ class PostGameSummaryBuilder {
           rank: rankValue is num ? rankValue.round() : 0,
           rating: ratingValue is num ? ratingValue.round() : null,
           ratingDelta: deltaValue is num ? deltaValue.round() : null,
+          morrieDelta: morrieDeltaValue is num ? morrieDeltaValue.round() : null,
+          morrieBalance: morrieBalanceValue is num ? morrieBalanceValue.round() : null,
         ),
       );
     }
 
-    if (showRating) {
+    if (showRating || showMorrie) {
       rows.sort((a, b) {
         final byRank = a.rank.compareTo(b.rank);
         if (byRank != 0) return byRank;
@@ -57,6 +65,8 @@ class PostGameSummaryBuilder {
           rank: i + 1,
           rating: row.rating,
           ratingDelta: row.ratingDelta,
+          morrieDelta: row.morrieDelta,
+          morrieBalance: row.morrieBalance,
         );
       }
     }
@@ -69,6 +79,7 @@ class PostGameSummaryBuilder {
       title: title,
       players: rows,
       showRating: showRating,
+      showMorrie: showMorrie,
       resultMessage: resultMessage,
     );
   }

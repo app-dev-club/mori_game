@@ -20,6 +20,9 @@
         ".write": "auth != null && auth.uid == $userId",
         "playerName": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
+        },
+        "morrieBalance": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
         }
       }
     },

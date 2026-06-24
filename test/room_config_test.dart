@@ -31,6 +31,11 @@ void main() {
       expect(RoomConfig.resolveTurnTimeoutSeconds(121), RoomConfig.defaultTurnTimeoutSeconds);
     });
 
+    test('resolveMorrieRate はレートを解決する', () {
+      expect(RoomConfig.resolveMorrieRate(10), 10);
+      expect(RoomConfig.resolveMorrieRate(null), RoomConfig.defaultMorrieRate);
+    });
+
     test('canUserSpectateRoom はホストと参加プレイヤーを観戦不可にする', () {
       const uid = 'user1';
       const other = 'user2';

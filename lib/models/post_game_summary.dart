@@ -6,6 +6,8 @@ class PostGamePlayerRow {
   final int rank;
   final int? rating;
   final int? ratingDelta;
+  final int? morrieDelta;
+  final int? morrieBalance;
 
   const PostGamePlayerRow({
     required this.name,
@@ -14,6 +16,8 @@ class PostGamePlayerRow {
     required this.rank,
     this.rating,
     this.ratingDelta,
+    this.morrieDelta,
+    this.morrieBalance,
   });
 }
 
@@ -22,12 +26,14 @@ class PostGameSummary {
   final String title;
   final List<PostGamePlayerRow> players;
   final bool showRating;
+  final bool showMorrie;
   final String? resultMessage;
 
   const PostGameSummary({
     required this.title,
     required this.players,
     this.showRating = false,
+    this.showMorrie = false,
     this.resultMessage,
   });
 }

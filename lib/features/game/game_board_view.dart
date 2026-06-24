@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../logic/bot_logic.dart';
 import '../../logic/game_rules.dart';
+import '../../logic/morrie_rules.dart';
 import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
@@ -494,6 +496,8 @@ class GameBoardView extends StatelessWidget {
   final Map<String, String> spectatorNames;
   final Map<String, List<CardWidget>> allPlayerHands;
   final String matchProgressLabel;
+  final int morrieRate;
+  final int? myMorrieBalance;
   final bool seriesAutoContinuing;
   final String? statusMessage;
   final int? autoPlayCountdownSeconds;
@@ -532,6 +536,8 @@ class GameBoardView extends StatelessWidget {
     this.spectatorNames = const {},
     this.allPlayerHands = const {},
     this.matchProgressLabel = '',
+    this.morrieRate = 1,
+    this.myMorrieBalance,
     this.seriesAutoContinuing = false,
     this.statusMessage,
     this.autoPlayCountdownSeconds,
@@ -614,18 +620,30 @@ class GameBoardView extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
-        title: Text(
-          isSpectator
-              ? (matchProgressLabel.isNotEmpty
-                  ? '観戦中 · $matchProgressLabel · ルーム: $roomId'
-                  : '観戦中 · ルーム: $roomId')
-              : gameStarted
-              ? (matchProgressLabel.isNotEmpty
-                  ? '$matchProgressLabel · ルーム: $roomId'
-                  : 'ルーム: $roomId')
-              : (matchProgressLabel.isNotEmpty
-                  ? '$matchProgressLabel · ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'
-                  : 'ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isSpectator
+                  ? (matchProgressLabel.isNotEmpty
+                      ? '観戦中 · $matchProgressLabel · ルーム: $roomId'
+                      : '観戦中 · ルーム: $roomId')
+                  : gameStarted
+                      ? (matchProgressLabel.isNotEmpty
+                          ? '$matchProgressLabel · ルーム: $roomId'
+                          : 'ルーム: $roomId')
+                      : (matchProgressLabel.isNotEmpty
+                          ? '$matchProgressLabel · ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'
+                          : 'ルーム: $roomId（待機中 $playerCount/$maxPlayers人）'),
+              style: const TextStyle(fontSize: 16),
+            ),
+            if (morrieRate > 0)
+              Text(
+                'レート ×$morrieRate'
+                    '${myMorrieBalance != null ? ' · 所持 $myMorrieBalance モリー' : ''}',
+                style: const TextStyle(color: Colors.lightGreenAccent, fontSize: 12),
+              ),
+          ],
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -1097,6 +1115,14 @@ class GameBoardView extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
+          if (gameStarted && morrieRate > 0 && BotLogic.isBot(playerId))
+            Text(
+              '${MorrieRules.botFixedBalance}モリー',
+              style: TextStyle(
+                color: Colors.lightGreenAccent,
+                fontSize: layout.pointsFontSize - 1,
+              ),
+            ),
           const SizedBox(height: 2),
           if (hasOpenJoker)
             Padding(
@@ -1524,6 +1550,7 @@ class PostGameOverlay extends StatelessWidget {
   Widget _buildResultsTable(double bodySize, double headerSize) {
     final players = summary?.players ?? [];
     final showRating = summary?.showRating ?? false;
+    final showMorrie = summary?.showMorrie ?? false;
 
     if (players.isEmpty) {
       return Text(
@@ -1540,6 +1567,7 @@ class PostGameOverlay extends StatelessWidget {
         2: IntrinsicColumnWidth(),
         3: IntrinsicColumnWidth(),
         4: IntrinsicColumnWidth(),
+        5: IntrinsicColumnWidth(),
       },
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
@@ -1552,6 +1580,7 @@ class PostGameOverlay extends StatelessWidget {
             _headerCell('名前', headerSize),
             _headerCell('今回', headerSize),
             _headerCell('累計', headerSize),
+            _headerCell(showMorrie ? 'モリー' : '', headerSize),
             _headerCell(showRating ? 'レート' : '', headerSize),
           ],
         ),
@@ -1562,6 +1591,14 @@ class PostGameOverlay extends StatelessWidget {
               _bodyCell(row.name, bodySize),
               _bodyCell(_formatDelta(row.matchDelta), bodySize, align: TextAlign.center),
               _bodyCell('${row.totalPoints}', bodySize, align: TextAlign.center),
+              _bodyCell(
+                showMorrie && row.morrieDelta != null
+                    ? '${_formatDelta(row.morrieDelta)}'
+                        '${row.morrieBalance != null ? ' → ${row.morrieBalance}' : ''}'
+                    : '—',
+                bodySize,
+                align: TextAlign.end,
+              ),
               _bodyCell(
                 showRating && row.rating != null
                     ? '${row.rating} (${_formatDelta(row.ratingDelta)})'
