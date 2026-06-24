@@ -308,71 +308,6 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
-  Future<String?> _showSpectatorPlayerPicker({
-    required List<String> players,
-    required Map<String, String> names,
-    String? hostId,
-  }) {
-    String selected = players.first;
-    return showDialog<String>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('観戦するプレイヤーを選択'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('選択したプレイヤーの視点で対戦を観戦します。'),
-              const SizedBox(height: 16),
-              DropdownButton<String>(
-                isExpanded: true,
-                value: selected,
-                items: players
-                    .map(
-                      (id) => DropdownMenuItem(
-                        value: id,
-                        child: Text(_playerLabelForSpectator(id, players, names, hostId: hostId)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => selected = value);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('キャンセル'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(dialogContext, selected),
-              child: const Text('観戦開始'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _playerLabelForSpectator(
-    String playerId,
-    List<String> players,
-    Map<String, String> names, {
-    String? hostId,
-  }) {
-    return PlayerDisplayName.resolve(
-      playerId: playerId,
-      playerIds: players,
-      myId: _userId ?? '',
-      playerNames: names,
-      hostId: hostId,
-      hideOpponentNames: _hideOpponentNames,
-    );
-  }
-
   Future<void> _spectateRoom(String roomId, Map data) async {
     final uid = _userId;
     if (uid == null) return;
@@ -388,19 +323,6 @@ class _EntrancePageState extends State<EntrancePage> {
       return;
     }
 
-    final namesRaw = data['playerNames'];
-    final names = namesRaw is Map
-        ? namesRaw.map((k, v) => MapEntry(k.toString(), v.toString()))
-        : <String, String>{};
-
-    final hostId = data['host'] as String?;
-    final viewAsPlayerId = await _showSpectatorPlayerPicker(
-      players: players,
-      names: names,
-      hostId: hostId,
-    );
-    if (viewAsPlayerId == null || !mounted) return;
-
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -409,7 +331,6 @@ class _EntrancePageState extends State<EntrancePage> {
           playerName: playerName,
           userId: uid,
           isSpectator: true,
-          initialViewAsPlayerId: viewAsPlayerId,
         ),
       ),
     );

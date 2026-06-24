@@ -7,6 +7,7 @@ import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
 import '../common/app_side_bar.dart';
 import 'play_arrow_overlay.dart';
+import 'spectator_circle_board.dart';
 
 enum Suit { spade, heart, diamond, club, joker }
 
@@ -464,8 +465,7 @@ class GameBoardView extends StatelessWidget {
   final bool gameStarted;
   final bool isSpectator;
   final Map<String, String> spectatorNames;
-  final String? spectatorViewLabel;
-  final ValueChanged<String>? onViewAsPlayerChanged;
+  final Map<String, List<CardWidget>> allPlayerHands;
   final String matchProgressLabel;
   final bool seriesAutoContinuing;
   final String? statusMessage;
@@ -503,8 +503,7 @@ class GameBoardView extends StatelessWidget {
     required this.gameStarted,
     this.isSpectator = false,
     this.spectatorNames = const {},
-    this.spectatorViewLabel,
-    this.onViewAsPlayerChanged,
+    this.allPlayerHands = const {},
     this.matchProgressLabel = '',
     this.seriesAutoContinuing = false,
     this.statusMessage,
@@ -590,7 +589,9 @@ class GameBoardView extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           isSpectator
-              ? '観戦中 · ${_spectatorTitle()}'
+              ? (matchProgressLabel.isNotEmpty
+                  ? '観戦中 · $matchProgressLabel · ルーム: $roomId'
+                  : '観戦中 · ルーム: $roomId')
               : gameStarted
               ? (matchProgressLabel.isNotEmpty
                   ? '$matchProgressLabel · ルーム: $roomId'
@@ -616,6 +617,9 @@ class GameBoardView extends StatelessWidget {
           Expanded(
             child: Stack(
         children: [
+          if (isSpectator && gameStarted)
+            _buildSpectatorPlayColumn()
+          else
           PlayArrowOverlay(
         lastPlayerId: lastPlayerId,
         myId: myId,
@@ -630,7 +634,6 @@ class GameBoardView extends StatelessWidget {
         }) =>
             Column(
         children: [
-          if (isSpectator) _buildSpectatorPovBar(),
           if (!isSpectator && spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
           if (!gameStarted)
             Container(
@@ -770,51 +773,47 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
-  String _spectatorTitle() {
-    final viewLabel = spectatorViewLabel;
-    if (viewLabel != null && viewLabel.isNotEmpty) {
-      return '$viewLabel の視点 · ルーム: $roomId';
-    }
-    return 'ルーム: $roomId';
-  }
-
-  Widget _buildSpectatorPovBar() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.blueGrey.shade900,
-      child: Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 12,
-        runSpacing: 8,
-        children: [
-          const Icon(Icons.visibility, color: Colors.lightBlueAccent, size: 20),
-          const Text(
-            '観戦中',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+  Widget _buildSpectatorPlayColumn() {
+    return Column(
+      children: [
+        if (spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
+        Expanded(
+          child: SpectatorCircleBoard(
+            playerIds: playerIds,
+            allPlayerHands: allPlayerHands,
+            playerPoints: playerPoints,
+            openJokerPlayerIds: openJokerPlayerIds,
+            fieldNumber: fieldNumber,
+            fieldSuit: fieldSuit,
+            lastPlayerId: lastPlayerId,
+            currentTurnIndex: currentTurnIndex,
+            gameStarted: gameStarted,
+            playerLabel: _playerLabel,
           ),
-          const Text('視点:', style: TextStyle(color: Colors.white70)),
-          DropdownButton<String>(
-            value: playerIds.contains(myId) ? myId : (playerIds.isNotEmpty ? playerIds.first : null),
-            dropdownColor: Colors.blueGrey.shade800,
-            underline: const SizedBox.shrink(),
-            style: const TextStyle(color: Colors.white),
-            items: playerIds
-                .map(
-                  (id) => DropdownMenuItem(
-                    value: id,
-                    child: Text(_playerLabel(id)),
-                  ),
-                )
-                .toList(),
-            onChanged: onViewAsPlayerChanged == null
-                ? null
-                : (value) {
-                    if (value != null) onViewAsPlayerChanged!(value);
-                  },
+        ),
+        if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              moriRevealedType == 'gaeshi'
+                  ? '🔥 もり返し！ 残り $moriCountdownSeconds 秒 🔥'
+                  : '🔥 もり宣言！ 残り $moriCountdownSeconds 秒（もり返し受付中） 🔥',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
-        ],
-      ),
+        if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
+          _buildMoriRevealedHandSection(),
+        if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
+        if (autoPlayCountdownSeconds != null) _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Text(
+            '観戦モード（操作不可）',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
+          ),
+        ),
+      ],
     );
   }
 

@@ -28,7 +28,6 @@ class GameRoomPage extends StatefulWidget {
   final int? turnTimeoutSeconds;
   final String? userId;
   final bool isSpectator;
-  final String? initialViewAsPlayerId;
   const GameRoomPage({
     super.key,
     required this.roomId,
@@ -39,7 +38,6 @@ class GameRoomPage extends StatefulWidget {
     this.turnTimeoutSeconds,
     this.userId,
     this.isSpectator = false,
-    this.initialViewAsPlayerId,
   });
   @override
   State<GameRoomPage> createState() => _GameRoomPageState();
@@ -136,21 +134,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   final Map<String, String> _botTimerKeys = {};
   final Random _botRandom = Random();
   bool _hideOpponentNames = false;
-  String? _viewAsPlayerId;
   Map<String, String> spectatorNames = {};
   Map<String, List<CardWidget>> _spectatorPlayerCards = {};
   bool _hostDisconnectHandlerRegistered = false;
   String? _lastEffectEventKey;
 
   bool get isSpectator => widget.isSpectator;
-
-  String get _povPlayerId {
-    if (!isSpectator) return myId;
-    if (_viewAsPlayerId != null && playerIds.contains(_viewAsPlayerId)) {
-      return _viewAsPlayerId!;
-    }
-    return playerIds.isNotEmpty ? playerIds.first : myId;
-  }
 
   bool get isHost => !isSpectator && myId == hostId;
 
@@ -276,11 +265,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       );
       return;
     }
-
-    final initialView = widget.initialViewAsPlayerId;
-    _viewAsPlayerId = (initialView != null && players.contains(initialView))
-        ? initialView
-        : players.first;
 
     await _db.joinAsSpectator(myId, widget.playerName);
     FirebaseDatabase.instance
@@ -425,21 +409,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       isDrawCompetitive = data['isDrawCompetitive'] == true;
       if (shouldNotifyDeckReset) _lastDeckResetAt = deckResetAt;
 
-      final povId = _povPlayerId;
-      final int myIdx = playerIds.indexOf(povId);
-      final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
-      final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
-        isDrawCompetitive: isDrawCompetitive,
-        lastDrawerId: lastDrawerId,
-        players: playerIds,
-        myId: povId,
-      );
       if (!isSpectator) {
+        final int myIdx = playerIds.indexOf(myId);
+        final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
+        final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
+          isDrawCompetitive: isDrawCompetitive,
+          lastDrawerId: lastDrawerId,
+          players: playerIds,
+          myId: myId,
+        );
         if (inDrawCompetition) {
           _hasPlayedThisTurn = false;
-        } else if (lastDrawerId == povId) {
+        } else if (lastDrawerId == myId) {
           _hasPlayedThisTurn = false;
-        } else if (isMyTurn && lastPlayerId != povId) {
+        } else if (isMyTurn && lastPlayerId != myId) {
           _hasPlayedThisTurn = false;
         }
       }
@@ -458,9 +441,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (isHost) _allPlayerCards = parsedAll;
         if (isSpectator) _spectatorPlayerCards = parsedAll;
         handCounts = {...handCounts, ...countsFromCards};
-        final handOwnerId = isSpectator ? povId : myId;
-        if (playerCards[handOwnerId] is List) {
-          myHand = parsedAll[handOwnerId] ?? _parseHandFromFirebase(playerCards[handOwnerId]);
+        if (!isSpectator && playerCards[myId] is List) {
+          myHand = parsedAll[myId] ?? _parseHandFromFirebase(playerCards[myId]);
         }
       }
 
@@ -2732,14 +2714,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     Navigator.popUntil(context, (r) => r.isFirst);
   }
 
-  void _onViewAsPlayerChanged(String playerId) {
-    if (!isSpectator || !playerIds.contains(playerId)) return;
-    setState(() {
-      _viewAsPlayerId = playerId;
-      myHand = List<CardWidget>.from(_spectatorPlayerCards[playerId] ?? []);
-    });
-  }
-
   void _noopCardTap(int _) {}
   void _noop() {}
 
@@ -2817,15 +2791,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     return PlayerDisplayName.resolve(
       playerId: playerId,
       playerIds: playerIds,
-      myId: isSpectator ? _povPlayerId : myId,
+      myId: myId,
       playerNames: playerNames,
       hostId: hostId,
       hideOpponentNames: _hideOpponentNames,
     );
-  }
-
-  String _spectatorViewLabel() {
-    return _displayName(_povPlayerId);
   }
 
   void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
@@ -2836,7 +2806,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       fit: StackFit.expand,
       children: [
         GameBoardView(
-      roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: _povPlayerId,
+      roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
       playerNames: playerNames,
       playerPoints: playerPoints,
       handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
@@ -2847,8 +2817,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       gameStarted: gameStarted,
       isSpectator: isSpectator,
       spectatorNames: spectatorNames,
-      spectatorViewLabel: isSpectator ? _spectatorViewLabel() : null,
-      onViewAsPlayerChanged: isSpectator ? _onViewAsPlayerChanged : null,
+      allPlayerHands: isSpectator ? _spectatorPlayerCards : const {},
       matchProgressLabel: _matchProgressLabel,
       seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
       statusMessage: _statusMessage,
