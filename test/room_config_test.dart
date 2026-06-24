@@ -31,9 +31,32 @@ void main() {
       expect(RoomConfig.resolveTurnTimeoutSeconds(121), RoomConfig.defaultTurnTimeoutSeconds);
     });
 
-    test('resolveMorrieRate はレートを解決する', () {
+    test('resolveMorrieRate は1以上の整数を解決する', () {
       expect(RoomConfig.resolveMorrieRate(10), 10);
+      expect(RoomConfig.resolveMorrieRate(0), RoomConfig.defaultMorrieRate);
       expect(RoomConfig.resolveMorrieRate(null), RoomConfig.defaultMorrieRate);
+    });
+
+    test('parseMorrieRateInput は1以上の整数のみ受け付ける', () {
+      expect(RoomConfig.parseMorrieRateInput('10'), 10);
+      expect(RoomConfig.parseMorrieRateInput('1'), 1);
+      expect(RoomConfig.parseMorrieRateInput('0'), isNull);
+      expect(RoomConfig.parseMorrieRateInput('abc'), isNull);
+    });
+
+    test('resolveMinMorrieBalance と meetsMinMorrieRequirement', () {
+      expect(RoomConfig.resolveMinMorrieBalance(10), 10);
+      expect(RoomConfig.resolveMinMorrieBalance(null), 0);
+      expect(RoomConfig.meetsMinMorrieRequirement(10, 0), isTrue);
+      expect(RoomConfig.meetsMinMorrieRequirement(10, 10), isTrue);
+      expect(RoomConfig.meetsMinMorrieRequirement(9, 10), isFalse);
+    });
+
+    test('parseMinMorrieBalanceInput は0以上の整数のみ受け付ける', () {
+      expect(RoomConfig.parseMinMorrieBalanceInput('0'), 0);
+      expect(RoomConfig.parseMinMorrieBalanceInput('25'), 25);
+      expect(RoomConfig.parseMinMorrieBalanceInput('-1'), isNull);
+      expect(RoomConfig.parseMinMorrieBalanceInput(''), isNull);
     });
 
     test('canUserSpectateRoom はホストと参加プレイヤーを観戦不可にする', () {

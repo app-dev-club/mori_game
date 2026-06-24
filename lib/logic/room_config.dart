@@ -72,19 +72,42 @@ class RoomConfig {
     return true;
   }
 
-  /// ルーム作成時に選べるモリーレート（ポイント×レートが増減額）
-  static const List<int> morrieRateOptions = [1, 5, 10, 20, 50];
-
+  /// モリーレート（ポイント×レートが増減額）。1以上の整数。
   static const int defaultMorrieRate = 1;
 
   static int resolveMorrieRate(dynamic value) {
     if (value is num) {
       final n = value.round();
-      if (morrieRateOptions.contains(n)) return n;
-      if (n >= 1 && n <= 1000) return n;
+      if (n >= 1) return n;
     }
     return defaultMorrieRate;
   }
+
+  static int? parseMorrieRateInput(String text) {
+    final n = int.tryParse(text.trim());
+    if (n == null || n < 1) return null;
+    return n;
+  }
+
+  /// 最低入室モリー（0 = 制限なし）。0以上の整数。
+  static const int defaultMinMorrieBalance = 0;
+
+  static int resolveMinMorrieBalance(dynamic value) {
+    if (value is num) {
+      final n = value.round();
+      if (n >= 0) return n;
+    }
+    return defaultMinMorrieBalance;
+  }
+
+  static int? parseMinMorrieBalanceInput(String text) {
+    final n = int.tryParse(text.trim());
+    if (n == null || n < 0) return null;
+    return n;
+  }
+
+  static bool meetsMinMorrieRequirement(int balance, int minRequired) =>
+      minRequired <= 0 || balance >= minRequired;
 
   /// ホストが再戦を選ぶまでの制限時間（秒）
   static const int hostRematchDecisionSeconds = 60;

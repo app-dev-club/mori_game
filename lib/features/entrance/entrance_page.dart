@@ -23,12 +23,14 @@ class RoomCreationSettings {
   final int totalMatches;
   final int turnTimeoutSeconds;
   final int morrieRate;
+  final int minMorrieBalance;
 
   const RoomCreationSettings({
     required this.maxPlayers,
     required this.totalMatches,
     required this.turnTimeoutSeconds,
     required this.morrieRate,
+    required this.minMorrieBalance,
   });
 }
 
@@ -200,6 +202,7 @@ class _EntrancePageState extends State<EntrancePage> {
     int? totalMatches,
     int? turnTimeoutSeconds,
     int? morrieRate,
+    int? minMorrieBalance,
   }) async {
     final playerName = await _validatedAndSavedPlayerName();
     if (playerName == null || !mounted) return;
@@ -216,6 +219,7 @@ class _EntrancePageState extends State<EntrancePage> {
           totalMatches: totalMatches,
           turnTimeoutSeconds: turnTimeoutSeconds,
           morrieRate: morrieRate,
+          minMorrieBalance: minMorrieBalance,
         ),
       ),
     );
@@ -229,6 +233,20 @@ class _EntrancePageState extends State<EntrancePage> {
     final settings = await _showRoomCreationDialog(isPrivate: isPrivate);
     if (settings == null || !mounted) return;
 
+    await _morrieService.ensureBalance(uid);
+    final balance = await _morrieService.getBalance(uid);
+    if (!RoomConfig.meetsMinMorrieRequirement(balance, settings.minMorrieBalance)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '最低入室モリー ${settings.minMorrieBalance} が必要です（所持: $balance）',
+          ),
+        ),
+      );
+      return;
+    }
+
     final newRoomId = (Random().nextInt(9000) + 1000).toString();
     await _openRoom(
       newRoomId,
@@ -238,6 +256,7 @@ class _EntrancePageState extends State<EntrancePage> {
       totalMatches: settings.totalMatches,
       turnTimeoutSeconds: settings.turnTimeoutSeconds,
       morrieRate: settings.morrieRate,
+      minMorrieBalance: settings.minMorrieBalance,
     );
   }
 
@@ -245,7 +264,14 @@ class _EntrancePageState extends State<EntrancePage> {
     int selectedMaxPlayers = RoomConfig.defaultMaxPlayers;
     int selectedMatchCount = RoomConfig.defaultMatchCount;
     int selectedTurnTimeout = RoomConfig.defaultTurnTimeoutSeconds;
-    int selectedMorrieRate = RoomConfig.defaultMorrieRate;
+    final morrieRateController = TextEditingController(
+      text: '${RoomConfig.defaultMorrieRate}',
+    );
+    final minMorrieController = TextEditingController(
+      text: '${RoomConfig.defaultMinMorrieBalance}',
+    );
+    String? morrieRateError;
+    String? minMorrieError;
     final label = isPrivate ? '非公開ルーム' : '公開ルーム';
 
     return showDialog<RoomCreationSettings>(
@@ -253,7 +279,8 @@ class _EntrancePageState extends State<EntrancePage> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text('$labelを作成'),
-          content: Column(
+          content: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -306,24 +333,51 @@ class _EntrancePageState extends State<EntrancePage> {
                 },
               ),
               const SizedBox(height: 20),
-              const Text('モリーレートを選んでください'),
+              const Text('モリーレート'),
               const SizedBox(height: 8),
               const Text(
-                '最終ポイント × レート分のモリーが増減します。Botは常に5モリーです。',
+                '最終ポイント × レート分のモリーが増減します。1以上の整数を入力してください。',
                 style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
-              const SizedBox(height: 16),
-              DropdownButton<int>(
-                isExpanded: true,
-                value: selectedMorrieRate,
-                items: RoomConfig.morrieRateOptions
-                    .map((n) => DropdownMenuItem(value: n, child: Text('×$n')))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => selectedMorrieRate = value);
+              const SizedBox(height: 8),
+              TextField(
+                controller: morrieRateController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: '例: 10',
+                  errorText: morrieRateError,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) {
+                  if (morrieRateError != null) {
+                    setDialogState(() => morrieRateError = null);
+                  }
+                },
+              ),
+              const SizedBox(height: 20),
+              const Text('最低入室モリー'),
+              const SizedBox(height: 8),
+              const Text(
+                '0以上の整数。0は制限なし。このモリー未満のプレイヤーは入室・再戦できません。',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: minMorrieController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: '例: 0',
+                  errorText: minMorrieError,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) {
+                  if (minMorrieError != null) {
+                    setDialogState(() => minMorrieError = null);
+                  }
                 },
               ),
             ],
+            ),
           ),
           actions: [
             TextButton(
@@ -331,20 +385,39 @@ class _EntrancePageState extends State<EntrancePage> {
               child: const Text('キャンセル'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(
-                RoomCreationSettings(
-                  maxPlayers: selectedMaxPlayers,
-                  totalMatches: selectedMatchCount,
-                  turnTimeoutSeconds: selectedTurnTimeout,
-                  morrieRate: selectedMorrieRate,
-                ),
-              ),
+              onPressed: () {
+                final morrieRate =
+                    RoomConfig.parseMorrieRateInput(morrieRateController.text);
+                final minMorrieBalance =
+                    RoomConfig.parseMinMorrieBalanceInput(minMorrieController.text);
+                if (morrieRate == null || minMorrieBalance == null) {
+                  setDialogState(() {
+                    morrieRateError =
+                        morrieRate == null ? '1以上の整数を入力してください' : null;
+                    minMorrieError =
+                        minMorrieBalance == null ? '0以上の整数を入力してください' : null;
+                  });
+                  return;
+                }
+                Navigator.of(dialogContext).pop(
+                  RoomCreationSettings(
+                    maxPlayers: selectedMaxPlayers,
+                    totalMatches: selectedMatchCount,
+                    turnTimeoutSeconds: selectedTurnTimeout,
+                    morrieRate: morrieRate,
+                    minMorrieBalance: minMorrieBalance,
+                  ),
+                );
+              },
               child: const Text('ルームを作成'),
             ),
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      morrieRateController.dispose();
+      minMorrieController.dispose();
+    });
   }
 
   Future<void> _spectateRoom(String roomId, Map data) async {
@@ -428,6 +501,26 @@ class _EntrancePageState extends State<EntrancePage> {
         );
         return;
       }
+
+      final minMorrie = RoomConfig.resolveMinMorrieBalance(
+        snapshot.child('minMorrieBalance').value,
+      );
+      final alreadyJoined = players.map((p) => p.toString()).contains(uid);
+      if (!alreadyJoined && minMorrie > 0) {
+        await _morrieService.ensureBalance(uid);
+        final balance = await _morrieService.getBalance(uid);
+        if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrie)) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '最低入室モリー $minMorrie が必要です（所持: $balance）',
+              ),
+            ),
+          );
+          return;
+        }
+      }
     }
 
     if (!mounted) return;
@@ -495,8 +588,11 @@ class _EntrancePageState extends State<EntrancePage> {
     final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
     final turnTimeout = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
     final morrieRate = RoomConfig.resolveMorrieRate(data['morrieRate']);
+    final minMorrie = RoomConfig.resolveMinMorrieBalance(data['minMorrieBalance']);
     final timeoutLabel = '持ち時間 $turnTimeout 秒';
     final morrieLabel = ' · レート ×$morrieRate';
+    final minMorrieLabel =
+        minMorrie > 0 ? ' · 最低 $minMorrie モリー' : '';
     final spectators = data['spectators'] as Map?;
     final spectatorCount = spectators?.length ?? 0;
     final spectatorLabel = spectatorCount > 0 ? ' · 観戦 $spectatorCount人' : '';
@@ -505,12 +601,14 @@ class _EntrancePageState extends State<EntrancePage> {
       final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (totalMatches > 1) {
-        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$spectatorLabel';
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
       }
-      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$spectatorLabel';
+      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
     }
-    if (isFull) return '満員（$countLabel） · $timeoutLabel$morrieLabel$spectatorLabel';
-    return '${_formatRoomPlayers(data)} · $timeoutLabel$morrieLabel$spectatorLabel';
+    if (isFull) {
+      return '満員（$countLabel） · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
+    }
+    return '${_formatRoomPlayers(data)} · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
   }
 
   int _roomListSortOrder(Map data) {

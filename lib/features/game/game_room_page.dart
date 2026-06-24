@@ -29,6 +29,7 @@ class GameRoomPage extends StatefulWidget {
   final int? totalMatches;
   final int? turnTimeoutSeconds;
   final int? morrieRate;
+  final int? minMorrieBalance;
   final String? userId;
   final bool isSpectator;
   const GameRoomPage({
@@ -40,6 +41,7 @@ class GameRoomPage extends StatefulWidget {
     this.totalMatches,
     this.turnTimeoutSeconds,
     this.morrieRate,
+    this.minMorrieBalance,
     this.userId,
     this.isSpectator = false,
   });
@@ -91,6 +93,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Map<String, Map<String, dynamic>> _seriesRatingDetails = {};
   Map<String, Map<String, dynamic>> _seriesMorrieDetails = {};
   int morrieRate = RoomConfig.defaultMorrieRate;
+  int minMorrieBalance = RoomConfig.defaultMinMorrieBalance;
   int? _myMorrieBalance;
   String roomStatus = 'open'; 
   bool _isClosedDialogShown = false;
@@ -165,6 +168,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   String get _matchProgressLabel =>
       totalMatches > 1 ? '第$_currentMatchNumber戦 / 全$totalMatches戦' : '';
+
+  bool get _meetsMinMorrieForPlay =>
+      BotLogic.isBot(myId) ||
+      RoomConfig.meetsMinMorrieRequirement(
+        _myMorrieBalance ?? MorrieRules.defaultStartingBalance,
+        minMorrieBalance,
+      );
 
   void _showGameMessage(String message) {
     _statusMessageTimer?.cancel();
@@ -305,6 +315,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     final snap = await _db.getSnapshot();
     if (!snap.exists) {
+      await _morrieService.ensureBalance(myId);
+      final balance = await _morrieService.getBalance(myId);
+      final requiredMin = widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance;
+      if (!RoomConfig.meetsMinMorrieRequirement(balance, requiredMin)) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _showErrorDialog(
+            '最低入室モリー $requiredMin が必要です（所持: $balance）',
+          ),
+        );
+        return;
+      }
+      _myMorrieBalance = balance;
+
       List<CardWidget> fullDeck = _generateDeck()..shuffle();
       final hand = fullDeck.sublist(0, 5);
       fullDeck.removeRange(0, 5);
@@ -318,6 +341,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         turnTimeoutSeconds:
             widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds,
         morrieRate: widget.morrieRate ?? RoomConfig.defaultMorrieRate,
+        minMorrieBalance: widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
@@ -326,6 +350,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       turnTimeoutSeconds =
           widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds;
       morrieRate = widget.morrieRate ?? RoomConfig.defaultMorrieRate;
+      minMorrieBalance = widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance;
       _registerHostDisconnectClose();
       await _db.registerPlayerPresence(myId);
       setState(() => myHand = hand);
@@ -338,12 +363,28 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
       List<String> p = snap.child('players').exists ? List<String>.from(snap.child('players').value as List) : [];
       maxPlayers = RoomConfig.resolveMaxPlayers(snap.child('maxPlayers').value);
+      minMorrieBalance = RoomConfig.resolveMinMorrieBalance(
+        snap.child('minMorrieBalance').value,
+      );
       if (!p.contains(myId)) {
         if (RoomConfig.isRoomFull(p.length, maxPlayers)) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => _showErrorDialog('このルームは定員（$maxPlayers人）に達しているため入室できません。'),
           );
           return;
+        }
+        if (minMorrieBalance > 0) {
+          await _morrieService.ensureBalance(myId);
+          final balance = await _morrieService.getBalance(myId);
+          if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrieBalance)) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _showErrorDialog(
+                '最低入室モリー $minMorrieBalance が必要です（所持: $balance）',
+              ),
+            );
+            return;
+          }
+          _myMorrieBalance = balance;
         }
         p.add(myId);
       }
@@ -396,6 +437,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       turnTimeoutSeconds = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
       morrieRate = RoomConfig.resolveMorrieRate(data['morrieRate']);
+      minMorrieBalance = RoomConfig.resolveMinMorrieBalance(data['minMorrieBalance']);
       completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (data['seriesPlayerIds'] is List) {
         seriesPlayerIds = List<String>.from(
@@ -2714,6 +2756,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   Future<void> _onHostRematchRequest() async {
+    if (!_meetsMinMorrieForPlay) {
+      _showGameMessage(
+        '最低入室モリー $minMorrieBalance 未満のため再戦できません',
+      );
+      return;
+    }
     _cancelPostGameTimers();
     await _removeAllBotsFromRoom();
     if (!mounted) return;
@@ -2743,6 +2791,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Future<void> _onGuestStayInRoom() async {
     if (isHost || !awaitingGuestStayResponses || myStayResponseSubmitted) return;
     if (!rematchEligiblePlayers.contains(myId)) return;
+    if (!_meetsMinMorrieForPlay) {
+      _showGameMessage(
+        '最低入室モリー $minMorrieBalance 未満のためルームに残れません',
+      );
+      return;
+    }
     await _db.setStayInRoom(myId);
     if (!mounted) return;
     setState(() => myStayResponseSubmitted = true);
@@ -2911,6 +2965,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       allPlayerHands: isSpectator ? _spectatorPlayerCards : const {},
       matchProgressLabel: _matchProgressLabel,
       morrieRate: morrieRate,
+      minMorrieBalance: minMorrieBalance,
       myMorrieBalance: _myMorrieBalance,
       seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
       statusMessage: _statusMessage,
@@ -2927,7 +2982,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           !isHost &&
           awaitingGuestStayResponses &&
           rematchEligiblePlayers.contains(myId) &&
-          !myStayResponseSubmitted,
+          !myStayResponseSubmitted &&
+          _meetsMinMorrieForPlay,
+      canPlayAgain: _meetsMinMorrieForPlay,
       myStayResponseSubmitted: myStayResponseSubmitted,
       onHostRematch: isSpectator ? _noop : () => _onUiButtonPress(() { unawaited(_onHostRematchRequest()); }),
       onHostReturnToLobby: isSpectator ? _noop : () => _onUiButtonPress(_onHostReturnToLobby),

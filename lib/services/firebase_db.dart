@@ -22,6 +22,7 @@ class FirebaseDB {
     required int totalMatches,
     required int turnTimeoutSeconds,
     required int morrieRate,
+    required int minMorrieBalance,
     required List<Map<String, dynamic>> deckIndex,
     required List<Map<String, dynamic>> initialHand,
   }) async {
@@ -32,6 +33,7 @@ class FirebaseDB {
       'totalMatches': totalMatches,
       'turnTimeoutSeconds': turnTimeoutSeconds,
       'morrieRate': morrieRate,
+      'minMorrieBalance': minMorrieBalance,
       'completedMatches': 0,
       'playerNames': {myId: playerName},
       'playerHands': {myId: 5},

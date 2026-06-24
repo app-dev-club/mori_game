@@ -497,6 +497,7 @@ class GameBoardView extends StatelessWidget {
   final Map<String, List<CardWidget>> allPlayerHands;
   final String matchProgressLabel;
   final int morrieRate;
+  final int minMorrieBalance;
   final int? myMorrieBalance;
   final bool seriesAutoContinuing;
   final String? statusMessage;
@@ -510,6 +511,7 @@ class GameBoardView extends StatelessWidget {
   final int guestStayTotalCount;
   final int? guestCountdownSeconds;
   final bool mustRespondToStay;
+  final bool canPlayAgain;
   final bool myStayResponseSubmitted;
   final VoidCallback onHostRematch;
   final VoidCallback onHostReturnToLobby;
@@ -537,6 +539,7 @@ class GameBoardView extends StatelessWidget {
     this.allPlayerHands = const {},
     this.matchProgressLabel = '',
     this.morrieRate = 1,
+    this.minMorrieBalance = 0,
     this.myMorrieBalance,
     this.seriesAutoContinuing = false,
     this.statusMessage,
@@ -550,6 +553,7 @@ class GameBoardView extends StatelessWidget {
     required this.guestStayTotalCount,
     this.guestCountdownSeconds,
     required this.mustRespondToStay,
+    this.canPlayAgain = true,
     required this.myStayResponseSubmitted,
     required this.onHostRematch,
     required this.onHostReturnToLobby,
@@ -640,6 +644,7 @@ class GameBoardView extends StatelessWidget {
             if (morrieRate > 0)
               Text(
                 'レート ×$morrieRate'
+                    '${minMorrieBalance > 0 ? ' · 最低 $minMorrieBalance モリー' : ''}'
                     '${myMorrieBalance != null ? ' · 所持 $myMorrieBalance モリー' : ''}',
                 style: const TextStyle(color: Colors.lightGreenAccent, fontSize: 12),
               ),
@@ -824,6 +829,8 @@ class GameBoardView extends StatelessWidget {
               guestStayTotalCount: guestStayTotalCount,
               guestCountdownSeconds: guestCountdownSeconds,
               mustRespondToStay: mustRespondToStay,
+              canPlayAgain: canPlayAgain,
+              minMorrieBalance: minMorrieBalance,
               myStayResponseSubmitted: myStayResponseSubmitted,
               onHostRematch: onHostRematch,
               onHostReturnToLobby: onHostReturnToLobby,
@@ -1305,6 +1312,8 @@ class PostGameOverlay extends StatelessWidget {
   final int guestStayTotalCount;
   final int? guestCountdownSeconds;
   final bool mustRespondToStay;
+  final bool canPlayAgain;
+  final int minMorrieBalance;
   final bool myStayResponseSubmitted;
   final VoidCallback onHostRematch;
   final VoidCallback onHostReturnToLobby;
@@ -1323,6 +1332,8 @@ class PostGameOverlay extends StatelessWidget {
     required this.guestStayTotalCount,
     this.guestCountdownSeconds,
     required this.mustRespondToStay,
+    this.canPlayAgain = true,
+    this.minMorrieBalance = 0,
     required this.myStayResponseSubmitted,
     required this.onHostRematch,
     required this.onHostReturnToLobby,
@@ -1341,10 +1352,18 @@ class PostGameOverlay extends StatelessWidget {
     if (awaitingGuestStayResponses) {
       if (isHost) return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人';
       if (mustRespondToStay) return 'ルームに残りますか？';
+      if (!canPlayAgain && minMorrieBalance > 0) {
+        return '最低入室モリー $minMorrieBalance 未満のため再戦できません';
+      }
       if (myStayResponseSubmitted) return '回答済み。他のプレイヤーを待っています…';
       return 'ホストの選択を待っています…';
     }
-    if (isHost) return 'もう一度遊ぶ / ロビーへ';
+    if (isHost) {
+      if (!canPlayAgain && minMorrieBalance > 0) {
+        return '最低入室モリー $minMorrieBalance 未満のため再戦できません';
+      }
+      return 'もう一度遊ぶ / ロビーへ';
+    }
     return 'ホストの選択を待っています…';
   }
 
@@ -1508,6 +1527,20 @@ class PostGameOverlay extends StatelessWidget {
                       child: const Text('ロビーへ'),
                     ),
                   ),
+                ] else if (!canPlayAgain && minMorrieBalance > 0) ...[
+                  Text(
+                    '最低入室モリー $minMorrieBalance 未満のため、もう一度遊ぶを選べません',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.redAccent, fontSize: bodySize),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: onLeaveToLobby,
+                      child: const Text('ロビーへ'),
+                    ),
+                  ),
                 ] else
                   SizedBox(
                     width: double.infinity,
@@ -1517,14 +1550,24 @@ class PostGameOverlay extends StatelessWidget {
                     ),
                   ),
               ] else if (isHost) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: onHostRematch,
-                    child: const Text('もう一度遊ぶ'),
+                if (canPlayAgain)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: onHostRematch,
+                      child: const Text('もう一度遊ぶ'),
+                    ),
+                  )
+                else if (minMorrieBalance > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '最低入室モリー $minMorrieBalance 未満のため、もう一度遊ぶを選べません',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.redAccent, fontSize: bodySize),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
+                if (canPlayAgain) const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
