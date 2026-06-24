@@ -4,24 +4,32 @@
       ".read": true,
       "$roomId": {
         ".read": true,
-        ".write": "auth != null"
+        ".write": "auth != null",
+        "seriesRatingApplied": { ".write": false },
+        "seriesRatingSummary": { ".write": false },
+        "seriesRatingDetails": { ".write": false },
+        "seriesMorrieSettled": { ".write": false },
+        "seriesMorrieSummary": { ".write": false },
+        "seriesMorrieDetails": { ".write": false },
+        "settlementCompletedAt": { ".write": false },
+        "settlementError": { ".write": false },
+        "botMorrieBalances": { ".write": false },
+        "morrieClaimed": {
+          "$userId": {
+            ".write": "auth != null && auth.uid == $userId"
+          }
+        }
       }
     },
     "ratings": {
       ".read": "auth != null",
       "$playerId": {
-        ".write": "auth != null",
-        "rating": {
-          ".validate": "newData.isNumber()"
+        ".write": false,
+        "playerName": {
+          ".write": "auth != null && auth.uid == $playerId"
         },
-        "mu": {
-          ".validate": "newData.isNumber()"
-        },
-        "sigma": {
-          ".validate": "newData.isNumber()"
-        },
-        "gamesPlayed": {
-          ".validate": "newData.isNumber() && newData.val() >= 0"
+        "displayName": {
+          ".write": "auth != null && auth.uid == $playerId"
         }
       }
     },
@@ -43,7 +51,7 @@
     "morrieRankings": {
       ".read": "auth != null",
       "$userId": {
-        ".write": "auth != null",
+        ".write": "auth != null && auth.uid == $userId",
         ".validate": "newData.hasChildren(['morrieBalance', 'playerName']) && newData.child('morrieBalance').isNumber() && newData.child('morrieBalance').val() >= 0 && newData.child('playerName').isString() && newData.child('playerName').val().length > 0 && newData.child('playerName').val().length <= 12"
       }
     },
@@ -51,7 +59,7 @@
       "$userId": {
         ".read": "auth != null && auth.uid == $userId",
         "$roomId": {
-          ".write": "auth != null"
+          ".write": "auth != null && auth.uid == $userId"
         }
       }
     },

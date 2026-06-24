@@ -22,7 +22,6 @@ import '../../models/post_game_summary.dart';
 import '../../services/game_display_settings.dart';
 import '../../services/match_record_service.dart';
 import '../../services/morrie_service.dart';
-import '../../services/rating_service.dart';
 import 'game_board_view.dart';
 
 class GameRoomPage extends StatefulWidget {
@@ -57,7 +56,6 @@ class GameRoomPage extends StatefulWidget {
 
 class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
   late final FirebaseDB _db;
-  late final RatingService _ratingService;
   final MorrieService _morrieService = MorrieService();
   final MatchRecordService _matchRecordService = MatchRecordService();
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
@@ -275,7 +273,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
     _db = FirebaseDB(widget.roomId);
-    _ratingService = RatingService();
     final baseId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
     myId = widget.automationOnly ? 'automation_$baseId' : baseId;
     _loadDisplaySettings();
@@ -2427,6 +2424,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'seriesMorrieSettled': null,
       'seriesMorrieSummary': null,
       'seriesMorrieDetails': null,
+      'settlementRequested': null,
+      'settlementError': null,
+      'settlementCompletedAt': null,
       'lastMoriPlayerId': null,
       'loserPlayerId': null,
       'moriPhase': 'none',
@@ -2869,9 +2869,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           await _db.updateGameStatus({'completedMatches': resolvedTotal});
           completedMatches = resolvedTotal;
         }
-        await _applySeriesRatingUpdate();
-        await _applySeriesMorrieSettlement();
-        await _refreshSeriesSettlementDetails();
+        await _requestAndWaitSeriesSettlement();
         await _scheduleCloseAfterSettlement();
         return;
       }
@@ -2882,18 +2880,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (dbCompleted < resolvedTotal) {
           _scheduleSeriesAutoContinue(seriesNextAt);
         } else {
-          await _applySeriesRatingUpdate();
-          await _applySeriesMorrieSettlement();
-          await _refreshSeriesSettlementDetails();
+          await _requestAndWaitSeriesSettlement();
           await _scheduleCloseAfterSettlement();
         }
         return;
       }
 
       if (dbCompleted >= resolvedTotal) {
-        await _applySeriesRatingUpdate();
-        await _applySeriesMorrieSettlement();
-        await _refreshSeriesSettlementDetails();
+        await _requestAndWaitSeriesSettlement();
         await _scheduleCloseAfterSettlement();
         return;
       }
@@ -2925,10 +2919,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
 
-      await _applySeriesRatingUpdate();
-      await _applySeriesMorrieSettlement();
-      await _refreshSeriesSettlementDetails();
-      await _scheduleCloseAfterSettlement();
+        await _requestAndWaitSeriesSettlement();
+        await _scheduleCloseAfterSettlement();
     } finally {
       _postGameStewardInProgress = false;
     }
@@ -3254,59 +3246,26 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _noopCardTap(int _) {}
   void _noop() {}
 
-  Future<void> _applySeriesRatingUpdate() async {
+  Future<void> _requestAndWaitSeriesSettlement() async {
     if (!_hasStewardAuthority) return;
 
-    final roster = seriesPlayerIds.isNotEmpty
-        ? List<String>.from(seriesPlayerIds)
-        : List<String>.from(playerIds);
-    if (roster.length < 2) return;
+    final snap = await _db.getSnapshot();
+    if (!snap.exists || !mounted) return;
+    final data = Map<dynamic, dynamic>.from(snap.value as Map);
 
-    final finalPoints = Map<String, int>.from(playerPoints);
-    for (final pid in roster) {
-      finalPoints.putIfAbsent(pid, () => 0);
+    final ratingDone = data['seriesRatingApplied'] == true;
+    final rate = RoomConfig.resolveMorrieRate(data['morrieRate']);
+    final morrieDone = rate <= 0 || data['seriesMorrieSettled'] == true;
+    if (ratingDone && morrieDone) {
+      await _refreshSeriesSettlementDetails();
+      return;
     }
 
-    final displayNames = <String, String>{
-      for (final pid in roster) pid: _displayNameForRating(pid),
-    };
-
-    final result = await _ratingService.applySeriesRating(
-      roomId: widget.roomId,
-      participantIds: roster,
-      finalPoints: finalPoints,
-      displayNames: displayNames,
-    );
-
-    if (!mounted) return;
-    await _refreshSeriesSettlementDetails();
-  }
-
-  Future<void> _applySeriesMorrieSettlement() async {
-    if (!_hasStewardAuthority || morrieRate <= 0) return;
-
-    final roster = seriesPlayerIds.isNotEmpty
-        ? List<String>.from(seriesPlayerIds)
-        : List<String>.from(playerIds);
-    if (roster.length < 2) return;
-
-    final finalPoints = Map<String, int>.from(playerPoints);
-    for (final pid in roster) {
-      finalPoints.putIfAbsent(pid, () => 0);
+    if (data['settlementRequested'] != true) {
+      await _db.requestSeriesSettlement();
     }
 
-    final displayNames = <String, String>{
-      for (final pid in roster) pid: _displayNameForRating(pid),
-    };
-
-    await _morrieService.applySeriesMorrie(
-      roomId: widget.roomId,
-      participantIds: roster,
-      finalPoints: finalPoints,
-      displayNames: displayNames,
-      morrieRate: morrieRate,
-    );
-
+    await _db.waitForSeriesSettlement();
     if (!mounted) return;
     await _refreshSeriesSettlementDetails();
 
@@ -3322,14 +3281,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!RoomLifecycle.isGameFullyConcluded(data, nowMs: nowMs)) return;
     if (_roomAuthorityId != null) return;
     await _closeFinishedRoom();
-  }
-
-  String _displayNameForRating(String playerId) {
-    return PlayerDisplayName.resolveForRating(
-      playerId: playerId,
-      playerIds: playerIds,
-      playerNames: playerNames,
-    );
   }
 
   void _showGameOver(String msg) {

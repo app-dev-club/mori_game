@@ -1,5 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../features/game/game_board_view.dart';
+import '../logic/room_config.dart';
 import '../logic/room_lifecycle.dart';
 
 /// Firebaseとの通信をカプセル化。
@@ -150,6 +151,38 @@ class FirebaseDB {
 
   Future<void> updateGameStatus(Map<String, dynamic> updates) => _roomRef.update(updates);
   Future<DataSnapshot> getSnapshot() => _roomRef.get();
+
+  /// シリーズ終了精算を Cloud Functions に依頼する
+  Future<void> requestSeriesSettlement() async {
+    await _roomRef.update({
+      'settlementRequested': true,
+      'settlementError': null,
+    });
+  }
+
+  /// Cloud Functions の精算完了を待つ（タイムアウト時は false）
+  Future<bool> waitForSeriesSettlement({
+    Duration timeout = const Duration(seconds: 45),
+    Duration pollInterval = const Duration(milliseconds: 400),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final snap = await _roomRef.get();
+      if (!snap.exists) return false;
+      final data = snap.value;
+      if (data is! Map) return false;
+      final room = Map<dynamic, dynamic>.from(data);
+
+      final ratingDone = room['seriesRatingApplied'] == true;
+      final morrieRate = RoomConfig.resolveMorrieRate(room['morrieRate']);
+      final morrieDone = morrieRate <= 0 || room['seriesMorrieSettled'] == true;
+      if (ratingDone && morrieDone) return true;
+
+      if (room['settlementError'] != null) return false;
+      await Future<void>.delayed(pollInterval);
+    }
+    return false;
+  }
   Future<void> deleteRoom() => _roomRef.remove();
 
   Future<void> joinAsSpectator(String spectatorId, String spectatorName) async {
@@ -247,6 +280,9 @@ class FirebaseDB {
       'seriesMorrieSettled': null,
       'seriesMorrieSummary': null,
       'seriesMorrieDetails': null,
+      'settlementRequested': null,
+      'settlementError': null,
+      'settlementCompletedAt': null,
       'lastDrawerId': null,
       'lastPlayerId': null,
       'isDrawCompetitive': false,
@@ -312,6 +348,9 @@ class FirebaseDB {
       'seriesMorrieSettled': null,
       'seriesMorrieSummary': null,
       'seriesMorrieDetails': null,
+      'settlementRequested': null,
+      'settlementError': null,
+      'settlementCompletedAt': null,
       'lastDrawerId': null,
       'lastPlayerId': 'system',
       'isDrawCompetitive': false,
@@ -367,6 +406,9 @@ class FirebaseDB {
       'seriesMorrieSettled': null,
       'seriesMorrieSummary': null,
       'seriesMorrieDetails': null,
+      'settlementRequested': null,
+      'settlementError': null,
+      'settlementCompletedAt': null,
       'lastDrawerId': null,
       'lastPlayerId': null,
       'isDrawCompetitive': false,
