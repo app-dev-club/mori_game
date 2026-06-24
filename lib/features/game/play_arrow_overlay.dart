@@ -156,7 +156,7 @@ class _PlayArrowOverlayState extends State<PlayArrowOverlay> {
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
-                painter: _PlayArrowPainter(
+                painter: PlayArrowPainter(
                   from: _arrowFrom!,
                   to: _arrowTo!,
                   label: _arrowLabel ?? '',
@@ -169,12 +169,12 @@ class _PlayArrowOverlayState extends State<PlayArrowOverlay> {
   }
 }
 
-class _PlayArrowPainter extends CustomPainter {
+class PlayArrowPainter extends CustomPainter {
   final Offset from;
   final Offset to;
   final String label;
 
-  _PlayArrowPainter({
+  PlayArrowPainter({
     required this.from,
     required this.to,
     required this.label,
@@ -258,7 +258,7 @@ class _PlayArrowPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PlayArrowPainter oldDelegate) {
+  bool shouldRepaint(covariant PlayArrowPainter oldDelegate) {
     return oldDelegate.from != from ||
         oldDelegate.to != to ||
         oldDelegate.label != label;

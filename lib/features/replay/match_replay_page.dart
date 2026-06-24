@@ -2,11 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../logic/game_rules.dart';
 import '../../logic/match_replay_engine.dart';
 import '../../models/match_record.dart';
 import '../../services/match_record_service.dart';
 import '../game/game_board_view.dart';
+import '../game/play_arrow_overlay.dart';
+import 'replay_circle_layout.dart';
 
 class MatchReplayPage extends StatefulWidget {
   final String recordId;
@@ -24,15 +25,21 @@ class MatchReplayPage extends StatefulWidget {
 
 class _MatchReplayPageState extends State<MatchReplayPage> {
   final MatchRecordService _recordService = MatchRecordService();
+  final GlobalKey _boardStackKey = GlobalKey();
+  final GlobalKey _fieldKey = GlobalKey();
+  final Map<String, GlobalKey> _playerPanelKeys = {};
 
   bool _loading = true;
   String? _error;
   MatchRecord? _record;
   List<ReplayFrame> _frames = const [];
   int _frameIndex = 0;
-  String? _povPlayerId;
   bool _playing = false;
   Timer? _playTimer;
+
+  Offset? _arrowFrom;
+  Offset? _arrowTo;
+  String? _arrowLabel;
 
   static const _autoPlayInterval = Duration(milliseconds: 1200);
 
@@ -46,6 +53,12 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
   void dispose() {
     _playTimer?.cancel();
     super.dispose();
+  }
+
+  void _syncPlayerPanelKeys(List<String> playerIds) {
+    for (final id in playerIds) {
+      _playerPanelKeys.putIfAbsent(id, GlobalKey.new);
+    }
   }
 
   Future<void> _load() async {
@@ -63,26 +76,22 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
         });
         return;
       }
-      final frames = MatchReplayEngine.buildFrames(record);
-      final humanIds = record.meta.playerIds
-          .where((id) => id != 'system' && !record.meta.botIds.contains(id));
-      final pov = humanIds.isNotEmpty
-          ? humanIds.first
-          : (record.meta.playerIds.isNotEmpty ? record.meta.playerIds.first : null);
-      if (pov == null) {
+      if (record.meta.playerIds.isEmpty) {
         setState(() {
           _loading = false;
           _error = '試合記録にプレイヤー情報がありません';
         });
         return;
       }
+      final frames = MatchReplayEngine.buildFrames(record);
+      _syncPlayerPanelKeys(record.meta.playerIds);
       setState(() {
         _record = record;
         _frames = frames;
         _frameIndex = 0;
-        _povPlayerId = pov;
         _loading = false;
       });
+      _scheduleArrowMeasure();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -100,6 +109,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     final clamped = index.clamp(0, _frames.length - 1);
     setState(() => _frameIndex = clamped);
     if (clamped >= _frames.length - 1) _stopPlay();
+    _scheduleArrowMeasure();
   }
 
   void _stepBack() => _setFrame(_frameIndex - 1);
@@ -135,9 +145,71 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     if (mounted) setState(() => _playing = false);
   }
 
+  void _scheduleArrowMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureArrow());
+  }
+
+  void _measureArrow() {
+    if (!mounted) return;
+    final frame = _frame;
+    final lastId = frame?.lastPlayerId;
+    final showArrow = frame != null &&
+        frame.fieldNumber >= 0 &&
+        lastId != null &&
+        lastId != 'system' &&
+        _record!.meta.playerIds.contains(lastId);
+
+    if (!showArrow) {
+      if (_arrowFrom != null || _arrowTo != null) {
+        setState(() {
+          _arrowFrom = null;
+          _arrowTo = null;
+          _arrowLabel = null;
+        });
+      }
+      return;
+    }
+
+    final stackBox = _boardStackKey.currentContext?.findRenderObject() as RenderBox?;
+    final fieldBox = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    final playerBox =
+        _playerPanelKeys[lastId]?.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox == null || fieldBox == null || playerBox == null) return;
+
+    final fieldCenter = stackBox.globalToLocal(
+      fieldBox.localToGlobal(fieldBox.size.center(Offset.zero)),
+    );
+    final playerCenter = stackBox.globalToLocal(
+      playerBox.localToGlobal(playerBox.size.center(Offset.zero)),
+    );
+
+    final delta = fieldCenter - playerCenter;
+    if (delta.distance < 1) return;
+
+    final dir = delta / delta.distance;
+    final from = playerCenter + dir * (playerBox.size.shortestSide * 0.42);
+    final to = fieldCenter - dir * (fieldBox.size.shortestSide * 0.42);
+    final label = _playerLabel(lastId);
+
+    if (_offsetNear(from, _arrowFrom) && _offsetNear(to, _arrowTo) && label == _arrowLabel) {
+      return;
+    }
+
+    setState(() {
+      _arrowFrom = from;
+      _arrowTo = to;
+      _arrowLabel = label;
+    });
+  }
+
+  bool _offsetNear(Offset a, Offset? b) {
+    if (b == null) return false;
+    return (a - b).distance < 2;
+  }
+
   String _playerLabel(String id) {
     final meta = _record!.meta;
-    if (widget.hideOpponentNames && id != _povPlayerId) {
+    if (widget.hideOpponentNames) {
       final idx = meta.playerIds.indexOf(id);
       return idx >= 0 ? 'プレイヤー${idx + 1}' : id;
     }
@@ -151,7 +223,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
       appBar: AppBar(
         title: Text(
           _record != null
-              ? 'リプレイ ${ _record!.meta.roomId } (${_record!.meta.matchIndex}/${_record!.meta.seriesTotal})'
+              ? 'リプレイ ${_record!.meta.roomId} (${_record!.meta.matchIndex}/${_record!.meta.seriesTotal})'
               : 'リプレイ',
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
         ),
@@ -227,102 +299,128 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     final meta = _record!.meta;
     if (frame == null) return const SizedBox.shrink();
 
-    final povId = _povPlayerId != null && meta.playerIds.contains(_povPlayerId)
-        ? _povPlayerId!
-        : (meta.playerIds.isNotEmpty ? meta.playerIds.first : null);
-    if (povId == null) {
-      return const Center(
-        child: Text('プレイヤー情報がありません', style: TextStyle(color: Colors.white70)),
-      );
-    }
-    final opponents = GameRules.opponentsClockwiseFrom(povId, meta.playerIds);
-    final povHand = frame.hands[povId] ?? const <CardWidget>[];
+    final playerIds = meta.playerIds;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final boardWidth = constraints.maxWidth;
-        final layout = HandCardLayout.compute(
-          boardWidth * 0.92,
-          povHand.length.clamp(1, 7),
-        );
+        final area = Size(constraints.maxWidth, constraints.maxHeight);
+        final layout = ReplayCircleLayout.compute(area, playerIds.length);
+        _scheduleArrowMeasure();
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight - 16),
-            child: Column(
-              children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.center,
-                  children: opponents.map((id) => _buildOpponentPanel(id, frame)).toList(),
-                ),
-                const SizedBox(height: 24),
-                _buildField(frame),
-                const SizedBox(height: 24),
-                if (meta.playerIds.length > 1)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: DropdownButton<String>(
-                      value: meta.playerIds.contains(povId) ? povId : null,
-                      hint: const Text('視点を選択', style: TextStyle(color: Colors.white70)),
-                      dropdownColor: const Color(0xFF2E7D32),
-                      style: const TextStyle(color: Colors.white),
-                      underline: Container(height: 1, color: Colors.white38),
-                      items: meta.playerIds
-                          .map(
-                            (id) => DropdownMenuItem(
-                              value: id,
-                              child: Text('視点: ${_playerLabel(id)}'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        if (v != null) setState(() => _povPlayerId = v);
-                      },
+        return Stack(
+          key: _boardStackKey,
+          clipBehavior: Clip.none,
+          children: [
+            for (var i = 0; i < playerIds.length; i++)
+              _buildPositionedPlayerPanel(
+                playerId: playerIds[i],
+                frame: frame,
+                center: layout.playerCenters[i],
+                handMaxWidth: layout.handMaxWidth,
+              ),
+            Positioned(
+              left: layout.fieldCenter.dx - ReplayCircleLayout.fieldCardWidth / 2,
+              top: layout.fieldCenter.dy - ReplayCircleLayout.fieldCardHeight / 2,
+              child: KeyedSubtree(
+                key: _fieldKey,
+                child: _buildFieldCard(frame),
+              ),
+            ),
+            if (_arrowFrom != null && _arrowTo != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: PlayArrowPainter(
+                      from: _arrowFrom!,
+                      to: _arrowTo!,
+                      label: _arrowLabel ?? '',
                     ),
                   ),
-                SizedBox(
-                  height: layout.height + 28,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.bottomCenter,
-                    children: [
-                      for (var i = 0; i < povHand.length; i++)
-                        Positioned(
-                          left: (boardWidth - layout.totalWidth(povHand.length)) / 2 + i * layout.step,
-                          bottom: 0,
-                          child: CardWidget(
-                            number: povHand[i].number,
-                            suit: povHand[i].suit,
-                            width: layout.width,
-                            height: layout.height,
-                          ),
-                        ),
-                    ],
-                  ),
                 ),
-                Text(
-                  '${_playerLabel(povId)} の手札 (${povHand.length}枚)',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
+              ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildOpponentPanel(String playerId, ReplayFrame frame) {
+  Widget _buildPositionedPlayerPanel({
+    required String playerId,
+    required ReplayFrame frame,
+    required Offset center,
+    required double handMaxWidth,
+  }) {
+    final hand = frame.hands[playerId] ?? const <CardWidget>[];
+    final panelSize = ReplayCircleLayout.panelSize(hand, handMaxWidth);
+
+    return Positioned(
+      left: center.dx - panelSize.width / 2,
+      top: center.dy - panelSize.height / 2,
+      width: panelSize.width,
+      child: KeyedSubtree(
+        key: _playerPanelKeys[playerId],
+        child: _buildPlayerHandPanel(
+          playerId: playerId,
+          frame: frame,
+          handMaxWidth: handMaxWidth,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFaceUpHand({
+    required List<CardWidget> hand,
+    required double maxWidth,
+  }) {
+    if (hand.isEmpty) {
+      return const SizedBox(
+        height: 24,
+        child: Center(
+          child: Text('手札なし', style: TextStyle(color: Colors.white38, fontSize: 12)),
+        ),
+      );
+    }
+
+    final cardLayout = HandCardLayout.compute(
+      maxWidth,
+      hand.length.clamp(1, 7),
+    );
+    final rowWidth = cardLayout.totalWidth(hand.length);
+
+    return SizedBox(
+      width: rowWidth,
+      height: cardLayout.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.bottomCenter,
+        children: [
+          for (var i = 0; i < hand.length; i++)
+            Positioned(
+              left: i * cardLayout.step,
+              bottom: 0,
+              child: CardWidget(
+                number: hand[i].number,
+                suit: hand[i].suit,
+                width: cardLayout.width,
+                height: cardLayout.height,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlayerHandPanel({
+    required String playerId,
+    required ReplayFrame frame,
+    required double handMaxWidth,
+  }) {
     final hand = frame.hands[playerId] ?? const <CardWidget>[];
     final meta = _record!.meta;
     final isActive = frame.turnPlayerId(meta.playerIds) == playerId;
     final isLastActor = frame.lastPlayerId == playerId;
 
     return Container(
-      width: 120,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: isActive ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
@@ -333,6 +431,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
         ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             _playerLabel(playerId),
@@ -346,11 +445,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 6),
-          OpponentHandVisual(
-            count: hand.length.clamp(0, 52),
-            cardWidth: 36,
-            cardHeight: 54,
-          ),
+          Center(child: _buildFaceUpHand(hand: hand, maxWidth: handMaxWidth)),
           Text(
             '${hand.length}枚',
             style: const TextStyle(color: Colors.white54, fontSize: 11),
@@ -360,28 +455,37 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     );
   }
 
-  Widget _buildField(ReplayFrame frame) {
+  Widget _buildFieldCard(ReplayFrame frame) {
     if (frame.fieldNumber < 0 || (frame.fieldSuit == Suit.joker && frame.fieldHistory.isEmpty)) {
-      return const Text('場: —', style: TextStyle(color: Colors.white54));
+      return Container(
+        width: ReplayCircleLayout.fieldCardWidth,
+        height: ReplayCircleLayout.fieldCardHeight,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.white24),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Text('—', style: TextStyle(color: Colors.white38)),
+      );
     }
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('場', style: TextStyle(color: Colors.white70, fontSize: 13)),
-        const SizedBox(height: 8),
         CardWidget(
           number: frame.fieldNumber,
           suit: frame.fieldSuit,
-          width: 72,
-          height: 108,
+          width: ReplayCircleLayout.fieldCardWidth,
+          height: ReplayCircleLayout.fieldCardHeight,
         ),
-        if (frame.fieldHistory.length > 1) ...[
-          const SizedBox(height: 8),
-          Text(
-            '履歴 ${frame.fieldHistory.length}枚',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
+        if (frame.fieldHistory.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '履歴 ${frame.fieldHistory.length}枚',
+              style: const TextStyle(color: Colors.white38, fontSize: 10),
+            ),
           ),
-        ],
       ],
     );
   }
@@ -417,7 +521,12 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
               IconButton(
                 iconSize: 32,
                 color: Colors.white,
-                onPressed: _frameIndex > 0 ? () { _stopPlay(); _stepBack(); } : null,
+                onPressed: _frameIndex > 0
+                    ? () {
+                        _stopPlay();
+                        _stepBack();
+                      }
+                    : null,
                 icon: const Icon(Icons.skip_previous),
                 tooltip: '前へ',
               ),
