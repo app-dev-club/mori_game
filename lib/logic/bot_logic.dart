@@ -130,6 +130,8 @@ class BotLogic {
     required String? lastPlayerId,
     required String? lastMoriPlayerId,
     required List<String> moriDeclaredPlayerIds,
+    required Set<String> openJokerPlayerIds,
+    Map<String, List<CardWidget>>? playerHands,
   }) {
     if (!gameStarted || fieldNumber == -1) return false;
     if (moriPhase == 'finished') return false;
@@ -159,18 +161,30 @@ class BotLogic {
       hasPlayedThisTurn: hasPlayedThisTurn,
       lastPlayerId: lastPlayerId,
       moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      openJokerPlayerIds: openJokerPlayerIds,
+      playerHands: playerHands,
     ).type != BotActionType.none;
   }
 
-  /// 他プレイヤーに手札2枚の人がいるか
+  /// 他プレイヤーに手札2枚（オープンジョーカー時はジョーカー除く）の人がいるか
   static bool anotherPlayerHasTwoCards({
     required String botId,
     required List<String> players,
     required Map<String, int> handCounts,
+    required Set<String> openJokerPlayerIds,
+    Map<String, List<CardWidget>>? playerHands,
   }) {
     for (final playerId in players) {
       if (playerId == botId) continue;
-      if ((handCounts[playerId] ?? 0) == 2) return true;
+      if (GameRules.decisionHandCount(
+            playerId: playerId,
+            handCounts: handCounts,
+            openJokerPlayerIds: openJokerPlayerIds,
+            playerHands: playerHands,
+          ) ==
+          2) {
+        return true;
+      }
     }
     return false;
   }
@@ -184,12 +198,16 @@ class BotLogic {
     required int botHandLength,
     required List<String> players,
     required Map<String, int> handCounts,
+    required Set<String> openJokerPlayerIds,
+    Map<String, List<CardWidget>>? playerHands,
   }) {
     if (shouldPlayDespiteTwoCardOpponent(botHandLength)) return false;
     return anotherPlayerHasTwoCards(
       botId: botId,
       players: players,
       handCounts: handCounts,
+      openJokerPlayerIds: openJokerPlayerIds,
+      playerHands: playerHands,
     );
   }
 
@@ -209,6 +227,8 @@ class BotLogic {
     required bool hasPlayedThisTurn,
     required String? lastPlayerId,
     required List<String> moriDeclaredPlayerIds,
+    required Set<String> openJokerPlayerIds,
+    Map<String, List<CardWidget>>? playerHands,
   }) {
     if (!gameStarted || fieldNumber == -1 || hand.isEmpty) {
       return const BotDecision.none();
@@ -259,6 +279,8 @@ class BotLogic {
       botHandLength: hand.length,
       players: players,
       handCounts: handCounts,
+      openJokerPlayerIds: openJokerPlayerIds,
+      playerHands: playerHands,
     );
 
     if (preferDrawForTwoCardOpponent) {
@@ -425,16 +447,24 @@ class BotLogic {
     required String? lastMoriPlayerId,
     required int moriGaeshiCount,
     required List<String> moriDeclaredPlayerIds,
+    required Set<String> openJokerPlayerIds,
   }) {
     return '$botId|$currentTurnIndex|$lastDrawerId|$isDrawCompetitive|$fieldNumber|'
         '${fieldSuit.name}|$isInitialPhase|$hasPlayedThisTurn|$handLength|$moriPhase|'
         '$lastPlayerId|$lastMoriPlayerId|$moriGaeshiCount|'
-        '${moriDeclaredPlayerIds.join(",")}|$handSignature|$handCountsSignature';
+        '${moriDeclaredPlayerIds.join(",")}|${openJokerPlayerIds.join(",")}|$handSignature|$handCountsSignature';
   }
 
   static String buildHandCountsSignature(
     List<String> players,
-    Map<String, int> handCounts,
-  ) =>
-      players.map((id) => '${id}:${handCounts[id] ?? 0}').join('|');
+    Map<String, int> handCounts, {
+    required Set<String> openJokerPlayerIds,
+    Map<String, List<CardWidget>>? playerHands,
+  }) =>
+      players
+          .map(
+            (id) =>
+                '$id:${GameRules.decisionHandCount(playerId: id, handCounts: handCounts, openJokerPlayerIds: openJokerPlayerIds, playerHands: playerHands)}',
+          )
+          .join('|');
 }

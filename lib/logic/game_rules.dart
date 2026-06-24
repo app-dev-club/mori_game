@@ -151,7 +151,24 @@ class GameRules {
   static bool hasJoker(List<CardWidget> hand) =>
       hand.any((c) => c.suit == Suit.joker);
 
-  /// ジョーカー + 通常カード1枚（係数計算の「1枚相当」）
+  /// Bot 等が「相手の手札枚数」を見るとき、オープンジョーカー済みはジョーカー以外で数える
+  static int decisionHandCount({
+    required String playerId,
+    required Map<String, int> handCounts,
+    required Set<String> openJokerPlayerIds,
+    Map<String, List<CardWidget>>? playerHands,
+  }) {
+    final raw = handCounts[playerId] ?? 0;
+    if (!openJokerPlayerIds.contains(playerId)) return raw;
+
+    final hand = playerHands?[playerId];
+    if (hand != null) {
+      return hand.where((c) => c.suit != Suit.joker).length;
+    }
+    // オープンジョーカーは手札にジョーカー1枚を含む
+    return (raw - 1).clamp(0, raw);
+  }
+
   static bool isJokerPlusOneHand(List<CardWidget> hand) {
     if (!hasJoker(hand)) return false;
     return hand.where((c) => c.suit != Suit.joker).length == 1;

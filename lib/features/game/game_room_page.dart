@@ -1136,6 +1136,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         lastPlayerId: lastPlayerId,
         lastMoriPlayerId: lastMoriPlayerId,
         moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+        openJokerPlayerIds: openJokerPlayerIds,
+        playerHands: _allPlayerCards,
       )) {
         activeBotIds.add(botId);
       }
@@ -1177,11 +1179,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       handLength: hand.length,
       moriPhase: moriPhase,
       handSignature: hand.map((c) => '${c.number}${c.suit.name}').join(),
-      handCountsSignature: BotLogic.buildHandCountsSignature(playerIds, handCounts),
+      handCountsSignature: BotLogic.buildHandCountsSignature(
+        playerIds,
+        handCounts,
+        openJokerPlayerIds: openJokerPlayerIds,
+        playerHands: _allPlayerCards,
+      ),
       lastPlayerId: lastPlayerId,
       lastMoriPlayerId: lastMoriPlayerId,
       moriGaeshiCount: moriGaeshiCount,
       moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      openJokerPlayerIds: openJokerPlayerIds,
     );
     if (_botTimerKeys[botId] == key && _botTimers[botId] != null) return;
 
@@ -1220,6 +1228,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       hasPlayedThisTurn: _botHasPlayedThisTurn[botId] ?? false,
       lastPlayerId: lastPlayerId,
       moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+      openJokerPlayerIds: openJokerPlayerIds,
+      playerHands: _allPlayerCards,
     );
 
     switch (decision.type) {

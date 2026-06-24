@@ -10,6 +10,7 @@ void main() {
   const spade7 = CardWidget(number: 7, suit: Suit.spade);
   const heart3 = CardWidget(number: 3, suit: Suit.heart);
   const heart4 = CardWidget(number: 4, suit: Suit.heart);
+  const joker = CardWidget(number: 0, suit: Suit.joker);
   const players = ['host', 'bot_1'];
   const handCountsAllFive = {'host': 5, 'bot_1': 5};
   const handCountsHostTwo = {'host': 2, 'bot_1': 5};
@@ -151,6 +152,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.mori);
     });
@@ -172,6 +174,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.draw);
     });
@@ -193,6 +196,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.none);
     });
@@ -214,6 +218,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.mori);
     });
@@ -235,6 +240,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.draw);
     });
@@ -256,6 +262,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'bot_1',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.play);
       expect(decision.cardIndex, 0);
@@ -284,6 +291,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.draw);
     });
@@ -305,6 +313,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.play);
     });
@@ -335,6 +344,7 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.play);
     });
@@ -361,8 +371,71 @@ void main() {
         hasPlayedThisTurn: false,
         lastPlayerId: 'host',
         moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
       );
       expect(decision.type, BotActionType.none);
+    });
+
+    test('decideAction は相手がオープンジョーカー3枚(実質2枚)のときドロー優先', () {
+      final hand = [
+        spade7,
+        CardWidget(number: 3, suit: Suit.club),
+        CardWidget(number: 5, suit: Suit.diamond),
+        CardWidget(number: 9, suit: Suit.spade),
+      ];
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: hand,
+        handCounts: const {'host': 3, 'bot_1': 4},
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {'host'},
+        playerHands: const {
+          'host': [joker, heart3, heart4],
+        },
+      );
+      expect(decision.type, BotActionType.draw);
+    });
+
+    test('decideAction は相手がオープンジョーカーでも実質3枚なら通常判断', () {
+      final hand = [
+        spade7,
+        CardWidget(number: 3, suit: Suit.club),
+        CardWidget(number: 5, suit: Suit.diamond),
+        CardWidget(number: 9, suit: Suit.spade),
+      ];
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 7,
+        fieldSuit: Suit.heart,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: hand,
+        handCounts: const {'host': 4, 'bot_1': 4},
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'host',
+        moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {'host'},
+        playerHands: {
+          'host': [joker, heart3, heart4, CardWidget(number: 5, suit: Suit.diamond)],
+        },
+      );
+      expect(decision.type, BotActionType.play);
     });
   });
 }
