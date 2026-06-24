@@ -1,8 +1,11 @@
+import 'dart:async' show unawaited;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../logic/morrie_rules.dart';
 import '../../services/morrie_service.dart';
+import '../../services/rewarded_ad_service.dart';
 import 'app_side_bar.dart';
 
 /// 広告視聴報酬（モリー）の付与フロー
@@ -40,13 +43,48 @@ class MorrieAdReward {
     }
 
     _watching = true;
+    var loadingOpen = false;
     try {
-      final completed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => const _AdWatchingDialog(),
-      );
-      if (completed != true || !context.mounted) return;
+      if (context.mounted) {
+        loadingOpen = true;
+        unawaited(
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  const Text('広告を読み込み中…'),
+                  const SizedBox(height: 8),
+                  Text(
+                    '視聴完了で ${MorrieRules.adRewardAmount} モリーを獲得します',
+                    style: const TextStyle(fontSize: 13, color: Colors.black54),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      final result = await showRewardedAd();
+      if (context.mounted && loadingOpen) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingOpen = false;
+      }
+      if (!context.mounted) return;
+
+      if (!result.completed) {
+        _showMessage(
+          context,
+          result.errorMessage ?? '広告を最後まで視聴してください',
+        );
+        return;
+      }
 
       final balance = await _morrieService.grantAdReward(uid);
       if (!context.mounted) return;
@@ -57,6 +95,9 @@ class MorrieAdReward {
       );
       onBalanceUpdated?.call();
     } finally {
+      if (context.mounted && loadingOpen) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       _watching = false;
     }
   }
@@ -64,44 +105,6 @@ class MorrieAdReward {
   static void _showMessage(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
-    );
-  }
-}
-
-class _AdWatchingDialog extends StatefulWidget {
-  const _AdWatchingDialog();
-
-  @override
-  State<_AdWatchingDialog> createState() => _AdWatchingDialogState();
-}
-
-class _AdWatchingDialogState extends State<_AdWatchingDialog> {
-  @override
-  void initState() {
-    super.initState();
-    Future<void>.delayed(const Duration(seconds: 2), () {
-      if (mounted) Navigator.of(context).pop(true);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('広告視聴'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 20),
-          const Text('広告視聴中…'),
-          const SizedBox(height: 8),
-          Text(
-            '完了後 ${MorrieRules.adRewardAmount} モリーを獲得します',
-            style: const TextStyle(fontSize: 13, color: Colors.black54),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 }

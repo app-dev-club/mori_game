@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:mori_game/features/auth/app_gate.dart';
+import 'package:mori_game/services/adsense_init.dart';
+import 'package:mori_game/services/rewarded_ad_service.dart';
 import 'firebase_options.dart';
 
 void main() {
@@ -32,6 +34,8 @@ void main() {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    await initializeAdSenseForWeb();
+    await initializeRewardedAds();
     runApp(const MoriGameApp());
   }, (error, stack) {
     // ignore: avoid_print
