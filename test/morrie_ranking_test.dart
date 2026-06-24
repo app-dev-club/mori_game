@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mori_game/logic/morrie_rules.dart';
 import 'package:mori_game/services/morrie_service.dart';
 
 void main() {
@@ -45,6 +46,17 @@ void main() {
 
     test('空データは空リスト', () {
       expect(MorrieService.parseMorrieRankingSnapshot(null), isEmpty);
+    });
+  });
+
+  group('totalMorrieForPlayers', () {
+    test('人間とBotの残高を合算する', () {
+      final total = MorrieService.totalMorrieForPlayers(
+        const ['user_a', 'bot_1', 'user_b'],
+        const {'user_a': 12, 'user_b': 8},
+      );
+
+      expect(total, 12 + MorrieRules.botFixedBalance + 8);
     });
   });
 }

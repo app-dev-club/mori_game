@@ -58,6 +58,41 @@ class MorrieService {
     );
   }
 
+  Stream<Map<String, int>> watchMorrieBalanceMap() {
+    return _morrieRankingsRef.onValue.map(
+      (event) => parseMorrieBalanceMap(event.snapshot.value),
+    );
+  }
+
+  static Map<String, int> parseMorrieBalanceMap(dynamic raw) {
+    if (raw is! Map) return {};
+
+    final balances = <String, int>{};
+    raw.forEach((key, value) {
+      if (value is! Map) return;
+      final balanceValue = value['morrieBalance'];
+      if (balanceValue is! num) return;
+      balances[key.toString()] = balanceValue.round();
+    });
+    return balances;
+  }
+
+  /// ルーム参加者のモリー残高合計（Bot は固定値）
+  static int totalMorrieForPlayers(
+    Iterable<String> playerIds,
+    Map<String, int> balanceMap,
+  ) {
+    var total = 0;
+    for (final id in playerIds) {
+      if (BotLogic.isBot(id)) {
+        total += MorrieRules.botFixedBalance;
+      } else {
+        total += balanceMap[id] ?? MorrieRules.defaultStartingBalance;
+      }
+    }
+    return total;
+  }
+
   static List<MorrieRankingEntry> parseMorrieRankingSnapshot(dynamic raw) {
     if (raw is! Map) return [];
 

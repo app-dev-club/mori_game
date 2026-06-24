@@ -15,6 +15,7 @@ import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
 import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
+import '../rules/mori_rules_page.dart';
 import '../../effects/app_sound_effects.dart';
 import '../common/app_side_bar.dart';
 import '../common/morrie_ad_reward.dart';
@@ -581,8 +582,9 @@ class _EntrancePageState extends State<EntrancePage> {
     return false;
   }
 
-  String _roomListSubtitle(Map data) {
+  String _roomListSubtitle(Map data, Map<String, int> balanceMap) {
     final players = data['players'] as List? ?? [];
+    final playerIds = players.map((id) => id.toString()).toList();
     final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
     final countLabel = '${players.length}/$maxPlayers 人';
     final isStarted = data['gameStarted'] == true;
@@ -594,6 +596,9 @@ class _EntrancePageState extends State<EntrancePage> {
     final morrieLabel = ' · レート ×$morrieRate';
     final minMorrieLabel =
         minMorrie > 0 ? ' · 最低 $minMorrie モリー' : '';
+    final totalMorrieLabel = playerIds.isEmpty
+        ? ''
+        : ' · 総モリー ${MorrieService.totalMorrieForPlayers(playerIds, balanceMap)}';
     final spectators = data['spectators'] as Map?;
     final spectatorCount = spectators?.length ?? 0;
     final spectatorLabel = spectatorCount > 0 ? ' · 観戦 $spectatorCount人' : '';
@@ -602,14 +607,14 @@ class _EntrancePageState extends State<EntrancePage> {
       final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (totalMatches > 1) {
-        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
       }
-      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
+      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
     }
     if (isFull) {
-      return '満員（$countLabel） · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
+      return '満員（$countLabel） · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
     }
-    return '${_formatRoomPlayers(data)} · $timeoutLabel$morrieLabel$minMorrieLabel$spectatorLabel';
+    return '${_formatRoomPlayers(data)} · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
   }
 
   int _roomListSortOrder(Map data) {
@@ -633,6 +638,13 @@ class _EntrancePageState extends State<EntrancePage> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const MatchReplayListPage()),
+    );
+  }
+
+  void _openRules() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MoriRulesPage()),
     );
   }
 
@@ -698,9 +710,13 @@ class _EntrancePageState extends State<EntrancePage> {
             child: Text('公開ルーム', style: TextStyle(color: Colors.white70, fontSize: 16)),
           ),
           Expanded(
-            child: StreamBuilder(
-              stream: _roomsRef.onValue,
-              builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
+            child: StreamBuilder<Map<String, int>>(
+              stream: _morrieService.watchMorrieBalanceMap(),
+              builder: (context, morrieSnapshot) {
+                final balanceMap = morrieSnapshot.data ?? const {};
+                return StreamBuilder(
+                  stream: _roomsRef.onValue,
+                  builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
                 if (!_roomCleanupFromStreamTriggered && snapshot.hasData) {
                   _roomCleanupFromStreamTriggered = true;
                   WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleRoomCleanup());
@@ -803,7 +819,7 @@ class _EntrancePageState extends State<EntrancePage> {
                           ],
                         ),
                         subtitle: Text(
-                          _roomListSubtitle(data),
+                          _roomListSubtitle(data, balanceMap),
                           style: const TextStyle(color: Colors.white70),
                         ),
                         trailing: canSpectate
@@ -835,8 +851,10 @@ class _EntrancePageState extends State<EntrancePage> {
                   },
                 );
               },
-            ),
-          ),
+            );
+          },
+        ),
+      ),
           _buildBottomBar(),
         ],
             ),
@@ -867,6 +885,12 @@ class _EntrancePageState extends State<EntrancePage> {
           icon: Icons.replay,
           accent: Colors.lightBlueAccent,
           onTap: _openReplayList,
+        ),
+        AppSideBarItem(
+          label: 'ルール',
+          icon: Icons.menu_book,
+          accent: Colors.tealAccent,
+          onTap: _openRules,
         ),
         AppSideBarItem(
           label: 'ログアウト',
