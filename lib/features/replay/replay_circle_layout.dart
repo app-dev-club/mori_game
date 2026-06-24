@@ -52,6 +52,40 @@ class ReplayCircleLayout {
     );
   }
 
+  /// 観戦用: プレイヤー間を広げ、手札エリアを少し大きく取る
+  factory ReplayCircleLayout.computeForSpectator(Size area, int playerCount) {
+    final fieldCenter = Offset(area.width / 2, area.height / 2);
+    if (playerCount <= 0) {
+      return ReplayCircleLayout(
+        playerCenters: const [],
+        fieldCenter: fieldCenter,
+        handMaxWidth: area.width * 0.5,
+      );
+    }
+
+    final radius = math.min(area.width, area.height) * 0.40;
+
+    const startAngle = math.pi / 2;
+    final centers = List.generate(playerCount, (i) {
+      final theta = startAngle - i * (2 * math.pi / playerCount);
+      return Offset(
+        fieldCenter.dx + radius * math.cos(theta),
+        fieldCenter.dy - radius * math.sin(theta),
+      );
+    });
+
+    final handMaxWidth = playerCount <= 1
+        ? area.width * 0.62
+        : (2 * radius * math.sin(math.pi / playerCount) * 0.94)
+            .clamp(112.0, 300.0);
+
+    return ReplayCircleLayout(
+      playerCenters: centers,
+      fieldCenter: fieldCenter,
+      handMaxWidth: handMaxWidth,
+    );
+  }
+
   static Size panelSize(List<CardWidget> hand, double handMaxWidth) {
     const headerHeight = 34.0;
     const footerHeight = 16.0;
@@ -60,6 +94,23 @@ class ReplayCircleLayout {
       return const Size(120, headerHeight + 24 + footerHeight);
     }
     final layout = HandCardLayout.compute(
+      handMaxWidth,
+      hand.length.clamp(1, 7),
+    );
+    return Size(
+      layout.totalWidth(hand.length) + horizontalPadding,
+      layout.height + headerHeight + footerHeight,
+    );
+  }
+
+  static Size panelSizeForSpectator(List<CardWidget> hand, double handMaxWidth) {
+    const headerHeight = 32.0;
+    const footerHeight = 14.0;
+    const horizontalPadding = 12.0;
+    if (hand.isEmpty) {
+      return const Size(110, headerHeight + 20 + footerHeight);
+    }
+    final layout = HandCardLayout.computeSpectator(
       handMaxWidth,
       hand.length.clamp(1, 7),
     );

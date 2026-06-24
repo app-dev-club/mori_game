@@ -122,6 +122,28 @@ class HandCardLayout {
     w = w.clamp(minWidth, maxWidth);
     return HandCardLayout(width: w, height: w * 1.5, step: w * visibleRatio);
   }
+
+  /// 観戦用: カードを小さくし、間隔を広げて全枚が見えやすい配置
+  static HandCardLayout computeSpectator(double availableWidth, int count) {
+    const maxWidth = 34.0;
+    const minWidth = 22.0;
+    const gap = 12.0;
+    const sidePadding = 8.0;
+
+    final n = count.clamp(1, 7);
+    final inner = (availableWidth - sidePadding).clamp(72.0, double.infinity);
+
+    final widthWithGap = (inner - (n - 1) * gap) / n;
+    if (widthWithGap >= minWidth) {
+      final w = widthWithGap.clamp(minWidth, maxWidth);
+      return HandCardLayout(width: w, height: w * 1.5, step: w + gap);
+    }
+
+    const visibleRatio = 0.72;
+    var w = inner / (1 + (n - 1) * visibleRatio);
+    w = w.clamp(minWidth, maxWidth);
+    return HandCardLayout(width: w, height: w * 1.5, step: w * visibleRatio);
+  }
 }
 
 /// 裏向きのトランプ（他プレイヤーの手札枚数表示用）
@@ -957,10 +979,15 @@ class GameBoardView extends StatelessWidget {
           const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              final layout = HandCardLayout.compute(
-                constraints.maxWidth,
-                moriRevealedHand.length,
-              );
+              final layout = isSpectator
+                  ? HandCardLayout.computeSpectator(
+                      constraints.maxWidth,
+                      moriRevealedHand.length,
+                    )
+                  : HandCardLayout.compute(
+                      constraints.maxWidth,
+                      moriRevealedHand.length,
+                    );
               return SizedBox(
                 height: layout.height + 4,
                 width: double.infinity,

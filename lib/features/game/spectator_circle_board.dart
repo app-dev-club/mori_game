@@ -135,7 +135,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final area = Size(constraints.maxWidth, constraints.maxHeight);
-        final layout = ReplayCircleLayout.compute(area, widget.playerIds.length);
+        final layout = ReplayCircleLayout.computeForSpectator(area, widget.playerIds.length);
 
         return Stack(
           key: _boardStackKey,
@@ -179,7 +179,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     required double handMaxWidth,
   }) {
     final hand = widget.allPlayerHands[playerId] ?? const <CardWidget>[];
-    final panelSize = ReplayCircleLayout.panelSize(hand, handMaxWidth);
+    final panelSize = ReplayCircleLayout.panelSizeForSpectator(hand, handMaxWidth);
 
     return Positioned(
       left: center.dx - panelSize.width / 2,
@@ -205,7 +205,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     final hasOpenJoker = widget.openJokerPlayerIds.contains(playerId);
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
         color: isActive ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
         borderRadius: BorderRadius.circular(10),
@@ -246,10 +246,10 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
           if (hasOpenJoker)
             OpenJokerIndicator(
               handCount: hand.length,
-              cardWidth: 28,
-              cardHeight: 42,
-              overlap: 11,
-              fontSize: 10,
+              cardWidth: 20,
+              cardHeight: 30,
+              overlap: 7,
+              fontSize: 9,
             )
           else
             _buildFaceUpHand(hand: hand, maxWidth: handMaxWidth),
@@ -279,7 +279,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
       );
     }
 
-    final cardLayout = HandCardLayout.compute(
+    final cardLayout = HandCardLayout.computeSpectator(
       maxWidth,
       hand.length.clamp(1, 7),
     );
