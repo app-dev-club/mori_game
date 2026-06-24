@@ -738,7 +738,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (isGaeshi) {
       _gameEffects.playMorigaeshi();
     } else {
-      _gameEffects.playMoriDeclaration(hand: hand);
+      _gameEffects.playMoriDeclaration(
+        hand: hand,
+        openJoker: openJokerPlayerIds.contains(actorId),
+      );
     }
   }
 

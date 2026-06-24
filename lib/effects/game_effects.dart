@@ -38,15 +38,26 @@ class GameEffects extends ChangeNotifier {
         MoriVisualEffect.tankimori => _imageTankimori,
       };
 
-  static bool isTankimoriHand(List<CardWidget> hand) =>
-      hand.where((c) => c.suit != Suit.joker).length == 1;
+  static bool isTankimoriHand(
+    List<CardWidget> hand, {
+    bool openJoker = false,
+  }) {
+    final nonJokerCount = hand.where((c) => c.suit != Suit.joker).length;
+    if (nonJokerCount != 1) return false;
+    // ジョーカー+1枚はオープンジョーカー時のみ単騎もり扱い
+    if (hand.any((c) => c.suit == Suit.joker)) return openJoker;
+    return true;
+  }
 
   void playButton() => AppSoundEffects.instance.playButton();
 
   void playCard() => AppSoundEffects.instance.playCard();
 
-  void playMoriDeclaration({required List<CardWidget> hand}) {
-    final type = isTankimoriHand(hand)
+  void playMoriDeclaration({
+    required List<CardWidget> hand,
+    bool openJoker = false,
+  }) {
+    final type = isTankimoriHand(hand, openJoker: openJoker)
         ? MoriVisualEffect.tankimori
         : MoriVisualEffect.mori;
     _showVisual(type);

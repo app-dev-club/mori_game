@@ -4,7 +4,7 @@ import 'package:mori_game/features/game/game_board_view.dart';
 
 void main() {
   group('GameEffects', () {
-    test('単騎もりはジョーカー以外が1枚', () {
+    test('単騎もりはジョーカーなし1枚、またはオープンジョーカー時のジョーカー+1枚', () {
       expect(
         GameEffects.isTankimoriHand([
           const CardWidget(number: 7, suit: Suit.heart),
@@ -16,6 +16,16 @@ void main() {
           const CardWidget(number: 0, suit: Suit.joker),
           const CardWidget(number: 7, suit: Suit.heart),
         ]),
+        isFalse,
+      );
+      expect(
+        GameEffects.isTankimoriHand(
+          [
+            const CardWidget(number: 0, suit: Suit.joker),
+            const CardWidget(number: 7, suit: Suit.heart),
+          ],
+          openJoker: true,
+        ),
         isTrue,
       );
       expect(
