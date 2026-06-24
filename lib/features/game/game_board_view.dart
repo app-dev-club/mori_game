@@ -387,9 +387,9 @@ class OpponentArcLayout {
     final cx = area.width / 2;
     final deckY = deckCenterY ?? area.height * 0.50;
     const maxHandCards = 7;
-    const margin = 6.0;
-    const minGap = 16.0;
-    const bottomReserve = 20.0;
+    const margin = 8.0;
+    const minGap = 24.0;
+    const bottomReserve = 58.0;
 
     var scale = 1.0;
     OpponentArcLayout? best;
@@ -418,10 +418,10 @@ class OpponentArcLayout {
 
       final maxRadiusByWidth = cx - margin - panelW / 2;
       var radius = math.max(
-        deckRowHalfWidth + panelW * 0.65 + 28,
-        maxRadiusByWidth * (count >= 4 ? 0.97 : 0.90),
+        deckRowHalfWidth + panelW * 0.72 + 34,
+        maxRadiusByWidth * (count >= 4 ? 0.96 : 0.91),
       );
-      radius += (count - 1) * 8.0;
+      radius += (count - 1) * 10.0;
       radius = radius.clamp(deckRowHalfWidth + panelW * 0.5, maxRadiusByWidth);
 
       if (count > 2) {
@@ -491,7 +491,7 @@ class OpponentArcLayout {
 
     for (var i = 0; i < centers.length - 1; i++) {
       final dist = (centers[i] - centers[i + 1]).distance;
-      if (dist < panelW * 0.78 + minGap) return false;
+      if (dist < panelW * 0.88 + minGap) return false;
     }
     return true;
   }
@@ -744,7 +744,7 @@ class GameBoardView extends StatelessWidget {
             flex: 4,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final deckCenterY = constraints.maxHeight * 0.50;
+                final deckCenterY = constraints.maxHeight * 0.46;
                 final playArea = Size(constraints.maxWidth, constraints.maxHeight);
                 return Stack(
                   clipBehavior: Clip.hardEdge,
@@ -773,10 +773,10 @@ class GameBoardView extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           if (!isSpectator)
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(bottom: 6, top: 2),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -798,7 +798,7 @@ class GameBoardView extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange,
                     disabledBackgroundColor: Colors.grey[700],
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                    padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 12),
                   ),
                   child: Text(
                     moriPhase == 'mori_declared' ? "もり返し！！" : "もり！",

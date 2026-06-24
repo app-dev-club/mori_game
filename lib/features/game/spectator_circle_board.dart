@@ -97,28 +97,21 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
         _playerPanelKeys[lastId]?.currentContext?.findRenderObject() as RenderBox?;
     if (stackBox == null || fieldBox == null || playerBox == null) return;
 
-    final fieldCenter = stackBox.globalToLocal(
-      fieldBox.localToGlobal(fieldBox.size.center(Offset.zero)),
-    );
-    final playerCenter = stackBox.globalToLocal(
-      playerBox.localToGlobal(playerBox.size.center(Offset.zero)),
-    );
+    final endpoints =
+        PlayArrowGeometry.measureBetween(stackBox, playerBox, fieldBox);
+    if (endpoints.from == null || endpoints.to == null) return;
 
-    final delta = fieldCenter - playerCenter;
-    if (delta.distance < 1) return;
-
-    final dir = delta / delta.distance;
-    final from = playerCenter + dir * (playerBox.size.shortestSide * 0.42);
-    final to = fieldCenter - dir * (fieldBox.size.shortestSide * 0.42);
     final label = widget.playerLabel(lastId);
 
-    if (_offsetNear(from, _arrowFrom) && _offsetNear(to, _arrowTo) && label == _arrowLabel) {
+    if (_offsetNear(endpoints.from!, _arrowFrom) &&
+        _offsetNear(endpoints.to!, _arrowTo) &&
+        label == _arrowLabel) {
       return;
     }
 
     setState(() {
-      _arrowFrom = from;
-      _arrowTo = to;
+      _arrowFrom = endpoints.from;
+      _arrowTo = endpoints.to;
       _arrowLabel = label;
     });
   }

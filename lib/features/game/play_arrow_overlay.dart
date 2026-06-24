@@ -1,7 +1,54 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-enum _Anchor { topCenter, bottomCenter, center, centerRight }
+/// 手札・山札・場の矩形から、互いに近い辺同士を結ぶ矢印端点を求める
+class PlayArrowGeometry {
+  PlayArrowGeometry._();
+
+  static Rect rectInAncestor(RenderBox box, RenderBox ancestor) {
+    final topLeft = ancestor.globalToLocal(box.localToGlobal(Offset.zero));
+    return topLeft & box.size;
+  }
+
+  /// [rect] の縁上で [toward] に最も近い側の点
+  static Offset edgeToward(Rect rect, Offset toward) {
+    final center = rect.center;
+    final dx = toward.dx - center.dx;
+    final dy = toward.dy - center.dy;
+    if (dx.abs() < 1e-6 && dy.abs() < 1e-6) {
+      return center;
+    }
+
+    final halfW = rect.width / 2;
+    final halfH = rect.height / 2;
+    final scaleX = dx.abs() > 1e-6 ? halfW / dx.abs() : double.infinity;
+    final scaleY = dy.abs() > 1e-6 ? halfH / dy.abs() : double.infinity;
+    final scale = math.min(scaleX, scaleY);
+    return Offset(center.dx + dx * scale, center.dy + dy * scale);
+  }
+
+  static ({Offset from, Offset to}) betweenRects(Rect fromRect, Rect toRect) {
+    return (
+      from: edgeToward(fromRect, toRect.center),
+      to: edgeToward(toRect, fromRect.center),
+    );
+  }
+
+  static ({Offset? from, Offset? to}) measureBetween(
+    RenderBox stackBox,
+    RenderBox? sourceBox,
+    RenderBox? targetBox,
+  ) {
+    if (sourceBox == null || targetBox == null) {
+      return (from: null, to: null);
+    }
+    final endpoints = betweenRects(
+      rectInAncestor(sourceBox, stackBox),
+      rectInAncestor(targetBox, stackBox),
+    );
+    return (from: endpoints.from, to: endpoints.to);
+  }
+}
 
 /// 場のカードと出したプレイヤーを矢印で結ぶオーバーレイ
 class PlayArrowOverlay extends StatefulWidget {
@@ -71,16 +118,6 @@ class _PlayArrowOverlayState extends State<PlayArrowOverlay> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureArrow());
   }
 
-  Offset? _anchorInStack(RenderBox source, RenderBox stack, _Anchor anchor) {
-    final local = switch (anchor) {
-      _Anchor.topCenter => Offset(source.size.width / 2, 0),
-      _Anchor.bottomCenter => Offset(source.size.width / 2, source.size.height),
-      _Anchor.center => source.size.center(Offset.zero),
-      _Anchor.centerRight => Offset(source.size.width, source.size.height / 2),
-    };
-    return stack.globalToLocal(source.localToGlobal(local));
-  }
-
   void _measureArrow() {
     if (!mounted) return;
 
@@ -100,37 +137,30 @@ class _PlayArrowOverlayState extends State<PlayArrowOverlay> {
     if (stackBox == null || fieldBox == null) return;
 
     final lastId = widget.lastPlayerId!;
-    Offset? from;
-    Offset? to;
+    RenderBox? sourceBox;
 
     if (lastId == widget.myId) {
-      final myBox = _myHandKey.currentContext?.findRenderObject() as RenderBox?;
-      if (myBox == null) return;
-      from = _anchorInStack(myBox, stackBox, _Anchor.topCenter);
-      to = _anchorInStack(fieldBox, stackBox, _Anchor.bottomCenter);
+      sourceBox = _myHandKey.currentContext?.findRenderObject() as RenderBox?;
     } else if (lastId == 'system') {
-      final deckBox = _deckKey.currentContext?.findRenderObject() as RenderBox?;
-      if (deckBox == null) return;
-      from = _anchorInStack(deckBox, stackBox, _Anchor.centerRight);
-      to = _anchorInStack(fieldBox, stackBox, _Anchor.center);
+      sourceBox = _deckKey.currentContext?.findRenderObject() as RenderBox?;
     } else {
-      final opponentBox =
+      sourceBox =
           _opponentKeys[lastId]?.currentContext?.findRenderObject() as RenderBox?;
-      if (opponentBox == null) return;
-      from = _anchorInStack(opponentBox, stackBox, _Anchor.bottomCenter);
-      to = _anchorInStack(fieldBox, stackBox, _Anchor.topCenter);
     }
 
-    final label = widget.playerLabel(lastId);
-    if (from == null || to == null) return;
+    final endpoints = PlayArrowGeometry.measureBetween(stackBox, sourceBox, fieldBox);
+    if (endpoints.from == null || endpoints.to == null) return;
 
-    if (_offsetNear(from, _arrowFrom) && _offsetNear(to, _arrowTo) && label == _arrowLabel) {
+    final label = widget.playerLabel(lastId);
+    if (_offsetNear(endpoints.from!, _arrowFrom) &&
+        _offsetNear(endpoints.to!, _arrowTo) &&
+        label == _arrowLabel) {
       return;
     }
 
     setState(() {
-      _arrowFrom = from;
-      _arrowTo = to;
+      _arrowFrom = endpoints.from;
+      _arrowTo = endpoints.to;
       _arrowLabel = label;
     });
   }
@@ -182,24 +212,17 @@ class PlayArrowPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final control = Offset(
-      (from.dx + to.dx) / 2 + (from.dy - to.dy) * 0.08,
-      (from.dy + to.dy) / 2,
-    );
-
-    final path = Path()
-      ..moveTo(from.dx, from.dy)
-      ..quadraticBezierTo(control.dx, control.dy, to.dx, to.dy);
+    final delta = to - from;
+    if (delta.distance < 4) return;
 
     final linePaint = Paint()
       ..color = Colors.orangeAccent
-      ..strokeWidth = 3
+      ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, linePaint);
+    canvas.drawLine(from, to, linePaint);
 
-    final tangent = Offset(to.dx - control.dx, to.dy - control.dy);
-    final angle = math.atan2(tangent.dy, tangent.dx);
+    final angle = math.atan2(delta.dy, delta.dx);
     _drawArrowHead(canvas, to, angle, linePaint.color);
 
     if (label.isEmpty) return;
@@ -217,9 +240,17 @@ class PlayArrowPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
 
+    final along = Offset(
+      from.dx + delta.dx * 0.38,
+      from.dy + delta.dy * 0.38,
+    );
+    final perpLen = delta.distance;
+    final perp = Offset(-delta.dy / perpLen, delta.dx / perpLen);
+    final labelCenter = along + perp * 16;
+
     final labelPos = Offset(
-      control.dx - textPainter.width / 2,
-      control.dy - textPainter.height - 10,
+      labelCenter.dx - textPainter.width / 2,
+      labelCenter.dy - textPainter.height / 2,
     );
     final bgRect = Rect.fromLTWH(
       labelPos.dx - 6,
@@ -229,7 +260,7 @@ class PlayArrowPainter extends CustomPainter {
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(bgRect, const Radius.circular(8)),
-      Paint()..color = Colors.black.withValues(alpha: 0.75),
+      Paint()..color = Colors.black.withValues(alpha: 0.82),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(bgRect, const Radius.circular(8)),
@@ -242,7 +273,7 @@ class PlayArrowPainter extends CustomPainter {
   }
 
   void _drawArrowHead(Canvas canvas, Offset tip, double angle, Color color) {
-    const headLength = 14.0;
+    const headLength = 13.0;
     final path = Path()
       ..moveTo(tip.dx, tip.dy)
       ..lineTo(
