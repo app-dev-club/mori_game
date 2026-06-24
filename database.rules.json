@@ -26,6 +26,13 @@
         }
       }
     },
+    "morrieRankings": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['morrieBalance', 'playerName']) && newData.child('morrieBalance').isNumber() && newData.child('morrieBalance').val() >= 0 && newData.child('playerName').isString() && newData.child('playerName').val().length > 0 && newData.child('playerName').val().length <= 12"
+      }
+    },
     "matchRecords": {
       ".read": "auth != null",
       "$recordId": {

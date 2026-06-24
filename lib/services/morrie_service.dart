@@ -4,6 +4,8 @@ import '../logic/bot_logic.dart';
 import '../logic/morrie_rules.dart';
 import '../logic/rating_logic.dart';
 
+import '../models/morrie_ranking_entry.dart';
+
 class MorrieSettlementResult {
   final String summary;
   final Map<String, int> deltas;
@@ -19,6 +21,83 @@ class MorrieSettlementResult {
 /// ユーザーアカウントに紐づくモリー残高の読み書きと試合精算
 class MorrieService {
   final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
+  final DatabaseReference _morrieRankingsRef =
+      FirebaseDatabase.instance.ref('morrieRankings');
+
+  Future<String?> _getStoredPlayerName(String userId) async {
+    try {
+      final snap = await _usersRef.child(userId).child('playerName').get();
+      final value = snap.value;
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> syncRankingEntry(
+    String userId, {
+    required int morrieBalance,
+    String? playerName,
+  }) async {
+    final name = playerName?.trim().isNotEmpty == true
+        ? playerName!.trim()
+        : (await _getStoredPlayerName(userId)) ?? 'プレイヤー';
+    try {
+      await _morrieRankingsRef.child(userId).set({
+        'playerName': name,
+        'morrieBalance': morrieBalance,
+        'updatedAt': ServerValue.timestamp,
+      });
+    } catch (_) {
+      // ランキング同期失敗は本体残高を妨げない
+    }
+  }
+
+  Stream<List<MorrieRankingEntry>> watchMorrieRanking() {
+    return _morrieRankingsRef.onValue.map(
+      (event) => parseMorrieRankingSnapshot(event.snapshot.value),
+    );
+  }
+
+  static List<MorrieRankingEntry> parseMorrieRankingSnapshot(dynamic raw) {
+    if (raw is! Map) return [];
+
+    final entries = <MorrieRankingEntry>[];
+    raw.forEach((key, value) {
+      if (value is! Map) return;
+      final id = key.toString();
+      if (BotLogic.isBot(id)) return;
+      final balanceValue = value['morrieBalance'];
+      if (balanceValue is! num) return;
+
+      final playerName = value['playerName'];
+      entries.add(
+        MorrieRankingEntry(
+          id: id,
+          playerName: playerName is String && playerName.trim().isNotEmpty
+              ? playerName.trim()
+              : 'プレイヤー',
+          morrieBalance: balanceValue.round(),
+          rank: 0,
+        ),
+      );
+    });
+
+    entries.sort((a, b) {
+      final byBalance = b.morrieBalance.compareTo(a.morrieBalance);
+      if (byBalance != 0) return byBalance;
+      return a.playerName.compareTo(b.playerName);
+    });
+
+    return [
+      for (var i = 0; i < entries.length; i++)
+        MorrieRankingEntry(
+          id: entries[i].id,
+          playerName: entries[i].playerName,
+          morrieBalance: entries[i].morrieBalance,
+          rank: i + 1,
+        ),
+    ];
+  }
 
   Future<int> getBalance(String userId) async {
     try {
@@ -40,6 +119,10 @@ class MorrieService {
         'morrieBalance': MorrieRules.defaultStartingBalance,
         'updatedAt': ServerValue.timestamp,
       });
+      await syncRankingEntry(
+        userId,
+        morrieBalance: MorrieRules.defaultStartingBalance,
+      );
     } catch (_) {
       // 初期化失敗は精算側でフォールバック
     }
@@ -109,6 +192,12 @@ class MorrieService {
 
       rootUpdates['users/$id/morrieBalance'] = next;
       rootUpdates['users/$id/updatedAt'] = ServerValue.timestamp;
+      rootUpdates['morrieRankings/$id/playerName'] =
+          displayNames[id]?.trim().isNotEmpty == true
+              ? displayNames[id]!.trim()
+              : 'プレイヤー';
+      rootUpdates['morrieRankings/$id/morrieBalance'] = next;
+      rootUpdates['morrieRankings/$id/updatedAt'] = ServerValue.timestamp;
     }
 
     final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);

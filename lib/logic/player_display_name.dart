@@ -56,4 +56,16 @@ class PlayerDisplayName {
     if (hideOpponentNames) return '---';
     return entry.playerName;
   }
+
+  /// モリーランキング一覧用
+  static String resolveForMorrieRanking({
+    required String playerName,
+    required String id,
+    required String? myId,
+    bool hideOpponentNames = false,
+  }) {
+    if (myId != null && id == myId) return playerName;
+    if (hideOpponentNames) return '---';
+    return playerName;
+  }
 }

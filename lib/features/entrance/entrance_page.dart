@@ -99,7 +99,13 @@ class _EntrancePageState extends State<EntrancePage> {
     final playerName = await _userProfileService.getPlayerName(uid);
     final skill = await _ratingService.getSkillRating(uid);
     final rating = RatingLogic.displayRating(skill);
+    await _morrieService.ensureBalance(uid);
     final morrieBalance = await _morrieService.getBalance(uid);
+    await _morrieService.syncRankingEntry(
+      uid,
+      morrieBalance: morrieBalance,
+      playerName: playerName,
+    );
     if (!mounted) return;
 
     if (!_namePrefilled && playerName != null && playerName.isNotEmpty) {

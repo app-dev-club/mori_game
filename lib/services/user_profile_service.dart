@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'rating_service.dart';
+import 'morrie_service.dart';
 
 /// ユーザーアカウントに紐づくプロフィール（プレイヤー名など）
 class UserProfileService {
@@ -9,6 +10,7 @@ class UserProfileService {
   final DatabaseReference _usersRef =
       FirebaseDatabase.instance.ref('users');
   final RatingService _ratingService = RatingService();
+  final MorrieService _morrieService = MorrieService();
 
   Future<String?> getPlayerName(String userId) async {
     try {
@@ -38,6 +40,12 @@ class UserProfileService {
         'updatedAt': ServerValue.timestamp,
       });
       await _ratingService.syncPlayerName(userId, trimmed);
+      final balance = await _morrieService.getBalance(userId);
+      await _morrieService.syncRankingEntry(
+        userId,
+        morrieBalance: balance,
+        playerName: trimmed,
+      );
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw Exception(
