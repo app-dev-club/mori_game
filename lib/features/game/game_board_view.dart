@@ -301,6 +301,9 @@ class OpenJokerIndicator extends StatelessWidget {
 
 /// 相手プレイヤーを半円上に配置するためのレイアウト計算
 class OpponentArcLayout {
+  /// [_buildFieldArea] の山札+間隔+場の半幅（中央から端まで）
+  static const double deckRowHalfWidth = 70;
+
   final double cardWidth;
   final double cardHeight;
   final double cardOverlap;
@@ -338,8 +341,9 @@ class OpponentArcLayout {
         .toList();
   }
 
-  static OpponentArcLayout compute(Size area, int count) {
+  static OpponentArcLayout compute(Size area, int count, {double? deckCenterY}) {
     if (count <= 0) {
+      final centerY = deckCenterY ?? area.height * 0.50;
       return OpponentArcLayout(
         cardWidth: 22,
         cardHeight: 33,
@@ -349,23 +353,24 @@ class OpponentArcLayout {
         nameFontSize: 10,
         pointsFontSize: 11,
         handCountFontSize: 10,
-        arcCenter: Offset(area.width / 2, area.height),
+        arcCenter: Offset(area.width / 2, centerY),
         radius: 0,
         angles: const [],
       );
     }
 
     final cx = area.width / 2;
-    final cy = area.height * 0.94;
-    const arcStart = math.pi * 0.93;
-    const arcEnd = math.pi * 0.07;
+    final deckY = deckCenterY ?? area.height * 0.50;
     const maxHandCards = 7;
+    const margin = 6.0;
+    const minGap = 16.0;
+    const bottomReserve = 20.0;
 
     var scale = 1.0;
     OpponentArcLayout? best;
 
-    for (var attempt = 0; attempt < 28; attempt++) {
-      final cw = (22.0 * scale).clamp(9.0, 22.0);
+    for (var attempt = 0; attempt < 32; attempt++) {
+      final cw = (22.0 * scale).clamp(8.0, 22.0);
       final ch = cw * 1.5;
       final ov = cw * 0.41;
       final handW = cw + (maxHandCards - 1) * ov;
@@ -375,26 +380,38 @@ class OpponentArcLayout {
       final handCountSize = (9.5 * scale).clamp(7.0, 10.0);
       final panelH = 10 + 11 + handCountSize + 4 + ch + 10;
 
+      final angleInset = count >= 5 ? 0.06 : 0.03;
       final angles = count == 1
           ? [math.pi / 2]
           : List.generate(
               count,
-              (i) => arcStart + (arcEnd - arcStart) * i / (count - 1),
+              (i) =>
+                  math.pi -
+                  angleInset -
+                  i * (math.pi - angleInset * 2) / (count - 1),
             );
 
-      final maxRByHeight = (cy - panelH * 0.55) / math.sin(math.pi / 2);
-      final maxRByWidth = math.min(cx - panelW * 0.55, area.width - cx - panelW * 0.55);
-      var radius = math.min(maxRByHeight, maxRByWidth);
-      if (count >= 6) {
-        radius *= 0.92;
+      final maxRadiusByWidth = cx - margin - panelW / 2;
+      var radius = math.max(
+        deckRowHalfWidth + panelW * 0.65 + 28,
+        maxRadiusByWidth * (count >= 4 ? 0.97 : 0.90),
+      );
+      radius += (count - 1) * 8.0;
+      radius = radius.clamp(deckRowHalfWidth + panelW * 0.5, maxRadiusByWidth);
+
+      if (count > 2) {
+        final topAtMid = deckY - radius;
+        final minTop = panelH * 0.5 + 10;
+        if (topAtMid < minTop) {
+          radius = math.min(radius, deckY - minTop);
+        }
       }
-      radius = radius.clamp(panelH * 0.6, area.height * 0.98);
 
       final centers = angles
           .map(
             (theta) => Offset(
               cx + radius * math.cos(theta),
-              cy - radius * math.sin(theta),
+              deckY - radius * math.sin(theta),
             ),
           )
           .toList();
@@ -408,16 +425,24 @@ class OpponentArcLayout {
         nameFontSize: nameSize,
         pointsFontSize: pointsSize,
         handCountFontSize: handCountSize,
-        arcCenter: Offset(cx, cy),
+        arcCenter: Offset(cx, deckY),
         radius: radius,
         angles: angles,
       );
 
-      if (_layoutFits(area, centers, panelW, panelH)) {
+      if (_layoutFits(
+        area,
+        centers,
+        panelW,
+        panelH,
+        margin: margin,
+        minGap: minGap,
+        bottomReserve: bottomReserve,
+      )) {
         return layout;
       }
       best = layout;
-      scale *= 0.88;
+      scale *= 0.86;
     }
 
     return best!;
@@ -427,19 +452,21 @@ class OpponentArcLayout {
     Size area,
     List<Offset> centers,
     double panelW,
-    double panelH,
-  ) {
-    const margin = 2.0;
+    double panelH, {
+    double margin = 6,
+    double minGap = 16,
+    double bottomReserve = 20,
+  }) {
     for (final center in centers) {
       if (center.dx - panelW / 2 < margin) return false;
       if (center.dx + panelW / 2 > area.width - margin) return false;
       if (center.dy - panelH / 2 < margin) return false;
-      if (center.dy + panelH / 2 > area.height - margin) return false;
+      if (center.dy + panelH / 2 > area.height - bottomReserve) return false;
     }
 
     for (var i = 0; i < centers.length - 1; i++) {
       final dist = (centers[i] - centers[i + 1]).distance;
-      if (dist < panelW * 0.5) return false;
+      if (dist < panelW * 0.78 + minGap) return false;
     }
     return true;
   }
@@ -666,21 +693,42 @@ class GameBoardView extends StatelessWidget {
               ),
             ),
           Expanded(
-            flex: 2,
-            child: _buildOthersStatus(opponentKeys),
+            flex: 4,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final deckCenterY = constraints.maxHeight * 0.50;
+                final playArea = Size(constraints.maxWidth, constraints.maxHeight);
+                return Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Positioned.fill(
+                      child: _buildOthersStatus(
+                        opponentKeys,
+                        area: playArea,
+                        deckCenterY: deckCenterY,
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: (deckCenterY - 72).clamp(0.0, constraints.maxHeight - 130),
+                      child: _buildFieldArea(
+                        isMyTurn: isMyTurn,
+                        canDraw: canDraw,
+                        inDrawCompetition: inDrawCompetition,
+                        fieldKey: fieldKey,
+                        deckKey: deckKey,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
-          const Spacer(),
-          _buildFieldArea(
-            isMyTurn: isMyTurn,
-            canDraw: canDraw,
-            inDrawCompetition: inDrawCompetition,
-            fieldKey: fieldKey,
-            deckKey: deckKey,
-          ),
-          const Spacer(),
+          const SizedBox(height: 8),
           if (!isSpectator)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(bottom: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -966,45 +1014,48 @@ class GameBoardView extends StatelessWidget {
     ]);
   }
 
-  Widget _buildOthersStatus(Map<String, GlobalKey> opponentKeys) {
+  Widget _buildOthersStatus(
+    Map<String, GlobalKey> opponentKeys, {
+    required Size area,
+    required double deckCenterY,
+  }) {
     final others = GameRules.opponentEntriesClockwiseFrom(myId, playerIds);
     if (others.isEmpty) return const SizedBox.shrink();
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final area = Size(constraints.maxWidth, constraints.maxHeight);
-        final layout = OpponentArcLayout.compute(area, others.length);
-        final centers = layout.panelCenters();
+    final layout = OpponentArcLayout.compute(
+      area,
+      others.length,
+      deckCenterY: deckCenterY,
+    );
+    final centers = layout.panelCenters();
 
-        return Stack(
-          clipBehavior: Clip.none,
-          children: List.generate(others.length, (i) {
-            final entry = others[i];
-            final playerId = entry.value;
-            final handCount = handCounts[playerId] ?? 0;
-            final isHisTurn =
-                playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == entry.key);
-            final isBurstWarning = handCount >= 6;
-            final hasOpenJoker = openJokerPlayerIds.contains(playerId);
-            final center = centers[i];
+    return Stack(
+      clipBehavior: Clip.none,
+      children: List.generate(others.length, (i) {
+        final entry = others[i];
+        final playerId = entry.value;
+        final handCount = handCounts[playerId] ?? 0;
+        final isHisTurn =
+            playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == entry.key);
+        final isBurstWarning = handCount >= 6;
+        final hasOpenJoker = openJokerPlayerIds.contains(playerId);
+        final center = centers[i];
 
-            return Positioned(
-              left: center.dx - layout.panelWidth / 2,
-              top: center.dy - layout.panelHeight / 2,
-              width: layout.panelWidth,
-              child: _buildOpponentPanel(
-                key: opponentKeys[playerId],
-                playerId: playerId,
-                handCount: handCount,
-                isHisTurn: isHisTurn,
-                isBurstWarning: isBurstWarning,
-                hasOpenJoker: hasOpenJoker,
-                layout: layout,
-              ),
-            );
-          }),
+        return Positioned(
+          left: center.dx - layout.panelWidth / 2,
+          top: center.dy - layout.panelHeight / 2,
+          width: layout.panelWidth,
+          child: _buildOpponentPanel(
+            key: opponentKeys[playerId],
+            playerId: playerId,
+            handCount: handCount,
+            isHisTurn: isHisTurn,
+            isBurstWarning: isBurstWarning,
+            hasOpenJoker: hasOpenJoker,
+            layout: layout,
+          ),
         );
-      },
+      }),
     );
   }
 
