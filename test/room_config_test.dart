@@ -60,25 +60,52 @@ void main() {
       expect(RoomConfig.parseMinMorrieBalanceInput(''), isNull);
     });
 
-    test('canUserSpectateRoom はホストと参加プレイヤーを観戦不可にする', () {
+    test('canUserSpectateRoom は接続中の参加者のみ観戦不可', () {
       const uid = 'user1';
       const other = 'user2';
-      final hostRoom = {
+      final connectedHostRoom = {
         'host': uid,
         'players': [uid, other],
+        'presence': {uid: 1, other: 1},
       };
-      final guestRoom = {
+      final connectedGuestRoom = {
         'host': other,
         'players': [uid, other],
+        'presence': {uid: 1, other: 1},
+      };
+      final afkHostRoom = {
+        'host': uid,
+        'players': [uid, other],
+        'afkPlayerIds': {uid: true},
+        'presence': {other: 1},
       };
       final outsiderRoom = {
         'host': other,
         'players': [other, 'user3'],
+        'presence': {other: 1},
       };
 
-      expect(RoomConfig.canUserSpectateRoom(hostRoom, uid), isFalse);
-      expect(RoomConfig.canUserSpectateRoom(guestRoom, uid), isFalse);
+      expect(RoomConfig.canUserSpectateRoom(connectedHostRoom, uid), isFalse);
+      expect(RoomConfig.canUserSpectateRoom(connectedGuestRoom, uid), isFalse);
+      expect(RoomConfig.canUserSpectateRoom(afkHostRoom, uid), isTrue);
       expect(RoomConfig.canUserSpectateRoom(outsiderRoom, uid), isTrue);
+    });
+
+    test('isConnectedParticipant は接続中かつ非AFKの参加者のみ true', () {
+      const uid = 'user1';
+      final data = {
+        'players': [uid, 'user2'],
+        'presence': {uid: 1},
+        'afkPlayerIds': {uid: true},
+      };
+      expect(RoomConfig.isConnectedParticipant(data, uid), isFalse);
+      expect(
+        RoomConfig.isConnectedParticipant({
+          'players': [uid],
+          'presence': {uid: 1},
+        }, uid),
+        isTrue,
+      );
     });
   });
 }

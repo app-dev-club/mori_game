@@ -10,6 +10,7 @@ class PlayerDisplayName {
     required Map<String, String> playerNames,
     String? hostId,
     bool hideOpponentNames = false,
+    Set<String> afkPlayerIds = const {},
   }) {
     if (playerId == null) return '';
     if (playerId == 'system') return '山札';
@@ -29,6 +30,7 @@ class PlayerDisplayName {
         : name;
 
     if (BotLogic.isBot(playerId)) return '$displayName（Bot）';
+    if (afkPlayerIds.contains(playerId)) return '$displayName（離脱）';
     if (hostId != null && playerId == hostId) return '$displayName（ホスト）';
     return displayName;
   }

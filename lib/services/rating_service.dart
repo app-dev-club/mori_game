@@ -250,10 +250,6 @@ class RatingService {
     final newRatings = <String, int>{};
     final deltas = <String, int>{};
     final ratingDetails = <String, dynamic>{};
-    final rootUpdates = <String, dynamic>{
-      'rooms/$roomId/seriesRatingApplied': true,
-      'rooms/$roomId/seriesRatingSummary': summary,
-    };
 
     for (final entry in ranked) {
       final id = entry.id;
@@ -274,28 +270,44 @@ class RatingService {
         'mu': neuSkill.mu,
         'sigma': neuSkill.sigma,
       };
-      rootUpdates['ratings/$id/rating'] = display;
-      rootUpdates['ratings/$id/mu'] = neuSkill.mu;
-      rootUpdates['ratings/$id/sigma'] = neuSkill.sigma;
-      rootUpdates['ratings/$id/gamesPlayed'] = ServerValue.increment(1);
-      if (BotLogic.isBot(id)) {
-        rootUpdates['ratings/$id/isBot'] = true;
-        final botName = BotLogic.botDisplayName(id);
-        rootUpdates['ratings/$id/displayName'] = botName;
-        rootUpdates['ratings/$id/playerName'] = botName;
-      } else {
-        rootUpdates['ratings/$id/isBot'] = false;
-        final name = displayNames[id];
-        if (name != null && name.isNotEmpty) {
-          rootUpdates['ratings/$id/displayName'] = name;
-          rootUpdates['ratings/$id/playerName'] = name;
-        }
-      }
     }
 
-    rootUpdates['rooms/$roomId/seriesRatingDetails'] = ratingDetails;
+    await roomRef.update({
+      'seriesRatingApplied': true,
+      'seriesRatingSummary': summary,
+      'seriesRatingDetails': ratingDetails,
+    });
 
-    await FirebaseDatabase.instance.ref().update(rootUpdates);
+    for (final entry in ranked) {
+      final id = entry.id;
+      final update = updates[id];
+      if (update == null) continue;
+
+      final neuSkill = update.newRating;
+      final display = RatingLogic.displayRating(neuSkill);
+      final ratingPayload = <String, dynamic>{
+        'rating': display,
+        'mu': neuSkill.mu,
+        'sigma': neuSkill.sigma,
+        'gamesPlayed': ServerValue.increment(1),
+      };
+      if (BotLogic.isBot(id)) {
+        ratingPayload['isBot'] = true;
+        final botName = BotLogic.botDisplayName(id);
+        ratingPayload['displayName'] = botName;
+        ratingPayload['playerName'] = botName;
+      } else {
+        ratingPayload['isBot'] = false;
+        final name = displayNames[id];
+        if (name != null && name.isNotEmpty) {
+          ratingPayload['displayName'] = name;
+          ratingPayload['playerName'] = name;
+        }
+      }
+      try {
+        await _ratingsRef.child(id).update(ratingPayload);
+      } catch (_) {}
+    }
 
     return RatingUpdateResult(
       summary: summary,

@@ -211,9 +211,6 @@ class MorrieService {
     final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);
     final rawDeltas = MorrieRules.rawMorrieDeltas(finalPoints, morrieRate);
     final morrieDetails = <String, dynamic>{};
-    final rootUpdates = <String, dynamic>{
-      'rooms/$roomId/seriesMorrieSettled': true,
-    };
     final appliedDeltas = <String, int>{};
     final newBalances = <String, int>{};
 
@@ -244,21 +241,9 @@ class MorrieService {
         'morrieBalance': next,
         'isBot': false,
       };
-
-      rootUpdates['users/$id/morrieBalance'] = next;
-      rootUpdates['users/$id/updatedAt'] = ServerValue.timestamp;
-      rootUpdates['morrieRankings/$id/playerName'] =
-          displayNames[id]?.trim().isNotEmpty == true
-              ? displayNames[id]!.trim()
-              : 'プレイヤー';
-      rootUpdates['morrieRankings/$id/morrieBalance'] = next;
-      rootUpdates['morrieRankings/$id/updatedAt'] = ServerValue.timestamp;
     }
 
     final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);
-    if (botBalances.isNotEmpty) {
-      rootUpdates['rooms/$roomId/botMorrieBalances'] = botBalances;
-    }
 
     final summary = _buildSummary(
       ranked: ranked,
@@ -267,16 +252,112 @@ class MorrieService {
       rawDeltas: rawDeltas,
       morrieRate: morrieRate,
     );
-    rootUpdates['rooms/$roomId/seriesMorrieSummary'] = summary;
-    rootUpdates['rooms/$roomId/seriesMorrieDetails'] = morrieDetails;
 
-    await FirebaseDatabase.instance.ref().update(rootUpdates);
+    final roomUpdates = <String, dynamic>{
+      'seriesMorrieSettled': true,
+      'seriesMorrieSummary': summary,
+      'seriesMorrieDetails': morrieDetails,
+    };
+    if (botBalances.isNotEmpty) {
+      roomUpdates['botMorrieBalances'] = botBalances;
+    }
+    await roomRef.update(roomUpdates);
+
+    for (final entry in ranked) {
+      final id = entry.id;
+      if (BotLogic.isBot(id)) continue;
+      final next = newBalances[id];
+      if (next == null) continue;
+      final name = displayNames[id]?.trim().isNotEmpty == true
+          ? displayNames[id]!.trim()
+          : 'プレイヤー';
+      try {
+        await _usersRef.child(id).update({
+          'morrieBalance': next,
+          'updatedAt': ServerValue.timestamp,
+        });
+        await syncRankingEntry(id, morrieBalance: next, playerName: name);
+        await roomRef.child('morrieClaimed/$id').set(true);
+        await FirebaseDatabase.instance
+            .ref('userMorriePending/$id/$roomId')
+            .remove();
+      } catch (_) {
+        await FirebaseDatabase.instance.ref('userMorriePending/$id/$roomId').set({
+          'morrieBalance': next,
+          'playerName': name,
+          'settledAt': ServerValue.timestamp,
+        });
+      }
+    }
 
     return MorrieSettlementResult(
       summary: summary,
       deltas: appliedDeltas,
       balances: newBalances,
     );
+  }
+
+  /// ルーム精算の未反映モリーを自分のアカウントへ適用する
+  Future<bool> claimPendingMorrieForUser(String userId) async {
+    final pendingRef = FirebaseDatabase.instance.ref('userMorriePending/$userId');
+    final snap = await pendingRef.get();
+    if (!snap.exists || snap.value is! Map) return false;
+
+    var claimed = false;
+    final entries = Map<dynamic, dynamic>.from(snap.value as Map);
+    for (final entry in entries.entries) {
+      final roomId = entry.key.toString();
+      if (entry.value is! Map) continue;
+      final data = Map<dynamic, dynamic>.from(entry.value as Map);
+      final balance = data['morrieBalance'];
+      if (balance is! num) continue;
+      final next = balance.round();
+      final name = data['playerName']?.toString();
+      try {
+        await _usersRef.child(userId).update({
+          'morrieBalance': next,
+          'updatedAt': ServerValue.timestamp,
+        });
+        await syncRankingEntry(
+          userId,
+          morrieBalance: next,
+          playerName: name,
+        );
+        await FirebaseDatabase.instance.ref('rooms/$roomId/morrieClaimed/$userId').set(true);
+        await pendingRef.child(roomId).remove();
+        claimed = true;
+      } catch (_) {}
+    }
+    return claimed;
+  }
+
+  /// 特定ルームの精算結果を自分のアカウントへ適用する（復帰時）
+  Future<bool> claimMorrieFromRoom(String roomId, String userId) async {
+    final roomRef = FirebaseDatabase.instance.ref('rooms/$roomId');
+    if (roomRef.path.isEmpty) return false;
+    final settled = (await roomRef.child('seriesMorrieSettled').get()).value == true;
+    if (!settled) return false;
+    if ((await roomRef.child('morrieClaimed/$userId').get()).value == true) {
+      return false;
+    }
+    final detailSnap = await roomRef.child('seriesMorrieDetails/$userId').get();
+    if (!detailSnap.exists || detailSnap.value is! Map) return false;
+    final detail = Map<dynamic, dynamic>.from(detailSnap.value as Map);
+    final balance = detail['morrieBalance'];
+    if (balance is! num) return false;
+    final next = balance.round();
+    try {
+      await _usersRef.child(userId).update({
+        'morrieBalance': next,
+        'updatedAt': ServerValue.timestamp,
+      });
+      await syncRankingEntry(userId, morrieBalance: next);
+      await roomRef.child('morrieClaimed/$userId').set(true);
+      await FirebaseDatabase.instance.ref('userMorriePending/$userId/$roomId').remove();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   String _buildSummary({

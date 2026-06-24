@@ -11,18 +11,32 @@
       ".read": "auth != null",
       "$playerId": {
         ".write": "auth != null",
-        ".validate": "newData.hasChildren(['rating', 'mu', 'sigma', 'gamesPlayed']) && newData.child('rating').isNumber() && newData.child('mu').isNumber() && newData.child('sigma').isNumber() && newData.child('gamesPlayed').isNumber()"
+        "rating": {
+          ".validate": "newData.isNumber()"
+        },
+        "mu": {
+          ".validate": "newData.isNumber()"
+        },
+        "sigma": {
+          ".validate": "newData.isNumber()"
+        },
+        "gamesPlayed": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        }
       }
     },
     "users": {
       "$userId": {
         ".read": "auth != null && auth.uid == $userId",
         ".write": "auth != null && auth.uid == $userId",
+        "morrieBalance": {
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0"
+        },
+        "updatedAt": {
+          ".write": "auth != null"
+        },
         "playerName": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
-        },
-        "morrieBalance": {
-          ".validate": "newData.isNumber() && newData.val() >= 0"
         }
       }
     },
@@ -31,6 +45,14 @@
       "$userId": {
         ".write": "auth != null",
         ".validate": "newData.hasChildren(['morrieBalance', 'playerName']) && newData.child('morrieBalance').isNumber() && newData.child('morrieBalance').val() >= 0 && newData.child('playerName').isString() && newData.child('playerName').val().length > 0 && newData.child('playerName').val().length <= 12"
+      }
+    },
+    "userMorriePending": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        "$roomId": {
+          ".write": "auth != null"
+        }
       }
     },
     "matchRecords": {

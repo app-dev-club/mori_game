@@ -58,21 +58,75 @@ class FirebaseDB {
     });
   }
 
-  /// 接続中プレイヤーとして登録（切断時に自動で presence から削除）
+  /// 接続中プレイヤーとして登録（切断時に presence 削除 + 離脱扱い）
   Future<void> registerPlayerPresence(String playerId) async {
-    final ref = _roomRef.child('presence/$playerId');
-    await ref.onDisconnect().remove();
-    await ref.set(ServerValue.timestamp);
+    final presenceRef = _roomRef.child('presence/$playerId');
+    final afkRef = _roomRef.child('afkPlayerIds/$playerId');
+    await afkRef.onDisconnect().set(true);
+    await presenceRef.onDisconnect().remove();
+    await presenceRef.set(ServerValue.timestamp);
+    await afkRef.remove();
   }
 
   Future<void> removePlayerPresence(String playerId) async {
-    final ref = _roomRef.child('presence/$playerId');
+    final presenceRef = _roomRef.child('presence/$playerId');
+    final afkRef = _roomRef.child('afkPlayerIds/$playerId');
     try {
-      await ref.onDisconnect().cancel();
+      await presenceRef.onDisconnect().cancel();
+      await afkRef.onDisconnect().cancel();
     } catch (_) {
       // 未接続など
     }
-    await ref.remove();
+    await presenceRef.remove();
+  }
+
+  /// 意図的な退室・切断時: プレイヤーデータは残し離脱フラグのみ立てる
+  Future<void> markPlayerAfk(String playerId) async {
+    await _roomRef.child('afkPlayerIds/$playerId').set(true);
+    await removePlayerPresence(playerId);
+  }
+
+  /// 復帰時に離脱フラグを解除する
+  Future<void> clearPlayerAfk(String playerId) async {
+    await _roomRef.child('afkPlayerIds/$playerId').remove();
+  }
+
+  static const int automationLeaseMs = 20000;
+
+  /// 接続者がいないルームの Bot 進行を1クライアントだけが担当する
+  Future<bool> tryClaimAutomationLease(String runnerId) async {
+    final ref = _roomRef.child('automationLease');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final snap = await ref.get();
+    if (!snap.exists || snap.value is! Map) {
+      await ref.set({
+        'runnerId': runnerId,
+        'expiresAt': now + automationLeaseMs,
+      });
+      return true;
+    }
+    final map = Map<dynamic, dynamic>.from(snap.value as Map);
+    final expiresRaw = map['expiresAt'];
+    final expires = expiresRaw is num ? expiresRaw.round() : 0;
+    final existingRunner = map['runnerId']?.toString();
+    if (expires >= now && existingRunner != null && existingRunner != runnerId) {
+      return false;
+    }
+    await ref.set({
+      'runnerId': runnerId,
+      'expiresAt': now + automationLeaseMs,
+    });
+    return true;
+  }
+
+  Future<void> releaseAutomationLease(String runnerId) async {
+    final ref = _roomRef.child('automationLease');
+    final snap = await ref.get();
+    if (!snap.exists || snap.value is! Map) return;
+    final map = Map<dynamic, dynamic>.from(snap.value as Map);
+    if (map['runnerId']?.toString() == runnerId) {
+      await ref.remove();
+    }
   }
 
   Future<void> deleteRoomIfAbandoned() async {

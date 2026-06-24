@@ -45,7 +45,7 @@ class MatchRecordService {
 
   String? get activeRecordId => _activeRecordId;
 
-  /// 新しい試合の記録を開始
+  /// 新しい試合の記録を開始（ルーム×試合番号で1件に統一）
   Future<void> startMatch({
     required String roomId,
     required int matchIndex,
@@ -61,17 +61,37 @@ class MatchRecordService {
     required int currentTurnIndex,
     required bool isInitialPhase,
   }) async {
+    final recordId = MatchRecordCodec.buildRecordId(
+      roomId: roomId,
+      matchIndex: matchIndex,
+    );
+
+    final existingSnap = await _root.child(recordId).get();
+    if (existingSnap.child('result').value != null) {
+      return;
+    }
+
+    if (existingSnap.exists) {
+      final data = Map<dynamic, dynamic>.from(existingSnap.value as Map);
+      final metaRaw = data['meta'];
+      if (metaRaw is Map) {
+        final metaMap = Map<dynamic, dynamic>.from(metaRaw);
+        if (metaMap['recordId'] == null || metaMap['recordId'].toString().isEmpty) {
+          metaMap['recordId'] = recordId;
+        }
+        _activeRecordId = recordId;
+        _activeMeta = MatchRecordMetaJson.fromJson(metaMap);
+        _eventSeq = _maxEventSeq(data['events']);
+        _finalized = false;
+      }
+      return;
+    }
+
     if (isRecording) {
-      _logMatchRecordError('startMatch', '前の試合記録が未確定のためリセットします');
       reset();
     }
 
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
-    final recordId = MatchRecordCodec.buildRecordId(
-      roomId: roomId,
-      matchIndex: matchIndex,
-      startedAtMs: startedAtMs,
-    );
 
     final meta = MatchRecordMeta(
       recordId: recordId,
@@ -198,6 +218,37 @@ class MatchRecordService {
     _finalized = false;
   }
 
+  /// 既存の未確定記録をローカルに引き継ぐ（精算担当が別クライアントのとき）
+  Future<bool> tryAdoptExisting({
+    required String roomId,
+    required int matchIndex,
+  }) async {
+    if (isRecording) return true;
+
+    final recordId = MatchRecordCodec.buildRecordId(
+      roomId: roomId,
+      matchIndex: matchIndex,
+    );
+    final existingSnap = await _root.child(recordId).get();
+    if (!existingSnap.exists || existingSnap.child('result').value != null) {
+      return false;
+    }
+
+    final data = Map<dynamic, dynamic>.from(existingSnap.value as Map);
+    final metaRaw = data['meta'];
+    if (metaRaw is! Map) return false;
+
+    final metaMap = Map<dynamic, dynamic>.from(metaRaw);
+    if (metaMap['recordId'] == null || metaMap['recordId'].toString().isEmpty) {
+      metaMap['recordId'] = recordId;
+    }
+    _activeRecordId = recordId;
+    _activeMeta = MatchRecordMetaJson.fromJson(metaMap);
+    _eventSeq = _maxEventSeq(data['events']);
+    _finalized = false;
+    return true;
+  }
+
   int _nextSeq() => ++_eventSeq;
 
   Future<void> _append(MatchEvent event) async {
@@ -237,9 +288,62 @@ class MatchRecordService {
 
     final indexedIds = summaries.map((s) => s.meta.recordId).toSet();
     final merged = await _mergeMissingSummaries(summaries, indexedIds);
-    merged.sort((a, b) => b.meta.startedAtMs.compareTo(a.meta.startedAtMs));
-    if (merged.length <= limit) return merged;
-    return merged.sublist(0, limit);
+    final deduped = _dedupeSummaries(merged);
+    deduped.sort((a, b) => b.meta.startedAtMs.compareTo(a.meta.startedAtMs));
+    if (deduped.length <= limit) return deduped;
+    return deduped.sublist(0, limit);
+  }
+
+  /// 同一ルーム・同一試合番号では確定済みを優先し、未確定の重複を除外
+  static List<MatchRecordSummary> _dedupeSummaries(
+    List<MatchRecordSummary> summaries,
+  ) {
+    final best = <String, MatchRecordSummary>{};
+    for (final summary in summaries) {
+      final key = '${summary.meta.roomId}_m${summary.meta.matchIndex}';
+      final existing = best[key];
+      if (existing == null) {
+        best[key] = summary;
+        continue;
+      }
+      final hasResult = summary.result != null;
+      final existingHasResult = existing.result != null;
+      if (hasResult && !existingHasResult) {
+        best[key] = summary;
+      } else if (hasResult == existingHasResult &&
+          summary.meta.startedAtMs > existing.meta.startedAtMs) {
+        best[key] = summary;
+      }
+    }
+    return best.values
+        .where((s) => s.result != null || !_hasFinalizedSibling(s, best.values))
+        .toList();
+  }
+
+  static bool _hasFinalizedSibling(
+    MatchRecordSummary summary,
+    Iterable<MatchRecordSummary> all,
+  ) {
+    final key = '${summary.meta.roomId}_m${summary.meta.matchIndex}';
+    for (final other in all) {
+      if (identical(other, summary)) continue;
+      final otherKey = '${other.meta.roomId}_m${other.meta.matchIndex}';
+      if (otherKey == key && other.result != null) return true;
+    }
+    return false;
+  }
+
+  static int _maxEventSeq(dynamic eventsRaw) {
+    if (eventsRaw is! Map) return 0;
+    var maxSeq = 0;
+    for (final value in eventsRaw.values) {
+      if (value is! Map) continue;
+      final seq = value['seq'];
+      if (seq is num && seq.round() > maxSeq) {
+        maxSeq = seq.round();
+      }
+    }
+    return maxSeq;
   }
 
   Future<List<MatchRecordSummary>> _mergeMissingSummaries(

@@ -72,7 +72,7 @@ class MatchRecordCodec {
   static String buildRecordId({
     required String roomId,
     required int matchIndex,
-    required int startedAtMs,
+    int? startedAtMs,
   }) =>
-      '${roomId}_m${matchIndex}_$startedAtMs';
+      '${roomId}_m$matchIndex';
 }

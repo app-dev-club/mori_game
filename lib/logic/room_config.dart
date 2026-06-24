@@ -1,3 +1,5 @@
+import 'room_lifecycle.dart';
+
 /// ルーム人数に関する定数
 class RoomConfig {
   static const int minPlayers = 2;
@@ -61,14 +63,18 @@ class RoomConfig {
 
   static bool hasMinPlayers(int currentCount) => currentCount >= minPlayers;
 
-  /// 指定ユーザーがルームを観戦できるか（ホスト・参加プレイヤーは不可）
+  /// 指定ユーザーがルームを観戦できるか（接続中の参加者のみ不可）
   static bool canUserSpectateRoom(Map<dynamic, dynamic> data, String userId) {
-    final hostId = data['host']?.toString();
-    if (hostId != null && hostId == userId) return false;
-    final players = data['players'] as List? ?? [];
-    for (final player in players) {
-      if (player.toString() == userId) return false;
-    }
+    return !isConnectedParticipant(data, userId);
+  }
+
+  /// 接続中かつ離脱扱いでない参加者か
+  static bool isConnectedParticipant(Map<dynamic, dynamic> data, String userId) {
+    final players = RoomLifecycle.playerIdsFromData(data);
+    if (!players.contains(userId)) return false;
+    if (RoomLifecycle.afkPlayerIdsFromData(data).contains(userId)) return false;
+    final presence = data['presence'];
+    if (presence is! Map || !presence.containsKey(userId)) return false;
     return true;
   }
 

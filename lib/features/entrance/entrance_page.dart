@@ -13,6 +13,7 @@ import '../../services/morrie_service.dart';
 import '../../services/rating_service.dart';
 import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
+import 'orphan_room_automation_host.dart';
 import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
 import '../rules/mori_rules_page.dart';
@@ -61,6 +62,7 @@ class _EntrancePageState extends State<EntrancePage> {
   bool _hideOpponentNames = false;
   bool _roomCleanupRunning = false;
   bool _roomCleanupFromStreamTriggered = false;
+  String? _spectatingRoomId;
 
   @override
   void initState() {
@@ -104,6 +106,7 @@ class _EntrancePageState extends State<EntrancePage> {
     final skill = await _ratingService.getSkillRating(uid);
     final rating = RatingLogic.displayRating(skill);
     await _morrieService.ensureBalance(uid);
+    await _morrieService.claimPendingMorrieForUser(uid);
     final morrieBalance = await _morrieService.getBalance(uid);
     await _morrieService.syncRankingEntry(
       uid,
@@ -445,6 +448,7 @@ class _EntrancePageState extends State<EntrancePage> {
       return;
     }
 
+    setState(() => _spectatingRoomId = roomId);
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -455,7 +459,9 @@ class _EntrancePageState extends State<EntrancePage> {
           isSpectator: true,
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) setState(() => _spectatingRoomId = null);
+    });
   }
 
   Future<void> _joinRoom(String roomId) async {
@@ -471,8 +477,44 @@ class _EntrancePageState extends State<EntrancePage> {
     final snapshot = await db.getSnapshot();
 
     if (snapshot.exists) {
+      final players =
+          (snapshot.child('players').value as List? ?? []).map((p) => p.toString()).toList();
+      final isRejoin = players.contains(uid);
       bool isStarted = snapshot.child('gameStarted').value == true;
       String status = snapshot.child('roomStatus').value as String? ?? 'open';
+
+      if (isRejoin && isStarted) {
+        final minMorrie = RoomConfig.resolveMinMorrieBalance(
+          snapshot.child('minMorrieBalance').value,
+        );
+        if (minMorrie > 0) {
+          await _morrieService.ensureBalance(uid);
+          final balance = await _morrieService.getBalance(uid);
+          if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrie)) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '最低入室モリー $minMorrie が必要です（所持: $balance）',
+                ),
+              ),
+            );
+            return;
+          }
+        }
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GameRoomPage(
+              roomId: roomId,
+              playerName: playerName,
+              userId: uid,
+            ),
+          ),
+        );
+        return;
+      }
 
       if (status == 'closed' || isStarted) {
         if (isStarted) {
@@ -494,9 +536,9 @@ class _EntrancePageState extends State<EntrancePage> {
         return;
       }
 
-      final players = snapshot.child('players').value as List? ?? [];
       final maxPlayers = RoomConfig.resolveMaxPlayers(snapshot.child('maxPlayers').value);
-      if (RoomConfig.isRoomFull(players.length, maxPlayers)) {
+      final alreadyJoined = players.contains(uid);
+      if (!alreadyJoined && RoomConfig.isRoomFull(players.length, maxPlayers)) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('その部屋は定員（$maxPlayers人）に達しています')),
@@ -507,7 +549,6 @@ class _EntrancePageState extends State<EntrancePage> {
       final minMorrie = RoomConfig.resolveMinMorrieBalance(
         snapshot.child('minMorrieBalance').value,
       );
-      final alreadyJoined = players.map((p) => p.toString()).contains(uid);
       if (!alreadyJoined && minMorrie > 0) {
         await _morrieService.ensureBalance(uid);
         final balance = await _morrieService.getBalance(uid);
@@ -568,19 +609,8 @@ class _EntrancePageState extends State<EntrancePage> {
     return '待機中: $countLabel（$labels）';
   }
 
-  bool _isPublicRoomVisible(Map data) {
-    if (data['isPrivate'] == true) return false;
-    if (data['roomDismissedByHost'] == true) return false;
-
-    if (!RoomLifecycle.hasActivePlayers(data)) return false;
-
-    final isStarted = data['gameStarted'] == true;
-    final status = data['roomStatus'] as String? ?? 'open';
-
-    if (isStarted) return true;
-    if (!isStarted && status == 'open') return true;
-    return false;
-  }
+  bool _isPublicRoomVisible(Map data) =>
+      RoomLifecycle.isVisibleInPublicLobby(Map<dynamic, dynamic>.from(data));
 
   String _roomListSubtitle(Map data, Map<String, int> balanceMap) {
     final players = data['players'] as List? ?? [];
@@ -604,12 +634,17 @@ class _EntrancePageState extends State<EntrancePage> {
     final spectatorLabel = spectatorCount > 0 ? ' · 観戦 $spectatorCount人' : '';
 
     if (isStarted) {
+      final automationNote = RoomLifecycle.needsBackgroundAutomation(
+            Map<dynamic, dynamic>.from(data),
+          )
+          ? ' · 全員離脱'
+          : '';
       final totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
       final completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
       if (totalMatches > 1) {
-        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
+        return '対戦中: $countLabel · 第${completedMatches + 1}戦 / 全$totalMatches戦 · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$automationNote$spectatorLabel';
       }
-      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
+      return '対戦中: $countLabel · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$automationNote$spectatorLabel';
     }
     if (isFull) {
       return '満員（$countLabel） · $timeoutLabel$morrieLabel$minMorrieLabel$totalMorrieLabel$spectatorLabel';
@@ -742,7 +777,24 @@ class _EntrancePageState extends State<EntrancePage> {
                   return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
                 }
 
-                return ListView.builder(
+                final orphanRoomIds = rooms.entries
+                    .where(
+                      (e) => RoomLifecycle.needsBackgroundAutomation(
+                        Map<dynamic, dynamic>.from(e.value as Map),
+                      ),
+                    )
+                    .map((e) => e.key.toString())
+                    .where((id) => id != _spectatingRoomId)
+                    .take(3)
+                    .toList();
+
+                return OrphanRoomAutomationHost(
+                  roomIds: orphanRoomIds,
+                  userId: _userId,
+                  playerName: _nameController.text.trim().isEmpty
+                      ? '自動進行'
+                      : _nameController.text.trim(),
+                  child: ListView.builder(
                   itemCount: publicRooms.length,
                   itemBuilder: (context, index) {
                     final entry = publicRooms[index];
@@ -756,6 +808,10 @@ class _EntrancePageState extends State<EntrancePage> {
                     final canSpectate = isStarted &&
                         _userId != null &&
                         RoomConfig.canUserSpectateRoom(data, _userId!);
+                    final playerIdList = players.map((e) => e.toString()).toList();
+                    final canRejoin = isStarted &&
+                        _userId != null &&
+                        playerIdList.contains(_userId);
 
                     final Color cardColor;
                     final Color titleColor;
@@ -822,7 +878,22 @@ class _EntrancePageState extends State<EntrancePage> {
                           _roomListSubtitle(data, balanceMap),
                           style: const TextStyle(color: Colors.white70),
                         ),
-                        trailing: canSpectate
+                        trailing: canRejoin
+                            ? TextButton(
+                                onPressed: () => withButtonSound(() => _joinRoom(rid)),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.greenAccent,
+                                  backgroundColor: Colors.greenAccent.withValues(alpha: 0.15),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  '復帰',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              )
+                            : (canSpectate
                             ? TextButton(
                                 onPressed: () => withButtonSound(() => _spectateRoom(rid, data)),
                                 style: TextButton.styleFrom(
@@ -843,12 +914,15 @@ class _EntrancePageState extends State<EntrancePage> {
                                     color: Colors.white,
                                     size: 16,
                                   )
-                                : null),
-                        enabled: canJoin,
-                        onTap: canJoin ? () => withButtonSound(() => _joinRoom(rid)) : null,
+                                : null)),
+                        enabled: canJoin || canRejoin,
+                        onTap: canJoin || canRejoin
+                            ? () => withButtonSound(() => _joinRoom(rid))
+                            : null,
                       ),
                     );
                   },
+                ),
                 );
               },
             );
