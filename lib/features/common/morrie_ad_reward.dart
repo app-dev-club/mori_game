@@ -21,8 +21,8 @@ class MorrieAdReward {
     VoidCallback? onBalanceUpdated,
   }) {
     return AppSideBarItem(
-      label: '広告視聴',
-      icon: Icons.play_circle_outline,
+      label: 'モリーをもらう',
+      icon: Icons.redeem,
       accent: Colors.lightGreenAccent,
       enabled: RewardedAdConfig.adsEnabled,
       onTap: RewardedAdConfig.adsEnabled
@@ -62,10 +62,10 @@ class MorrieAdReward {
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 20),
-                  const Text('広告を読み込み中…'),
+                  const Text('準備中…'),
                   const SizedBox(height: 8),
                   Text(
-                    '視聴完了で ${MorrieRules.adRewardAmount} モリーを獲得します',
+                    'モリー ${MorrieRules.adRewardAmount} を獲得できます',
                     style: const TextStyle(fontSize: 13, color: Colors.black54),
                     textAlign: TextAlign.center,
                   ),
