@@ -1413,6 +1413,9 @@ class GameBoardView extends StatelessWidget {
             fieldSuit: fieldSuit,
             lastPlayerId: lastPlayerId,
             currentTurnIndex: currentTurnIndex,
+            lastDrawerId: lastDrawerId,
+            isDrawCompetitive: isDrawCompetitive,
+            isInitialPhase: isInitialPhase,
             gameStarted: gameStarted,
             playerLabel: _playerLabel,
           ),
@@ -1704,8 +1707,17 @@ class GameBoardView extends StatelessWidget {
         final entry = others[i];
         final playerId = entry.value;
         final handCount = handCounts[playerId] ?? 0;
-        final isHisTurn =
-            playerIds.isNotEmpty && (currentTurnIndex % playerIds.length == entry.key);
+        final hasDrawRight = GameRules.hasDrawPrivilege(
+          playerId: playerId,
+          playerIds: playerIds,
+          turnIndex: currentTurnIndex,
+          isDrawCompetitive: isDrawCompetitive,
+          lastDrawerId: lastDrawerId,
+          lastPlayerId: lastPlayerId,
+          isInitialPhase: isInitialPhase,
+          fieldNumber: fieldNumber,
+          handCount: handCount,
+        );
         final isBurstWarning = handCount >= 6;
         final hasOpenJoker = openJokerPlayerIds.contains(playerId);
         final center = centers[i];
@@ -1724,7 +1736,7 @@ class GameBoardView extends StatelessWidget {
             key: opponentKeys[playerId],
             playerId: playerId,
             handCount: handCount,
-            isHisTurn: isHisTurn,
+            hasDrawRight: hasDrawRight,
             isBurstWarning: isBurstWarning,
             hasOpenJoker: hasOpenJoker,
             layout: layout,
@@ -1738,7 +1750,7 @@ class GameBoardView extends StatelessWidget {
     required Key? key,
     required String playerId,
     required int handCount,
-    required bool isHisTurn,
+    required bool hasDrawRight,
     required bool isBurstWarning,
     required bool hasOpenJoker,
     required OpponentArcLayout layout,
@@ -1747,9 +1759,9 @@ class GameBoardView extends StatelessWidget {
       key: key,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black26,
-        border: isHisTurn
-            ? Border.all(color: Colors.yellow, width: 2)
+        color: hasDrawRight ? Colors.orange.withValues(alpha: 0.2) : Colors.black26,
+        border: hasDrawRight
+            ? Border.all(color: Colors.orangeAccent, width: 2)
             : Border.all(color: Colors.white12),
         borderRadius: BorderRadius.circular(8),
       ),

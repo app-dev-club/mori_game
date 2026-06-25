@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../logic/game_rules.dart';
 import '../replay/replay_circle_layout.dart';
 import 'game_board_view.dart';
 import 'play_arrow_overlay.dart';
@@ -14,6 +15,9 @@ class SpectatorCircleBoard extends StatefulWidget {
   final Suit fieldSuit;
   final String? lastPlayerId;
   final int currentTurnIndex;
+  final String? lastDrawerId;
+  final bool isDrawCompetitive;
+  final bool isInitialPhase;
   final bool gameStarted;
   final String Function(String) playerLabel;
 
@@ -27,6 +31,9 @@ class SpectatorCircleBoard extends StatefulWidget {
     required this.fieldSuit,
     required this.lastPlayerId,
     required this.currentTurnIndex,
+    this.lastDrawerId,
+    this.isDrawCompetitive = false,
+    this.isInitialPhase = false,
     required this.gameStarted,
     required this.playerLabel,
   });
@@ -210,10 +217,17 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     bool compact = false,
   }) {
     final hand = widget.allPlayerHands[playerId] ?? const <CardWidget>[];
-    final isActive = widget.playerIds.isNotEmpty &&
-        widget.currentTurnIndex % widget.playerIds.length ==
-            widget.playerIds.indexOf(playerId);
-    final isLastActor = widget.lastPlayerId == playerId;
+    final hasDrawRight = GameRules.hasDrawPrivilege(
+      playerId: playerId,
+      playerIds: widget.playerIds,
+      turnIndex: widget.currentTurnIndex,
+      isDrawCompetitive: widget.isDrawCompetitive,
+      lastDrawerId: widget.lastDrawerId,
+      lastPlayerId: widget.lastPlayerId,
+      isInitialPhase: widget.isInitialPhase,
+      fieldNumber: widget.fieldNumber,
+      handCount: hand.length,
+    );
     final isBurstWarning = hand.length >= 6;
     final hasOpenJoker = widget.openJokerPlayerIds.contains(playerId);
     final nameSize = compact ? 10.0 : 12.0;
@@ -222,12 +236,9 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6, vertical: compact ? 4 : 6),
       decoration: BoxDecoration(
-        color: isActive ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
+        color: hasDrawRight ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isLastActor ? Colors.amberAccent : Colors.white24,
-          width: isLastActor ? 2 : 1,
-        ),
+        border: Border.all(color: Colors.white24),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -235,7 +246,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
           Text(
             widget.playerLabel(playerId),
             style: TextStyle(
-              color: isActive ? Colors.orangeAccent : Colors.white,
+              color: hasDrawRight ? Colors.orangeAccent : Colors.white,
               fontSize: nameSize,
               fontWeight: FontWeight.bold,
             ),

@@ -206,6 +206,66 @@ class GameRules {
     return card.number == fieldNumber || card.suit == fieldSuit;
   }
 
+  /// 山札から引ける権利があるか（観戦・リプレイのパネル強調用）
+  static bool hasDrawPrivilege({
+    required String playerId,
+    required List<String> playerIds,
+    required int? turnIndex,
+    required bool isDrawCompetitive,
+    required String? lastDrawerId,
+    required String? lastPlayerId,
+    required bool isInitialPhase,
+    required int fieldNumber,
+    required int handCount,
+  }) {
+    if (playerIds.isEmpty || handCount >= maxHandSize) return false;
+    if (fieldNumber < 0) return false;
+
+    // 山札めくり直後（まだ誰も手札から出していない）
+    if (isInitialPhase && (lastPlayerId == 'system' || lastPlayerId == null)) {
+      return false;
+    }
+
+    if (isDrawCompetitivePhase(isDrawCompetitive, lastDrawerId)) {
+      return canDrawInCompetition(
+        isDrawCompetitive: isDrawCompetitive,
+        lastDrawerId: lastDrawerId,
+        players: playerIds,
+        myId: playerId,
+        handCount: handCount,
+      );
+    }
+
+    final holderId = drawPrivilegeHolderId(
+      playerIds: playerIds,
+      turnIndex: turnIndex,
+      lastPlayerId: lastPlayerId,
+    );
+    if (holderId == null) return false;
+    return holderId == playerId && canDraw(handCount, lastDrawerId, playerId);
+  }
+
+  /// 通常時に山札から引けるプレイヤー（場に出した人の次）
+  static String? drawPrivilegeHolderId({
+    required List<String> playerIds,
+    required int? turnIndex,
+    required String? lastPlayerId,
+  }) {
+    if (playerIds.isEmpty) return null;
+
+    if (lastPlayerId != null &&
+        lastPlayerId != 'system' &&
+        playerIds.contains(lastPlayerId)) {
+      final idx = playerIds.indexOf(lastPlayerId);
+      return playerIds[(idx + 1) % playerIds.length];
+    }
+
+    if (turnIndex != null) {
+      return playerIds[turnIndex % playerIds.length];
+    }
+    return null;
+  }
+
   /// 7枚目を引いた直後、出すカードを選ぶ必要があるか
   static bool mustPlayAfterSeventhDraw({
     required int handCount,

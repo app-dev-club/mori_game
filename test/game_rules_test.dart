@@ -134,6 +134,106 @@ void main() {
     });
   });
 
+  group('hasDrawPrivilege', () {
+    const players = ['p1', 'p2', 'p3'];
+
+    test('手番プレイヤーで未ドローなら true', () {
+      expect(
+        GameRules.hasDrawPrivilege(
+          playerId: 'p1',
+          playerIds: players,
+          turnIndex: 0,
+          isDrawCompetitive: false,
+          lastDrawerId: null,
+          lastPlayerId: null,
+          isInitialPhase: false,
+          fieldNumber: 7,
+          handCount: 5,
+        ),
+        isTrue,
+      );
+    });
+
+    test('場に出した人の次のプレイヤーが光る', () {
+      expect(
+        GameRules.hasDrawPrivilege(
+          playerId: 'p2',
+          playerIds: players,
+          turnIndex: 0,
+          isDrawCompetitive: false,
+          lastDrawerId: null,
+          lastPlayerId: 'p1',
+          isInitialPhase: false,
+          fieldNumber: 7,
+          handCount: 5,
+        ),
+        isTrue,
+      );
+      expect(
+        GameRules.hasDrawPrivilege(
+          playerId: 'p1',
+          playerIds: players,
+          turnIndex: 0,
+          isDrawCompetitive: false,
+          lastDrawerId: null,
+          lastPlayerId: 'p1',
+          isInitialPhase: false,
+          fieldNumber: 7,
+          handCount: 5,
+        ),
+        isFalse,
+      );
+    });
+
+    test('山札めくり直後は誰も光らない', () {
+      expect(
+        GameRules.hasDrawPrivilege(
+          playerId: 'p1',
+          playerIds: players,
+          turnIndex: 0,
+          isDrawCompetitive: false,
+          lastDrawerId: null,
+          lastPlayerId: 'system',
+          isInitialPhase: true,
+          fieldNumber: 7,
+          handCount: 5,
+        ),
+        isFalse,
+      );
+    });
+
+    test('ドロー競合中は引いた人の次のプレイヤーのみ true', () {
+      expect(
+        GameRules.hasDrawPrivilege(
+          playerId: 'p3',
+          playerIds: players,
+          turnIndex: 1,
+          isDrawCompetitive: true,
+          lastDrawerId: 'p2',
+          lastPlayerId: 'p1',
+          isInitialPhase: false,
+          fieldNumber: 7,
+          handCount: 3,
+        ),
+        isTrue,
+      );
+      expect(
+        GameRules.hasDrawPrivilege(
+          playerId: 'p2',
+          playerIds: players,
+          turnIndex: 1,
+          isDrawCompetitive: true,
+          lastDrawerId: 'p2',
+          lastPlayerId: 'p1',
+          isInitialPhase: false,
+          fieldNumber: 7,
+          handCount: 4,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('auto play', () {
     const players = ['host', 'guest'];
 

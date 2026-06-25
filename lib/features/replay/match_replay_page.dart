@@ -429,20 +429,16 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
   }) {
     final hand = frame.hands[playerId] ?? const <CardWidget>[];
     final meta = _record!.meta;
-    final isActive = frame.turnPlayerId(meta.playerIds) == playerId;
-    final isLastActor = frame.lastPlayerId == playerId;
+    final hasDrawRight = frame.hasDrawPrivilege(playerId, meta.playerIds);
     final nameSize = compact ? 10.0 : 12.0;
     final metaSize = compact ? 10.0 : 11.0;
 
     return Container(
       padding: EdgeInsets.all(compact ? 6 : 8),
       decoration: BoxDecoration(
-        color: isActive ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
+        color: hasDrawRight ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isLastActor ? Colors.amberAccent : Colors.white24,
-          width: isLastActor ? 2 : 1,
-        ),
+        border: Border.all(color: Colors.white24),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -450,7 +446,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
           Text(
             _playerLabel(playerId),
             style: TextStyle(
-              color: isActive ? Colors.orangeAccent : Colors.white,
+              color: hasDrawRight ? Colors.orangeAccent : Colors.white,
               fontSize: nameSize,
               fontWeight: FontWeight.bold,
             ),

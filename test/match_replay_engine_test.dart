@@ -97,6 +97,74 @@ void main() {
       expect(frames[1].turnIndex, 1);
     });
 
+    test('draw では lastPlayerId を変えず直前に場へ出したプレイヤーを保持する', () {
+      const card3s = CardWidget(number: 3, suit: Suit.spade);
+      const card5h = CardWidget(number: 5, suit: Suit.heart);
+      final field = MatchRecordCodec.field(3, Suit.spade);
+      final meta = MatchRecordMeta(
+        recordId: 'draw-last-player',
+        roomId: 'room',
+        matchIndex: 1,
+        seriesTotal: 1,
+        turnTimeoutSeconds: 10,
+        playerIds: ['p1', 'p2'],
+        playerNames: const {'p1': 'A', 'p2': 'B'},
+        botIds: const [],
+        startedAtMs: 1,
+      );
+      final record = MatchRecord(
+        meta: meta,
+        initial: {
+          'hands': {
+            'p1': [MatchRecordCodec.card(card3s)],
+            'p2': [MatchRecordCodec.card(card5h)],
+          },
+          'deck': List<dynamic>.filled(10, MatchRecordCodec.card(card5h)),
+          'field': field,
+          'fieldHistory': [field],
+          'currentTurnIndex': 0,
+          'lastPlayerId': 'p1',
+          'isInitialPhase': false,
+        },
+        events: [
+          MatchEvent(
+            seq: 1,
+            type: MatchEventType.playCard,
+            atMs: 1,
+            actorId: 'p1',
+            payload: {
+              'card': MatchRecordCodec.card(card3s),
+              'hands': {'p1': <dynamic>[], 'p2': [MatchRecordCodec.card(card5h)]},
+              'turnIndex': 1,
+            },
+          ),
+          MatchEvent(
+            seq: 2,
+            type: MatchEventType.draw,
+            atMs: 2,
+            actorId: 'p2',
+            payload: {
+              'card': MatchRecordCodec.card(card5h),
+              'hands': {'p1': <dynamic>[], 'p2': [MatchRecordCodec.card(card5h), MatchRecordCodec.card(card5h)]},
+              'turnIndex': 1,
+              'isDrawCompetitive': true,
+            },
+          ),
+        ],
+        result: null,
+      );
+
+      final frames = MatchReplayEngine.buildFrames(record);
+      expect(frames.length, 3);
+      expect(frames[1].lastPlayerId, 'p1');
+      expect(frames[1].hasDrawPrivilege('p2', meta.playerIds), isTrue);
+      expect(frames[2].lastPlayerId, 'p1');
+      expect(frames[2].lastDrawerId, 'p2');
+      expect(frames[2].isDrawCompetitive, isTrue);
+      expect(frames[2].hasDrawPrivilege('p2', meta.playerIds), isFalse);
+      expect(frames[2].hasDrawPrivilege('p1', meta.playerIds), isTrue);
+    });
+
     test('範囲外の turnIndex は null に正規化する', () {
       final meta = MatchRecordMeta(
         recordId: 'test',

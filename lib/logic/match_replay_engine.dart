@@ -1,3 +1,4 @@
+import '../logic/game_rules.dart';
 import '../features/game/game_board_view.dart';
 import '../logic/bot_logic.dart';
 import '../logic/match_record_codec.dart';
@@ -15,6 +16,8 @@ class ReplayFrame {
   final int deckCount;
   final String? lastPlayerId;
   final int? turnIndex;
+  final String? lastDrawerId;
+  final bool isDrawCompetitive;
   final bool isInitialPhase;
   final MatchEventType? eventType;
 
@@ -28,6 +31,8 @@ class ReplayFrame {
     required this.deckCount,
     this.lastPlayerId,
     this.turnIndex,
+    this.lastDrawerId,
+    this.isDrawCompetitive = false,
     this.isInitialPhase = false,
     this.eventType,
   });
@@ -37,6 +42,20 @@ class ReplayFrame {
     final idx = turnIndex;
     if (idx == null || idx < 0 || idx >= playerIds.length) return null;
     return playerIds[idx];
+  }
+
+  bool hasDrawPrivilege(String playerId, List<String> playerIds) {
+    return GameRules.hasDrawPrivilege(
+      playerId: playerId,
+      playerIds: playerIds,
+      turnIndex: turnIndex,
+      isDrawCompetitive: isDrawCompetitive,
+      lastDrawerId: lastDrawerId,
+      lastPlayerId: lastPlayerId,
+      isInitialPhase: isInitialPhase,
+      fieldNumber: fieldNumber,
+      handCount: hands[playerId]?.length ?? 0,
+    );
   }
 }
 
@@ -71,6 +90,8 @@ class MatchReplayEngine {
       meta.playerIds.length,
     );
     var isInitialPhase = record.initial['isInitialPhase'] == true;
+    var lastDrawerId = record.initial['lastDrawerId']?.toString();
+    var isDrawCompetitive = record.initial['isDrawCompetitive'] == true;
 
     frames.add(
       ReplayFrame(
@@ -83,6 +104,8 @@ class MatchReplayEngine {
         deckCount: deckCount,
         lastPlayerId: lastPlayerId,
         turnIndex: turnIndex,
+        lastDrawerId: lastDrawerId,
+        isDrawCompetitive: isDrawCompetitive,
         isInitialPhase: isInitialPhase,
       ),
     );
@@ -119,12 +142,19 @@ class MatchReplayEngine {
             fieldSuit = card.suit;
             fieldHistory = [...fieldHistory, card];
             lastPlayerId = event.actorId;
+            lastDrawerId = null;
+            isDrawCompetitive = false;
             if (event.payload.containsKey('isInitialPhase')) {
               isInitialPhase = event.payload['isInitialPhase'] == true;
             }
+            final actor = event.actorId;
+            if (actor != null && meta.playerIds.contains(actor)) {
+              turnIndex = (meta.playerIds.indexOf(actor) + 1) % meta.playerIds.length;
+            }
           }
         case MatchEventType.draw:
-          lastPlayerId = event.actorId;
+          lastDrawerId = event.actorId;
+          isDrawCompetitive = event.payload['isDrawCompetitive'] == true;
           if (event.payload['deckReset'] == true) {
             final resetDeck = event.payload['deck'];
             if (resetDeck is List) deckCount = resetDeck.length;
@@ -142,16 +172,15 @@ class MatchReplayEngine {
           }
         case MatchEventType.mori:
         case MatchEventType.moriGaeshi:
-          lastPlayerId = event.actorId;
         case MatchEventType.openJoker:
-          lastPlayerId = event.actorId;
         case MatchEventType.matchEnd:
           break;
         case MatchEventType.matchStart:
           break;
       }
 
-      if (event.payload.containsKey('turnIndex')) {
+      if (event.payload.containsKey('turnIndex') &&
+          event.type != MatchEventType.playCard) {
         turnIndex = normalizeTurnIndex(event.payload['turnIndex'], meta.playerIds.length);
       }
 
@@ -166,6 +195,8 @@ class MatchReplayEngine {
           deckCount: deckCount,
           lastPlayerId: lastPlayerId,
           turnIndex: turnIndex,
+          lastDrawerId: lastDrawerId,
+          isDrawCompetitive: isDrawCompetitive,
           isInitialPhase: isInitialPhase,
           eventType: event.type,
         ),
