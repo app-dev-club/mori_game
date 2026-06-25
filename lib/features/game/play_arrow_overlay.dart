@@ -175,12 +175,15 @@ class _PlayArrowOverlayState extends State<PlayArrowOverlay> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureArrow());
     return Stack(
       key: _stackKey,
+      fit: StackFit.expand,
       children: [
-        widget.builder(
-          fieldKey: _fieldKey,
-          deckKey: _deckKey,
-          myHandKey: _myHandKey,
-          opponentKeys: _opponentKeys,
+        Positioned.fill(
+          child: widget.builder(
+            fieldKey: _fieldKey,
+            deckKey: _deckKey,
+            myHandKey: _myHandKey,
+            opponentKeys: _opponentKeys,
+          ),
         ),
         if (_arrowFrom != null && _arrowTo != null)
           Positioned.fill(

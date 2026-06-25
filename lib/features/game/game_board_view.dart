@@ -354,6 +354,9 @@ class BoardLayoutMetrics {
   final double opponentCardWidth;
   final double moriBandHeight;
   final double handToDeckGap;
+  final double playAreaToHandGap;
+  final double deckLiftGap;
+  final double opponentDeckGap;
   final bool isSpectator;
 
   const BoardLayoutMetrics({
@@ -364,6 +367,9 @@ class BoardLayoutMetrics {
     required this.opponentCardWidth,
     required this.moriBandHeight,
     required this.handToDeckGap,
+    required this.playAreaToHandGap,
+    required this.deckLiftGap,
+    required this.opponentDeckGap,
     required this.isSpectator,
   });
 
@@ -387,24 +393,79 @@ class BoardLayoutMetrics {
 
   double get deckRowHalfWidth => playCardWidth + deckFieldGap / 2;
 
+  double fieldBottomOffset({required bool showFlipButton}) {
+    if (isSpectator) return 0;
+    return moriBandHeight + deckLiftGap;
+  }
+
   double fieldHintHeight({required bool showFlipButton}) {
-    var h = 20.0;
-    if (showFlipButton) h += 48;
+    final scale = (playCardHeight / 75.0).clamp(0.5, 1.0);
+    var h = 16.0 * scale;
+    if (showFlipButton) h += 44.0 * scale;
     return h;
   }
 
   double fieldBandHeight({required bool showFlipButton}) =>
-      fieldHintHeight(showFlipButton: showFlipButton) + playCardHeight + 8;
+      fieldHintHeight(showFlipButton: showFlipButton) + playCardHeight + 6;
+
+  double deckBandTopY(double playAreaHeight, {required bool showFlipButton}) {
+    return playAreaHeight -
+        fieldBottomOffset(showFlipButton: showFlipButton) -
+        fieldBandHeight(showFlipButton: showFlipButton);
+  }
+
+  double deckBandBottomY(double playAreaHeight, {required bool showFlipButton}) {
+    return playAreaHeight - fieldBottomOffset(showFlipButton: showFlipButton);
+  }
 
   double deckCenterY(double playAreaHeight, {required bool showFlipButton}) {
     if (isSpectator) return playAreaHeight * 0.46;
-    final fieldBottom = moriBandHeight + fieldBandHeight(showFlipButton: showFlipButton);
+    final fieldBottom =
+        fieldBottomOffset(showFlipButton: showFlipButton) + fieldBandHeight(showFlipButton: showFlipButton);
     return playAreaHeight - fieldBottom + playCardHeight * 0.5;
   }
 
   double opponentBottomReserve(double playAreaHeight, {required bool showFlipButton}) {
     final centerY = deckCenterY(playAreaHeight, showFlipButton: showFlipButton);
-    return playAreaHeight - centerY + playCardHeight * 0.6 + handToDeckGap;
+    // 手札はプレイエリア外（画面下部固定）のため、下端余白はもり帯分のみ
+    return playAreaHeight - centerY + playCardHeight * 0.45 + 8.0;
+  }
+
+  /// プレイエリアの高さに合わせて山札・場・他プレイヤー表示を縮小
+  BoardLayoutMetrics adaptedForPlayHeight(
+    double playH, {
+    required bool showFlipButton,
+  }) {
+    if (isSpectator || playH <= 0 || !playH.isFinite) return this;
+
+    const minOpponentZone = 36.0;
+    final bottom = fieldBottomOffset(showFlipButton: showFlipButton);
+    final fieldH = fieldBandHeight(showFlipButton: showFlipButton);
+    final required = bottom + fieldH + minOpponentZone;
+    if (playH >= required) return this;
+
+    final scale = ((playH - bottom - minOpponentZone) / fieldH).clamp(0.48, 1.0);
+    return _scaledDeck(scale);
+  }
+
+  BoardLayoutMetrics _scaledDeck(double scale) {
+    final deckW = (playCardWidth * scale).clamp(26.0, playCardWidth);
+    final deckH = deckW * 1.5;
+    final oppW = (opponentCardWidth * scale).clamp(12.0, opponentCardWidth);
+
+    return BoardLayoutMetrics(
+      playCardWidth: deckW,
+      playCardHeight: deckH,
+      deckFieldGap: (deckFieldGap * scale).clamp(8.0, deckFieldGap),
+      handLayout: handLayout,
+      opponentCardWidth: oppW,
+      moriBandHeight: moriBandHeight,
+      handToDeckGap: (handToDeckGap * scale).clamp(10.0, handToDeckGap),
+      playAreaToHandGap: playAreaToHandGap,
+      deckLiftGap: (deckLiftGap * scale).clamp(4.0, deckLiftGap),
+      opponentDeckGap: (opponentDeckGap * scale).clamp(10.0, opponentDeckGap),
+      isSpectator: isSpectator,
+    );
   }
 
   double moriRevealBandHeight(double width, int cardCount) {
@@ -446,31 +507,41 @@ class BoardLayoutMetrics {
     required bool showMoriControls,
   }) {
     final isWide = width >= 720;
-    final playCardW = isWide
-        ? (width * 0.075).clamp(68.0, 96.0)
-        : (width * 0.17).clamp(56.0, 84.0);
-    final playCardH = playCardW * 1.5;
-    final handMax = (playCardW * 0.96).clamp(52.0, 92.0);
+    final isCompact = width < 480;
     const handSectionHorizontalPadding = 20.0;
+
+    // 自分の手札はやや小さめ。山札・場はさらに小さく
+    final handMax = isWide
+        ? (width * 0.065).clamp(56.0, 84.0)
+        : (width * 0.14).clamp(42.0, 58.0);
     final handLayout = HandCardLayout.compute(
       width - handSectionHorizontalPadding,
       myHandCount,
       maxWidth: handMax,
-      minWidth: (handMax * 0.62).clamp(44.0, handMax),
-      gap: isWide ? 10 : 8,
+      minWidth: (handMax * 0.58).clamp(38.0, handMax),
+      gap: isWide ? 10 : 7,
     );
-    var oppCW = (playCardW * 0.44).clamp(22.0, 38.0);
+
+    final deckCardW = isWide
+        ? (width * 0.072).clamp(64.0, 90.0)
+        : (handLayout.width * 0.72).clamp(36.0, 50.0);
+    final deckCardH = deckCardW * 1.5;
+
+    var oppCW = (deckCardW * 0.44).clamp(20.0, 36.0);
     if (opponentCount >= 5) oppCW *= 0.9;
     if (opponentCount >= 7) oppCW *= 0.85;
 
     return BoardLayoutMetrics(
-      playCardWidth: playCardW,
-      playCardHeight: playCardH,
-      deckFieldGap: (playCardW * 0.28).clamp(16.0, 28.0),
+      playCardWidth: deckCardW,
+      playCardHeight: deckCardH,
+      deckFieldGap: (deckCardW * 0.26).clamp(12.0, 24.0),
       handLayout: handLayout,
       opponentCardWidth: oppCW,
       moriBandHeight: showMoriControls ? 58 : 0,
-      handToDeckGap: 20,
+      handToDeckGap: isCompact ? 24.0 : 18.0,
+      playAreaToHandGap: 0,
+      deckLiftGap: isSpectator ? 0 : (isCompact ? 10.0 : 6.0),
+      opponentDeckGap: isCompact ? 12.0 : 10.0,
       isSpectator: isSpectator,
     );
   }
@@ -517,13 +588,110 @@ class OpponentArcLayout {
         .toList();
   }
 
+  static List<double> _arcAngles(int count) {
+    if (count <= 0) return const [];
+    if (count == 1) return [math.pi / 2];
+
+    // 上側の弧。山札のすぐ上に収まるようやや浅い弧を使う
+    final arcStart = count <= 3 ? math.pi * 0.86 : math.pi * 0.83;
+    final arcEnd = count <= 3 ? math.pi * 0.14 : math.pi * 0.17;
+    return List.generate(
+      count,
+      (i) => arcStart - i * (arcStart - arcEnd) / (count - 1),
+    );
+  }
+
+  static double _minRadiusForDeckClearance({
+    required double playCardHalfH,
+    required double panelH,
+    required List<double> angles,
+    required double clearanceGap,
+  }) {
+    var minR = 0.0;
+    for (final theta in angles) {
+      final sinT = math.sin(theta);
+      if (sinT < 0.08) continue;
+      final needed = (playCardHalfH + panelH / 2 + clearanceGap) / sinT;
+      if (needed.isFinite && needed > 0) {
+        minR = math.max(minR, needed);
+      }
+    }
+    return minR;
+  }
+
+  static bool _panelOverlapsDeckZone({
+    required Offset center,
+    required double panelW,
+    required double panelH,
+    required double cx,
+    required double deckBandTop,
+    required double deckBandBottom,
+    required double deckRowHalfWidth,
+    required double clearanceGap,
+  }) {
+    final panelLeft = center.dx - panelW / 2;
+    final panelRight = center.dx + panelW / 2;
+    final panelTop = center.dy - panelH / 2;
+    final panelBottom = center.dy + panelH / 2;
+
+    final deckLeft = cx - deckRowHalfWidth - clearanceGap;
+    final deckRight = cx + deckRowHalfWidth + clearanceGap;
+    final deckTop = deckBandTop - clearanceGap;
+    final deckBottom = deckBandBottom + clearanceGap;
+
+    final hOverlap = panelLeft < deckRight && panelRight > deckLeft;
+    final vOverlap = panelTop < deckBottom && panelBottom > deckTop;
+    return hOverlap && vOverlap;
+  }
+
+  static double _maxRadiusForAngles({
+    required double deckY,
+    required double panelH,
+    required List<double> angles,
+    required double maxRadiusByWidth,
+    required double areaHeight,
+    required double bottomReserve,
+    required double margin,
+  }) {
+    if (angles.isEmpty) return maxRadiusByWidth;
+
+    var maxByTop = double.infinity;
+    for (final theta in angles) {
+      final sinT = math.sin(theta);
+      if (sinT > 0.05) {
+        final limit = (deckY - margin - panelH / 2) / sinT;
+        maxByTop = math.min(maxByTop, limit);
+      }
+    }
+
+    var maxByBottom = double.infinity;
+    final bottomLimit = areaHeight - bottomReserve - panelH / 2;
+    for (final theta in angles) {
+      final sinT = math.sin(theta);
+      if (sinT > 0.02) {
+        final limit = (deckY - bottomLimit) / sinT;
+        if (limit > 0) {
+          maxByBottom = math.min(maxByBottom, limit);
+        }
+      }
+    }
+
+    var result = math.min(maxRadiusByWidth, maxByTop);
+    result = math.min(result, maxByBottom);
+    return math.max(result, 0);
+  }
+
   static OpponentArcLayout compute(
     Size area,
     int count, {
     double? deckCenterY,
+    double? deckZoneTopY,
+    double? deckZoneBottomY,
     double bottomReserve = 58,
     double baseCardWidth = 26,
     double deckRowHalfWidth = 80,
+    double deckClearanceGap = 20,
+    double playCardHalfH = 28,
   }) {
     if (count <= 0) {
       final centerY = deckCenterY ?? area.height * 0.50;
@@ -547,13 +715,19 @@ class OpponentArcLayout {
     final deckY = deckCenterY ?? area.height * 0.50;
     const maxHandCards = 7;
     const margin = 8.0;
-    const minGap = 20.0;
+    final deckTop = (deckZoneTopY ?? (deckY - playCardHalfH)).clamp(margin, area.height);
+    final deckBottom =
+        (deckZoneBottomY ?? (deckY + playCardHalfH)).clamp(deckTop + 1, area.height);
+    var minGap = count <= 3 ? 14.0 : 18.0;
+    if (area.width < 400) minGap = count <= 3 ? 10.0 : 14.0;
+    if (area.height < 180) minGap = math.min(minGap, 8.0);
 
     var scale = 1.0;
     OpponentArcLayout? best;
+    var bestOverlap = double.infinity;
 
-    for (var attempt = 0; attempt < 32; attempt++) {
-      final cw = (baseCardWidth * scale).clamp(14.0, baseCardWidth);
+    for (var attempt = 0; attempt < 40; attempt++) {
+      final cw = (baseCardWidth * scale).clamp(12.0, baseCardWidth);
       final ch = cw * 1.5;
       final ov = cw * 0.41;
       final handW = cw + (maxHandCards - 1) * ov;
@@ -563,31 +737,36 @@ class OpponentArcLayout {
       final handCountSize = (9.5 * scale).clamp(7.0, 10.0);
       final panelH = 10 + 11 + handCountSize + 4 + ch + 10;
 
-      final angleInset = count >= 5 ? 0.06 : 0.03;
-      final angles = count == 1
-          ? [math.pi / 2]
-          : List.generate(
-              count,
-              (i) =>
-                  math.pi -
-                  angleInset -
-                  i * (math.pi - angleInset * 2) / (count - 1),
-            );
-
-      final maxRadiusByWidth = cx - margin - panelW / 2;
-      var radius = math.max(
-        deckRowHalfWidth + panelW * 0.72 + 34,
-        maxRadiusByWidth * (count >= 4 ? 0.96 : 0.91),
+      final angles = _arcAngles(count);
+      final maxRadiusByWidth = math.max(cx - margin - panelW / 2, 0.0);
+      var radius = math.min(
+        maxRadiusByWidth,
+        _maxRadiusForAngles(
+          deckY: deckY,
+          panelH: panelH,
+          angles: angles,
+          maxRadiusByWidth: maxRadiusByWidth,
+          areaHeight: area.height,
+          bottomReserve: bottomReserve,
+          margin: margin,
+        ),
       );
-      radius += (count - 1) * 10.0;
-      radius = radius.clamp(deckRowHalfWidth + panelW * 0.5, maxRadiusByWidth);
 
-      if (count > 2) {
-        final topAtMid = deckY - radius;
-        final minTop = panelH * 0.5 + 10;
-        if (topAtMid < minTop) {
-          radius = math.min(radius, deckY - minTop);
-        }
+      final minRadius = _minRadiusForDeckClearance(
+        playCardHalfH: playCardHalfH,
+        panelH: panelH,
+        angles: angles,
+        clearanceGap: deckClearanceGap,
+      );
+      if (count >= 5 && maxRadiusByWidth > 0) {
+        radius = math.max(radius, math.min(deckRowHalfWidth + panelW * 0.45, maxRadiusByWidth));
+      }
+      if (maxRadiusByWidth <= 0) {
+        radius = 0;
+      } else if (minRadius <= maxRadiusByWidth) {
+        radius = radius.clamp(minRadius, maxRadiusByWidth);
+      } else {
+        radius = maxRadiusByWidth;
       }
 
       final centers = angles
@@ -622,14 +801,92 @@ class OpponentArcLayout {
         margin: margin,
         minGap: minGap,
         bottomReserve: bottomReserve,
+        cx: cx,
+        deckBandTop: deckTop,
+        deckBandBottom: deckBottom,
+        deckRowHalfWidth: deckRowHalfWidth,
+        deckClearanceGap: deckClearanceGap,
       )) {
         return layout;
       }
-      best = layout;
+
+      final overlap = _layoutOverlapScore(
+        area,
+        centers,
+        panelW,
+        panelH,
+        margin: margin,
+        minGap: minGap,
+        bottomReserve: bottomReserve,
+        cx: cx,
+        deckBandTop: deckTop,
+        deckBandBottom: deckBottom,
+        deckRowHalfWidth: deckRowHalfWidth,
+        deckClearanceGap: deckClearanceGap,
+      );
+      if (overlap < bestOverlap) {
+        bestOverlap = overlap;
+        best = layout;
+      }
       scale *= 0.86;
     }
 
-    return best!;
+    return best ?? OpponentArcLayout(
+      deckRowHalfWidth: deckRowHalfWidth,
+      cardWidth: baseCardWidth.clamp(12.0, baseCardWidth),
+      cardHeight: baseCardWidth.clamp(12.0, baseCardWidth) * 1.5,
+      cardOverlap: baseCardWidth.clamp(12.0, baseCardWidth) * 0.41,
+      panelWidth: 72,
+      panelHeight: 72,
+      nameFontSize: 8,
+      pointsFontSize: 9,
+      handCountFontSize: 8,
+      arcCenter: Offset(cx, deckY),
+      radius: 0,
+      angles: _arcAngles(count),
+    );
+  }
+
+  static double _layoutOverlapScore(
+    Size area,
+    List<Offset> centers,
+    double panelW,
+    double panelH, {
+    double margin = 6,
+    double minGap = 16,
+    double bottomReserve = 20,
+    required double cx,
+    required double deckBandTop,
+    required double deckBandBottom,
+    required double deckRowHalfWidth,
+    required double deckClearanceGap,
+  }) {
+    var score = 0.0;
+    for (final center in centers) {
+      score += math.max(margin - (center.dx - panelW / 2), 0);
+      score += math.max(center.dx + panelW / 2 - (area.width - margin), 0);
+      score += math.max(margin - (center.dy - panelH / 2), 0);
+      score += math.max(center.dy + panelH / 2 - (area.height - bottomReserve), 0);
+      if (_panelOverlapsDeckZone(
+        center: center,
+        panelW: panelW,
+        panelH: panelH,
+        cx: cx,
+        deckBandTop: deckBandTop,
+        deckBandBottom: deckBandBottom,
+        deckRowHalfWidth: deckRowHalfWidth,
+        clearanceGap: deckClearanceGap,
+      )) {
+        score += 1000;
+      }
+    }
+    for (var i = 0; i < centers.length; i++) {
+      for (var j = i + 1; j < centers.length; j++) {
+        final dist = (centers[i] - centers[j]).distance;
+        score += math.max(panelW * 0.88 + minGap - dist, 0);
+      }
+    }
+    return score;
   }
 
   static bool _layoutFits(
@@ -640,17 +897,36 @@ class OpponentArcLayout {
     double margin = 6,
     double minGap = 16,
     double bottomReserve = 20,
+    required double cx,
+    required double deckBandTop,
+    required double deckBandBottom,
+    required double deckRowHalfWidth,
+    required double deckClearanceGap,
   }) {
     for (final center in centers) {
       if (center.dx - panelW / 2 < margin) return false;
       if (center.dx + panelW / 2 > area.width - margin) return false;
       if (center.dy - panelH / 2 < margin) return false;
       if (center.dy + panelH / 2 > area.height - bottomReserve) return false;
+      if (_panelOverlapsDeckZone(
+        center: center,
+        panelW: panelW,
+        panelH: panelH,
+        cx: cx,
+        deckBandTop: deckBandTop,
+        deckBandBottom: deckBandBottom,
+        deckRowHalfWidth: deckRowHalfWidth,
+        clearanceGap: deckClearanceGap,
+      )) {
+        return false;
+      }
     }
 
-    for (var i = 0; i < centers.length - 1; i++) {
-      final dist = (centers[i] - centers[i + 1]).distance;
-      if (dist < panelW * 0.88 + minGap) return false;
+    for (var i = 0; i < centers.length; i++) {
+      for (var j = i + 1; j < centers.length; j++) {
+        final dist = (centers[i] - centers[j]).distance;
+        if (dist < panelW * 0.88 + minGap) return false;
+      }
     }
     return true;
   }
@@ -883,112 +1159,14 @@ class GameBoardView extends StatelessWidget {
             gameStarted: gameStarted,
             showTurnBanner: showTurnBanner,
           );
-          var reservedAbove = 0.0;
-          if (!isSpectator && spectatorNames.isNotEmpty) reservedAbove += 44;
-          if (!gameStarted) {
-            reservedAbove += (canAddBot && onAddBot != null) ? 88 : 52;
-          }
           final messageBandsH = _messageBandsHeight(metrics, columnConstraints.maxWidth);
-          final reservedBelow = _reservedBelowPlayHeight(
-            metrics,
-            columnConstraints.maxWidth,
-            handSectionH: handSectionH,
-            messageBandsH: messageBandsH,
-          );
-          final playH = (columnConstraints.maxHeight - reservedAbove - reservedBelow)
-              .clamp(180.0, double.infinity);
+          final bottomReservedH = handSectionH +
+              (messageBandsH > 0 ? messageBandsH : 0);
 
-          return Column(
-        children: [
-          if (!isSpectator && spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
-          if (!gameStarted)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.teal.shade900,
-              child: Column(
-                children: [
-                  Text(
-                    !RoomConfig.hasMinPlayers(playerCount)
-                        ? 'ゲーム開始には${RoomConfig.minPlayers}人以上必要です（現在 $playerCount 人）'
-                        : RoomConfig.isRoomFull(playerCount, maxPlayers)
-                            ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
-                            : '参加者を待っています… $playerCount / $maxPlayers 人',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                  if (canAddBot && onAddBot != null) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: onAddBot,
-                      icon: const Icon(Icons.smart_toy_outlined, color: Colors.white70),
-                      label: const Text('Botを追加', style: TextStyle(color: Colors.white)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white54),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          SizedBox(
-            height: playH,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final area = Size(constraints.maxWidth, playH);
-                final deckCenterY =
-                    metrics.deckCenterY(playH, showFlipButton: showFlipButton);
-                final bottomReserve = metrics.opponentBottomReserve(
-                  playH,
-                  showFlipButton: showFlipButton,
-                );
-
-                return Stack(
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    if (!isSpectator)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 4,
-                        child: _buildMoriControlRow(
-                          isButtonEnabled: isButtonEnabled,
-                          canOpenJoker: canOpenJoker,
-                        ),
-                      ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: isSpectator ? area.height * 0.34 : metrics.moriBandHeight,
-                      child: _buildFieldArea(
-                        metrics: metrics,
-                        showFlipButton: showFlipButton,
-                        isMyTurn: isMyTurn,
-                        canDraw: canDraw,
-                        inDrawCompetition: inDrawCompetition,
-                        fieldKey: fieldKey,
-                        deckKey: deckKey,
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: _buildOthersStatus(
-                          opponentKeys,
-                          metrics: metrics,
-                          area: area,
-                          deckCenterY: deckCenterY,
-                          bottomReserve: bottomReserve,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          if (messageBandsH > 0)
-            SizedBox(
-              height: messageBandsH,
+          Widget buildMessageBands() {
+            if (messageBandsH <= 0) return const SizedBox.shrink();
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: messageBandsH),
               child: SingleChildScrollView(
                 reverse: true,
                 physics: const ClampingScrollPhysics(),
@@ -1031,20 +1209,141 @@ class GameBoardView extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          SizedBox(
-            height: handSectionH,
-            child: KeyedSubtree(
-              key: myHandKey,
-              child: _buildMyHandSection(
-                metrics,
-                isMyTurn,
-                inDrawCompetition: inDrawCompetition,
+            );
+          }
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+          if (!isSpectator && spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
+          if (!gameStarted)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.teal.shade900,
+              child: Column(
+                children: [
+                  Text(
+                    !RoomConfig.hasMinPlayers(playerCount)
+                        ? 'ゲーム開始には${RoomConfig.minPlayers}人以上必要です（現在 $playerCount 人）'
+                        : RoomConfig.isRoomFull(playerCount, maxPlayers)
+                            ? '定員に達しました。ホストが山札をめくるとゲーム開始します'
+                            : '参加者を待っています… $playerCount / $maxPlayers 人',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  if (canAddBot && onAddBot != null) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: onAddBot,
+                      icon: const Icon(Icons.smart_toy_outlined, color: Colors.white70),
+                      label: const Text('Botを追加', style: TextStyle(color: Colors.white)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white54),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final playH = constraints.maxHeight;
+                if (!playH.isFinite || playH <= 0) {
+                  return const SizedBox.shrink();
+                }
+                final playMetrics = metrics.adaptedForPlayHeight(
+                  playH,
+                  showFlipButton: showFlipButton,
+                );
+                final area = Size(constraints.maxWidth, playH);
+                final deckCenterY = playMetrics.deckCenterY(
+                  playH,
+                  showFlipButton: showFlipButton,
+                );
+                final bottomReserve = playMetrics.opponentBottomReserve(
+                  playH,
+                  showFlipButton: showFlipButton,
+                );
+
+                return Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    if (!isSpectator)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 4,
+                        child: _buildMoriControlRow(
+                          isButtonEnabled: isButtonEnabled,
+                          canOpenJoker: canOpenJoker,
+                        ),
+                      ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: isSpectator
+                          ? area.height * 0.34
+                          : playMetrics.fieldBottomOffset(showFlipButton: showFlipButton),
+                      child: _buildFieldArea(
+                        metrics: playMetrics,
+                        showFlipButton: showFlipButton,
+                        isMyTurn: isMyTurn,
+                        canDraw: canDraw,
+                        inDrawCompetition: inDrawCompetition,
+                        fieldKey: fieldKey,
+                        deckKey: deckKey,
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: _buildOthersStatus(
+                          opponentKeys,
+                          metrics: playMetrics,
+                          area: area,
+                          deckCenterY: deckCenterY,
+                          bottomReserve: bottomReserve,
+                          showFlipButton: showFlipButton,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
-        ],
-      );
+          SizedBox(height: bottomReservedH),
+                ],
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    buildMessageBands(),
+                    SizedBox(
+                      height: handSectionH,
+                      child: KeyedSubtree(
+                        key: myHandKey,
+                        child: _buildMyHandSection(
+                          metrics,
+                          isMyTurn,
+                          inDrawCompetition: inDrawCompetition,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
         },
       ),
           ),
@@ -1075,15 +1374,6 @@ class GameBoardView extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  double _reservedBelowPlayHeight(
-    BoardLayoutMetrics metrics,
-    double width, {
-    required double handSectionH,
-    required double messageBandsH,
-  }) {
-    return handSectionH + messageBandsH + metrics.handToDeckGap;
   }
 
   double _messageBandsHeight(BoardLayoutMetrics metrics, double width) {
@@ -1305,11 +1595,23 @@ class GameBoardView extends StatelessWidget {
     return Column(children: [
       if (showFlipButton)
         Padding(
-          padding: const EdgeInsets.only(bottom: 20),
+          padding: EdgeInsets.only(bottom: 12 * (cardH / 75.0).clamp(0.5, 1.0)),
           child: ElevatedButton(
             onPressed: RoomConfig.hasMinPlayers(playerCount) ? onFlip : null,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow[900]),
-            child: const Text('山札をめくる', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.yellow[900],
+              padding: EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: (10 * (cardH / 75.0).clamp(0.5, 1.0)).clamp(6.0, 10.0),
+              ),
+            ),
+            child: Text(
+              '山札をめくる',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: (14 * (cardH / 75.0).clamp(0.5, 1.0)).clamp(11.0, 14.0),
+              ),
+            ),
           ),
         ),
       if (GameRules.isJokerOnField(fieldNumber, fieldSuit))
@@ -1328,7 +1630,7 @@ class GameBoardView extends StatelessWidget {
           fieldNumber != -1 &&
           moriPhase == 'none')
         const Text("同じ数字なら割り込み可能", style: TextStyle(color: Colors.white70, fontSize: 10)),
-      const SizedBox(height: 10),
+      const SizedBox(height: 6),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         GestureDetector(
           onTap: (canDraw && !isInitialPhase && moriPhase == 'none') ? onDraw : null,
@@ -1373,6 +1675,7 @@ class GameBoardView extends StatelessWidget {
     required Size area,
     required double deckCenterY,
     required double bottomReserve,
+    required bool showFlipButton,
   }) {
     final others = GameRules.opponentEntriesClockwiseFrom(myId, playerIds);
     if (others.isEmpty) return const SizedBox.shrink();
@@ -1381,14 +1684,22 @@ class GameBoardView extends StatelessWidget {
       area,
       others.length,
       deckCenterY: deckCenterY,
+      deckZoneTopY: showFlipButton
+          ? metrics.deckBandTopY(area.height, showFlipButton: true)
+          : deckCenterY - metrics.playCardHeight / 2,
+      deckZoneBottomY: showFlipButton
+          ? metrics.deckBandBottomY(area.height, showFlipButton: true)
+          : deckCenterY + metrics.playCardHeight / 2,
       bottomReserve: bottomReserve,
       baseCardWidth: metrics.opponentCardWidth,
       deckRowHalfWidth: metrics.deckRowHalfWidth,
+      deckClearanceGap: metrics.opponentDeckGap,
+      playCardHalfH: metrics.playCardHeight / 2,
     );
     final centers = layout.panelCenters();
 
     return Stack(
-      clipBehavior: Clip.none,
+      clipBehavior: Clip.hardEdge,
       children: List.generate(others.length, (i) {
         final entry = others[i];
         final playerId = entry.value;
@@ -1398,10 +1709,16 @@ class GameBoardView extends StatelessWidget {
         final isBurstWarning = handCount >= 6;
         final hasOpenJoker = openJokerPlayerIds.contains(playerId);
         final center = centers[i];
+        final left = (center.dx - layout.panelWidth / 2)
+            .clamp(0.0, math.max(0.0, area.width - layout.panelWidth))
+            .toDouble();
+        final top = (center.dy - layout.panelHeight / 2)
+            .clamp(0.0, math.max(0.0, area.height - layout.panelHeight))
+            .toDouble();
 
         return Positioned(
-          left: center.dx - layout.panelWidth / 2,
-          top: center.dy - layout.panelHeight / 2,
+          left: left,
+          top: top,
           width: layout.panelWidth,
           child: _buildOpponentPanel(
             key: opponentKeys[playerId],
