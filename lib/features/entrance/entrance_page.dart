@@ -15,6 +15,7 @@ import '../../services/user_profile_service.dart';
 import '../game/game_room_page.dart';
 import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
+import '../legal/privacy_policy_page.dart';
 import '../rules/mori_rules_page.dart';
 import '../../effects/app_sound_effects.dart';
 import '../common/app_side_bar.dart';
@@ -675,6 +676,12 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
+  void _openPrivacyPolicy() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+    );
+  }
+
   void _openRules() {
     Navigator.push(
       context,
@@ -946,6 +953,12 @@ class _EntrancePageState extends State<EntrancePage> {
           icon: Icons.menu_book,
           accent: Colors.tealAccent,
           onTap: _openRules,
+        ),
+        AppSideBarItem(
+          label: 'プライバシー',
+          icon: Icons.privacy_tip_outlined,
+          accent: Colors.white70,
+          onTap: _openPrivacyPolicy,
         ),
         AppSideBarItem(
           label: 'ログアウト',

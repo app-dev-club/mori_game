@@ -4,12 +4,18 @@ import 'package:google_adsense/h5.dart';
 
 import 'rewarded_ad_config.dart';
 
-Future<void> initializeAdSenseForWeb() async {
+bool _initialized = false;
+
+/// モリー獲得ページなど、コンテンツ付き画面でのみ AdSense を初期化する
+Future<void> ensureAdSenseInitialized() async {
+  if (_initialized) return;
+
   final publisherId = RewardedAdConfig.adsensePublisherId;
   if (publisherId.isEmpty || publisherId == '0123456789012345') {
     debugPrint(
       'AdSense: RewardedAdConfig.adsensePublisherId を設定してください',
     );
+    return;
   }
 
   await adSense.initialize(
@@ -25,4 +31,6 @@ Future<void> initializeAdSenseForWeb() async {
       preloadAdBreaks: PreloadAdBreaks.on,
     ),
   );
+
+  _initialized = true;
 }

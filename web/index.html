@@ -18,7 +18,7 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="トランプ対戦ゲーム「もり」のオンラインロビー。ルール説明、ランキング、リプレイ機能を提供します。">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
   <!-- iOS meta tags & icons -->
@@ -30,13 +30,16 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>mori_game</title>
+  <title>もり - オンライン対戦</title>
   <link rel="manifest" href="manifest.json">
 
   <meta name="google-site-verification" content="eanU9ngOUi4dzK_paLwpxdYFYk7_MsAcjF9HaVUjBy0" />
 
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5863667813029977"
-     crossorigin="anonymous"></script>
+  <!--
+    AdSense ディスプレイ広告用スクリプトは SPA 全体に読み込まない。
+    リワード広告は Flutter の google_adsense パッケージ経由で、
+    コンテンツ付きのモリー獲得ページからのみ初期化する。
+  -->
 </head>
 <body>
   <!--

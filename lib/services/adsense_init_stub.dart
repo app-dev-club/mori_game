@@ -1,1 +1,1 @@
-Future<void> initializeAdSenseForWeb() async {}
+Future<void> ensureAdSenseInitialized() async {}

@@ -7,7 +7,8 @@ import 'package:flutter/foundation.dart';
 class RewardedAdConfig {
   RewardedAdConfig._();
 
-  /// 広告視聴機能を有効にするか（AdSense 承認前は false）
+  /// 広告視聴機能を有効にするか。
+  /// AdSense 審査通過後、コンテンツ付きの [MorrieRewardPage] からのみ広告を表示する。
   static const bool adsEnabled = false;
 
   /// AdSense パブリッシャー ID（数字のみ、`pub-` や `ca-pub-` は付けない）
