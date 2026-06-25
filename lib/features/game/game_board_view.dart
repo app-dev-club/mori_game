@@ -133,20 +133,21 @@ class HandCardLayout {
     return (availableWidth * 0.17).clamp(54.0, 68.0);
   }
 
-  /// 観戦用: カードを小さくし、間隔を広げて全枚が見えやすい配置
+  /// 観戦用: カードを小さくし、必要なら重ねて画面内に収める
   static HandCardLayout computeSpectator(
     double availableWidth,
     int count, {
     double? maxWidth,
     double? minWidth,
-    double gap = 10,
-    double sidePadding = 8,
+    double gap = 4,
+    double sidePadding = 6,
+    double visibleRatio = 0.55,
   }) {
     final resolvedMax = maxWidth ?? _responsiveSpectatorMaxWidth(availableWidth);
-    final resolvedMin = minWidth ?? (resolvedMax * 0.65).clamp(22.0, resolvedMax);
+    final resolvedMin = minWidth ?? (resolvedMax * 0.6).clamp(20.0, resolvedMax);
 
     final n = count.clamp(1, 7);
-    final inner = (availableWidth - sidePadding).clamp(72.0, double.infinity);
+    final inner = (availableWidth - sidePadding).clamp(48.0, double.infinity);
 
     final widthWithGap = (inner - (n - 1) * gap) / n;
     if (widthWithGap >= resolvedMin) {
@@ -154,17 +155,16 @@ class HandCardLayout {
       return HandCardLayout(width: w, height: w * 1.5, step: w + gap);
     }
 
-    const visibleRatio = 0.72;
     var w = inner / (1 + (n - 1) * visibleRatio);
     w = w.clamp(resolvedMin, resolvedMax);
     return HandCardLayout(width: w, height: w * 1.5, step: w * visibleRatio);
   }
 
   static double _responsiveSpectatorMaxWidth(double availableWidth) {
-    if (availableWidth >= 280) return 54;
-    if (availableWidth >= 200) return 46;
-    if (availableWidth >= 140) return 38;
-    return (availableWidth * 0.3).clamp(28.0, 38.0);
+    if (availableWidth >= 260) return math.min(46, availableWidth * 0.2);
+    if (availableWidth >= 180) return math.min(40, availableWidth * 0.22);
+    if (availableWidth >= 120) return math.min(34, availableWidth * 0.26);
+    return (availableWidth * 0.3).clamp(22.0, 32.0);
   }
 }
 

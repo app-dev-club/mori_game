@@ -128,17 +128,24 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final area = Size(constraints.maxWidth, constraints.maxHeight);
-        final layout = ReplayCircleLayout.computeForSpectator(area, widget.playerIds.length);
+        final layout = ReplayCircleLayout.computeForSpectator(
+          area: area,
+          playerIds: widget.playerIds,
+          hands: widget.allPlayerHands,
+          openJokerPlayerIds: widget.openJokerPlayerIds,
+          gameStarted: widget.gameStarted,
+        );
 
         return Stack(
           key: _boardStackKey,
-          clipBehavior: Clip.none,
+          clipBehavior: Clip.hardEdge,
           children: [
             for (var i = 0; i < widget.playerIds.length; i++)
               _buildPositionedPlayerPanel(
                 playerId: widget.playerIds[i],
                 center: layout.playerCenters[i],
                 handMaxWidth: layout.handMaxWidth,
+                compact: layout.handMaxWidth < 100,
               ),
             Positioned(
               left: layout.fieldCenter.dx - layout.layoutFieldCardWidth / 2,
@@ -170,9 +177,16 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     required String playerId,
     required Offset center,
     required double handMaxWidth,
+    bool compact = false,
   }) {
     final hand = widget.allPlayerHands[playerId] ?? const <CardWidget>[];
-    final panelSize = ReplayCircleLayout.panelSizeForSpectator(hand, handMaxWidth);
+    final hasOpenJoker = widget.openJokerPlayerIds.contains(playerId);
+    final panelSize = ReplayCircleLayout.panelSizeForSpectator(
+      hand,
+      handMaxWidth,
+      gameStarted: widget.gameStarted,
+      hasOpenJoker: hasOpenJoker,
+    );
 
     return Positioned(
       left: center.dx - panelSize.width / 2,
@@ -180,7 +194,11 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
       width: panelSize.width,
       child: KeyedSubtree(
         key: _playerPanelKeys[playerId],
-        child: _buildPlayerPanel(playerId: playerId, handMaxWidth: handMaxWidth),
+        child: _buildPlayerPanel(
+          playerId: playerId,
+          handMaxWidth: handMaxWidth,
+          compact: compact,
+        ),
       ),
     );
   }
@@ -188,6 +206,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
   Widget _buildPlayerPanel({
     required String playerId,
     required double handMaxWidth,
+    bool compact = false,
   }) {
     final hand = widget.allPlayerHands[playerId] ?? const <CardWidget>[];
     final isActive = widget.playerIds.isNotEmpty &&
@@ -196,9 +215,11 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     final isLastActor = widget.lastPlayerId == playerId;
     final isBurstWarning = hand.length >= 6;
     final hasOpenJoker = widget.openJokerPlayerIds.contains(playerId);
+    final nameSize = compact ? 10.0 : 12.0;
+    final metaSize = compact ? 10.0 : 11.0;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6, vertical: compact ? 4 : 6),
       decoration: BoxDecoration(
         color: isActive ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
         borderRadius: BorderRadius.circular(10),
@@ -214,7 +235,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
             widget.playerLabel(playerId),
             style: TextStyle(
               color: isActive ? Colors.orangeAccent : Colors.white,
-              fontSize: 12,
+              fontSize: nameSize,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
@@ -230,21 +251,21 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
                   color: (widget.playerPoints[playerId] ?? 0) >= 0
                       ? Colors.amberAccent
                       : Colors.redAccent,
-                  fontSize: 11,
+                  fontSize: metaSize,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
-          const SizedBox(height: 6),
+          SizedBox(height: compact ? 4 : 6),
           if (hasOpenJoker)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 2),
               child: Text(
                 'オープンジョーカー',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.yellowAccent,
-                  fontSize: 11,
+                  fontSize: metaSize,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -254,7 +275,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
             '${hand.length}枚',
             style: TextStyle(
               color: isBurstWarning ? Colors.red : Colors.white54,
-              fontSize: 11,
+              fontSize: metaSize,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -285,7 +306,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
       width: cardLayout.totalWidth(hand.length),
       height: cardLayout.height,
       child: Stack(
-        clipBehavior: Clip.none,
+        clipBehavior: Clip.hardEdge,
         children: [
           for (var i = 0; i < hand.length; i++)
             Positioned(
