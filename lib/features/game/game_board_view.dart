@@ -1,9 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import '../../logic/bot_logic.dart';
 import '../../logic/game_rules.dart';
-import '../../logic/morrie_rules.dart';
 import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
@@ -102,47 +100,71 @@ class HandCardLayout {
   }
 
   /// [availableWidth] に [count] 枚の手札が収まるサイズを返す（最大7枚想定）
-  static HandCardLayout compute(double availableWidth, int count) {
-    const maxWidth = 60.0;
-    const minWidth = 34.0;
-    const gap = 6.0;
-    const sidePadding = 12.0;
+  static HandCardLayout compute(
+    double availableWidth,
+    int count, {
+    double? maxWidth,
+    double? minWidth,
+    double gap = 8,
+    double sidePadding = 12,
+  }) {
+    final resolvedMax = maxWidth ?? _responsiveMaxWidth(availableWidth);
+    final resolvedMin = minWidth ?? (resolvedMax * 0.62).clamp(44.0, resolvedMax);
 
     final n = count.clamp(1, 7);
     final inner = (availableWidth - sidePadding).clamp(120.0, double.infinity);
 
     final widthWithGap = (inner - (n - 1) * gap) / n;
-    if (widthWithGap >= minWidth) {
-      final w = widthWithGap.clamp(minWidth, maxWidth);
+    if (widthWithGap >= resolvedMin) {
+      final w = widthWithGap.clamp(resolvedMin, resolvedMax);
       return HandCardLayout(width: w, height: w * 1.5, step: w + gap);
     }
 
-    const visibleRatio = 0.5;
+    const visibleRatio = 0.52;
     var w = inner / (1 + (n - 1) * visibleRatio);
-    w = w.clamp(minWidth, maxWidth);
+    w = w.clamp(resolvedMin, resolvedMax);
     return HandCardLayout(width: w, height: w * 1.5, step: w * visibleRatio);
   }
 
+  static double _responsiveMaxWidth(double availableWidth) {
+    if (availableWidth >= 960) return 92;
+    if (availableWidth >= 720) return 80;
+    if (availableWidth >= 480) return 72;
+    return (availableWidth * 0.17).clamp(54.0, 68.0);
+  }
+
   /// 観戦用: カードを小さくし、間隔を広げて全枚が見えやすい配置
-  static HandCardLayout computeSpectator(double availableWidth, int count) {
-    const maxWidth = 34.0;
-    const minWidth = 22.0;
-    const gap = 12.0;
-    const sidePadding = 8.0;
+  static HandCardLayout computeSpectator(
+    double availableWidth,
+    int count, {
+    double? maxWidth,
+    double? minWidth,
+    double gap = 10,
+    double sidePadding = 8,
+  }) {
+    final resolvedMax = maxWidth ?? _responsiveSpectatorMaxWidth(availableWidth);
+    final resolvedMin = minWidth ?? (resolvedMax * 0.65).clamp(22.0, resolvedMax);
 
     final n = count.clamp(1, 7);
     final inner = (availableWidth - sidePadding).clamp(72.0, double.infinity);
 
     final widthWithGap = (inner - (n - 1) * gap) / n;
-    if (widthWithGap >= minWidth) {
-      final w = widthWithGap.clamp(minWidth, maxWidth);
+    if (widthWithGap >= resolvedMin) {
+      final w = widthWithGap.clamp(resolvedMin, resolvedMax);
       return HandCardLayout(width: w, height: w * 1.5, step: w + gap);
     }
 
     const visibleRatio = 0.72;
     var w = inner / (1 + (n - 1) * visibleRatio);
-    w = w.clamp(minWidth, maxWidth);
+    w = w.clamp(resolvedMin, resolvedMax);
     return HandCardLayout(width: w, height: w * 1.5, step: w * visibleRatio);
+  }
+
+  static double _responsiveSpectatorMaxWidth(double availableWidth) {
+    if (availableWidth >= 280) return 54;
+    if (availableWidth >= 200) return 46;
+    if (availableWidth >= 140) return 38;
+    return (availableWidth * 0.3).clamp(28.0, 38.0);
   }
 }
 
@@ -325,10 +347,139 @@ class OpenJokerIndicator extends StatelessWidget {
 }
 
 /// 相手プレイヤーを半円上に配置するためのレイアウト計算
-class OpponentArcLayout {
-  /// [_buildFieldArea] の山札+間隔+場の半幅（中央から端まで）
-  static const double deckRowHalfWidth = 70;
+class BoardLayoutMetrics {
+  final double playCardWidth;
+  final double playCardHeight;
+  final double deckFieldGap;
+  final HandCardLayout handLayout;
+  final double opponentCardWidth;
+  final double moriBandHeight;
+  final double handToDeckGap;
+  final bool isSpectator;
 
+  const BoardLayoutMetrics({
+    required this.playCardWidth,
+    required this.playCardHeight,
+    required this.deckFieldGap,
+    required this.handLayout,
+    required this.opponentCardWidth,
+    required this.moriBandHeight,
+    required this.handToDeckGap,
+    required this.isSpectator,
+  });
+
+  /// 手札行・ヘッダー・枚数表示をすべて含む高さ
+  double handSectionHeight({
+    required bool gameStarted,
+    required bool showTurnBanner,
+  }) {
+    const paddingV = 16.0;
+    const countRow = 24.0;
+    const cardToCountGap = 10.0;
+    var h = paddingV + handLayout.height + cardToCountGap + countRow;
+    if (gameStarted) h += 28;
+    if (showTurnBanner) {
+      h += 24;
+    } else if (!gameStarted) {
+      h += 10;
+    }
+    return h;
+  }
+
+  double get deckRowHalfWidth => playCardWidth + deckFieldGap / 2;
+
+  double fieldHintHeight({required bool showFlipButton}) {
+    var h = 20.0;
+    if (showFlipButton) h += 48;
+    return h;
+  }
+
+  double fieldBandHeight({required bool showFlipButton}) =>
+      fieldHintHeight(showFlipButton: showFlipButton) + playCardHeight + 8;
+
+  double deckCenterY(double playAreaHeight, {required bool showFlipButton}) {
+    if (isSpectator) return playAreaHeight * 0.46;
+    final fieldBottom = moriBandHeight + fieldBandHeight(showFlipButton: showFlipButton);
+    return playAreaHeight - fieldBottom + playCardHeight * 0.5;
+  }
+
+  double opponentBottomReserve(double playAreaHeight, {required bool showFlipButton}) {
+    final centerY = deckCenterY(playAreaHeight, showFlipButton: showFlipButton);
+    return playAreaHeight - centerY + playCardHeight * 0.6 + handToDeckGap;
+  }
+
+  double moriRevealBandHeight(double width, int cardCount) {
+    const outerMarginBottom = 8.0;
+    const paddingVertical = 24.0;
+    const titleHeight = 24.0;
+    const titleGap = 8.0;
+    const cardRowSlack = 4.0;
+    const safety = 10.0;
+    final innerWidth = width - 48;
+    final layout = isSpectator
+        ? HandCardLayout.computeSpectator(innerWidth, cardCount)
+        : HandCardLayout.compute(
+            innerWidth,
+            cardCount,
+            maxWidth: handLayout.width,
+            minWidth: handLayout.width * 0.65,
+          );
+    return outerMarginBottom +
+        paddingVertical +
+        titleHeight +
+        titleGap +
+        layout.height +
+        cardRowSlack +
+        safety;
+  }
+
+  static double moriCountdownBandHeight(double width) {
+    const sample = '🔥 もり宣言！ 残り 99 秒（もり返し受付中） 🔥';
+    final lines = (sample.length * 10.0 / (width - 24)).ceil().clamp(1, 3);
+    return 6 + lines * 26.0;
+  }
+
+  static BoardLayoutMetrics fromSize({
+    required double width,
+    required int myHandCount,
+    required int opponentCount,
+    required bool isSpectator,
+    required bool showMoriControls,
+  }) {
+    final isWide = width >= 720;
+    final playCardW = isWide
+        ? (width * 0.075).clamp(68.0, 96.0)
+        : (width * 0.17).clamp(56.0, 84.0);
+    final playCardH = playCardW * 1.5;
+    final handMax = (playCardW * 0.96).clamp(52.0, 92.0);
+    const handSectionHorizontalPadding = 20.0;
+    final handLayout = HandCardLayout.compute(
+      width - handSectionHorizontalPadding,
+      myHandCount,
+      maxWidth: handMax,
+      minWidth: (handMax * 0.62).clamp(44.0, handMax),
+      gap: isWide ? 10 : 8,
+    );
+    var oppCW = (playCardW * 0.44).clamp(22.0, 38.0);
+    if (opponentCount >= 5) oppCW *= 0.9;
+    if (opponentCount >= 7) oppCW *= 0.85;
+
+    return BoardLayoutMetrics(
+      playCardWidth: playCardW,
+      playCardHeight: playCardH,
+      deckFieldGap: (playCardW * 0.28).clamp(16.0, 28.0),
+      handLayout: handLayout,
+      opponentCardWidth: oppCW,
+      moriBandHeight: showMoriControls ? 58 : 0,
+      handToDeckGap: 20,
+      isSpectator: isSpectator,
+    );
+  }
+}
+
+class OpponentArcLayout {
+  /// 山札+間隔+場の半幅（中央から端まで）
+  final double deckRowHalfWidth;
   final double cardWidth;
   final double cardHeight;
   final double cardOverlap;
@@ -342,6 +493,7 @@ class OpponentArcLayout {
   final List<double> angles;
 
   const OpponentArcLayout({
+    required this.deckRowHalfWidth,
     required this.cardWidth,
     required this.cardHeight,
     required this.cardOverlap,
@@ -366,13 +518,21 @@ class OpponentArcLayout {
         .toList();
   }
 
-  static OpponentArcLayout compute(Size area, int count, {double? deckCenterY}) {
+  static OpponentArcLayout compute(
+    Size area,
+    int count, {
+    double? deckCenterY,
+    double bottomReserve = 58,
+    double baseCardWidth = 26,
+    double deckRowHalfWidth = 80,
+  }) {
     if (count <= 0) {
       final centerY = deckCenterY ?? area.height * 0.50;
       return OpponentArcLayout(
-        cardWidth: 22,
-        cardHeight: 33,
-        cardOverlap: 9,
+        deckRowHalfWidth: deckRowHalfWidth,
+        cardWidth: baseCardWidth,
+        cardHeight: baseCardWidth * 1.5,
+        cardOverlap: baseCardWidth * 0.41,
         panelWidth: 0,
         panelHeight: 0,
         nameFontSize: 10,
@@ -388,14 +548,13 @@ class OpponentArcLayout {
     final deckY = deckCenterY ?? area.height * 0.50;
     const maxHandCards = 7;
     const margin = 8.0;
-    const minGap = 24.0;
-    const bottomReserve = 58.0;
+    const minGap = 20.0;
 
     var scale = 1.0;
     OpponentArcLayout? best;
 
     for (var attempt = 0; attempt < 32; attempt++) {
-      final cw = (22.0 * scale).clamp(8.0, 22.0);
+      final cw = (baseCardWidth * scale).clamp(14.0, baseCardWidth);
       final ch = cw * 1.5;
       final ov = cw * 0.41;
       final handW = cw + (maxHandCards - 1) * ov;
@@ -442,6 +601,7 @@ class OpponentArcLayout {
           .toList();
 
       final layout = OpponentArcLayout(
+        deckRowHalfWidth: deckRowHalfWidth,
         cardWidth: cw,
         cardHeight: ch,
         cardOverlap: ov,
@@ -670,7 +830,7 @@ class GameBoardView extends StatelessWidget {
               Text(
                 'レート ×$morrieRate'
                     '${minMorrieBalance > 0 ? ' · 最低 $minMorrieBalance モリー' : ''}'
-                    '${myMorrieBalance != null ? ' · 所持 $myMorrieBalance モリー' : ''}',
+                    '${!gameStarted && !isSpectator && myMorrieBalance != null ? ' · 所持 $myMorrieBalance モリー' : ''}',
                 style: const TextStyle(color: Colors.lightGreenAccent, fontSize: 12),
               ),
           ],
@@ -707,7 +867,39 @@ class GameBoardView extends StatelessWidget {
           required myHandKey,
           required opponentKeys,
         }) =>
-            Column(
+            LayoutBuilder(
+        builder: (context, columnConstraints) {
+          final opponentCount =
+              GameRules.opponentEntriesClockwiseFrom(myId, playerIds).length;
+          final showFlipButton = isInitialPhase && isHost;
+          final metrics = BoardLayoutMetrics.fromSize(
+            width: columnConstraints.maxWidth,
+            myHandCount: myHand.length,
+            opponentCount: opponentCount,
+            isSpectator: isSpectator,
+            showMoriControls: !isSpectator,
+          );
+          final showTurnBanner = isMyTurn || inDrawCompetition;
+          final handSectionH = metrics.handSectionHeight(
+            gameStarted: gameStarted,
+            showTurnBanner: showTurnBanner,
+          );
+          var reservedAbove = 0.0;
+          if (!isSpectator && spectatorNames.isNotEmpty) reservedAbove += 44;
+          if (!gameStarted) {
+            reservedAbove += (canAddBot && onAddBot != null) ? 88 : 52;
+          }
+          final messageBandsH = _messageBandsHeight(metrics, columnConstraints.maxWidth);
+          final reservedBelow = _reservedBelowPlayHeight(
+            metrics,
+            columnConstraints.maxWidth,
+            handSectionH: handSectionH,
+            messageBandsH: messageBandsH,
+          );
+          final playH = (columnConstraints.maxHeight - reservedAbove - reservedBelow)
+              .clamp(180.0, double.infinity);
+
+          return Column(
         children: [
           if (!isSpectator && spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
           if (!gameStarted)
@@ -740,27 +932,38 @@ class GameBoardView extends StatelessWidget {
                 ],
               ),
             ),
-          Expanded(
-            flex: 4,
+          SizedBox(
+            height: playH,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final deckCenterY = constraints.maxHeight * 0.46;
-                final playArea = Size(constraints.maxWidth, constraints.maxHeight);
+                final area = Size(constraints.maxWidth, playH);
+                final deckCenterY =
+                    metrics.deckCenterY(playH, showFlipButton: showFlipButton);
+                final bottomReserve = metrics.opponentBottomReserve(
+                  playH,
+                  showFlipButton: showFlipButton,
+                );
+
                 return Stack(
                   clipBehavior: Clip.hardEdge,
                   children: [
-                    Positioned.fill(
-                      child: _buildOthersStatus(
-                        opponentKeys,
-                        area: playArea,
-                        deckCenterY: deckCenterY,
+                    if (!isSpectator)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 4,
+                        child: _buildMoriControlRow(
+                          isButtonEnabled: isButtonEnabled,
+                          canOpenJoker: canOpenJoker,
+                        ),
                       ),
-                    ),
                     Positioned(
                       left: 0,
                       right: 0,
-                      top: (deckCenterY - 72).clamp(0.0, constraints.maxHeight - 130),
+                      bottom: isSpectator ? area.height * 0.34 : metrics.moriBandHeight,
                       child: _buildFieldArea(
+                        metrics: metrics,
+                        showFlipButton: showFlipButton,
                         isMyTurn: isMyTurn,
                         canDraw: canDraw,
                         inDrawCompetition: inDrawCompetition,
@@ -768,78 +971,82 @@ class GameBoardView extends StatelessWidget {
                         deckKey: deckKey,
                       ),
                     ),
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: _buildOthersStatus(
+                          opponentKeys,
+                          metrics: metrics,
+                          area: area,
+                          deckCenterY: deckCenterY,
+                          bottomReserve: bottomReserve,
+                        ),
+                      ),
+                    ),
                   ],
                 );
               },
             ),
           ),
-          const SizedBox(height: 10),
-          if (!isSpectator)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6, top: 2),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (canOpenJoker)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: OutlinedButton(
-                      onPressed: onOpenJoker,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.yellowAccent,
-                        side: const BorderSide(color: Colors.yellowAccent),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          if (messageBandsH > 0)
+            SizedBox(
+              height: messageBandsH,
+              child: SingleChildScrollView(
+                reverse: true,
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isSpectator)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '観戦モード（操作不可）',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
-                      child: const Text('オープンジョーカー'),
-                    ),
-                  ),
-                ElevatedButton(
-                  onPressed: isButtonEnabled ? onMori : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange,
-                    disabledBackgroundColor: Colors.grey[700],
-                    padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 12),
-                  ),
-                  child: Text(
-                    moriPhase == 'mori_declared' ? "もり返し！！" : "もり！",
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: isButtonEnabled ? Colors.white : Colors.white38,
-                    ),
-                  ),
+                    if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          moriRevealedType == 'gaeshi'
+                              ? '🔥 もり返し！ 残り $moriCountdownSeconds 秒 🔥'
+                              : '🔥 もり宣言！ 残り $moriCountdownSeconds 秒（もり返し受付中） 🔥',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    if (moriPhase != 'none' &&
+                        moriRevealedHand.isNotEmpty &&
+                        lastMoriPlayerId != null)
+                      _buildMoriRevealedHandSection(metrics, width: columnConstraints.maxWidth),
+                    if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
+                    if (autoPlayCountdownSeconds != null)
+                      _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          if (isSpectator)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Text(
-                '観戦モード（操作不可）',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
               ),
             ),
-          if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                moriRevealedType == 'gaeshi'
-                    ? '🔥 もり返し！ 残り $moriCountdownSeconds 秒 🔥'
-                    : '🔥 もり宣言！ 残り $moriCountdownSeconds 秒（もり返し受付中） 🔥',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold),
+          SizedBox(
+            height: handSectionH,
+            child: KeyedSubtree(
+              key: myHandKey,
+              child: _buildMyHandSection(
+                metrics,
+                isMyTurn,
+                inDrawCompetition: inDrawCompetition,
               ),
             ),
-          if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
-            _buildMoriRevealedHandSection(),
-          if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
-          if (autoPlayCountdownSeconds != null) _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
-          KeyedSubtree(
-            key: myHandKey,
-            child: _buildMyHandSection(isMyTurn, inDrawCompetition: inDrawCompetition),
           ),
         ],
+      );
+        },
       ),
           ),
           if (postGameVisible)
@@ -871,8 +1078,40 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
+  double _reservedBelowPlayHeight(
+    BoardLayoutMetrics metrics,
+    double width, {
+    required double handSectionH,
+    required double messageBandsH,
+  }) {
+    return handSectionH + messageBandsH + metrics.handToDeckGap;
+  }
+
+  double _messageBandsHeight(BoardLayoutMetrics metrics, double width) {
+    var h = 0.0;
+    if (isSpectator) h += 22;
+    if (moriPhase == 'mori_declared' && moriCountdownSeconds != null) {
+      h += BoardLayoutMetrics.moriCountdownBandHeight(width);
+    }
+    if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null) {
+      h += metrics.moriRevealBandHeight(width, moriRevealedHand.length);
+    }
+    if (statusMessage != null) {
+      h += _estimateStatusBannerHeight(statusMessage!);
+    }
+    if (autoPlayCountdownSeconds != null) h += 52;
+    return h;
+  }
+
+  double _estimateStatusBannerHeight(String message) {
+    final lines = (message.length / 26).ceil().clamp(1, 4);
+    return 6 + 20 + lines * 20.0;
+  }
+
   Widget _buildSpectatorPlayColumn() {
-    return Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
       children: [
         if (spectatorNames.isNotEmpty) _buildSpectatorNoticeBanner(),
         Expanded(
@@ -901,7 +1140,7 @@ class GameBoardView extends StatelessWidget {
             ),
           ),
         if (moriPhase != 'none' && moriRevealedHand.isNotEmpty && lastMoriPlayerId != null)
-          _buildMoriRevealedHandSection(),
+          _buildMoriRevealedHandSection(null, width: constraints.maxWidth),
         if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
         if (autoPlayCountdownSeconds != null) _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
         Padding(
@@ -912,6 +1151,8 @@ class GameBoardView extends StatelessWidget {
           ),
         ),
       ],
+    );
+      },
     );
   }
 
@@ -957,9 +1198,19 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
-  Widget _buildMoriRevealedHandSection() {
+  Widget _buildMoriRevealedHandSection(BoardLayoutMetrics? metrics, {required double width}) {
     final declarerLabel = _playerLabel(lastMoriPlayerId);
     final declarationLabel = moriRevealedType == 'gaeshi' ? 'もり返し' : 'もり';
+    final innerWidth = width - 48;
+    final layout = isSpectator
+        ? HandCardLayout.computeSpectator(innerWidth, moriRevealedHand.length)
+        : HandCardLayout.compute(
+            innerWidth,
+            moriRevealedHand.length,
+            maxWidth: metrics?.handLayout.width,
+            minWidth: metrics != null ? metrics.handLayout.width * 0.65 : null,
+          );
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -970,6 +1221,7 @@ class GameBoardView extends StatelessWidget {
         border: Border.all(color: Colors.purpleAccent, width: 2),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -977,28 +1229,15 @@ class GameBoardView extends StatelessWidget {
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
           ),
           const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final layout = isSpectator
-                  ? HandCardLayout.computeSpectator(
-                      constraints.maxWidth,
-                      moriRevealedHand.length,
-                    )
-                  : HandCardLayout.compute(
-                      constraints.maxWidth,
-                      moriRevealedHand.length,
-                    );
-              return SizedBox(
-                height: layout.height + 4,
-                width: double.infinity,
-                child: Center(
-                  child: _buildOverlappingHandRow(
-                    cards: moriRevealedHand,
-                    layout: layout,
-                  ),
-                ),
-              );
-            },
+          SizedBox(
+            height: layout.height,
+            width: double.infinity,
+            child: Center(
+              child: _buildOverlappingHandRow(
+                cards: moriRevealedHand,
+                layout: layout,
+              ),
+            ),
           ),
         ],
       ),
@@ -1016,15 +1255,61 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
+  Widget _buildMoriControlRow({
+    required bool isButtonEnabled,
+    required bool canOpenJoker,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (canOpenJoker)
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: OutlinedButton(
+              onPressed: onOpenJoker,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.yellowAccent,
+                side: const BorderSide(color: Colors.yellowAccent),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              child: const Text('オープンジョーカー'),
+            ),
+          ),
+        ElevatedButton(
+          onPressed: isButtonEnabled ? onMori : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: moriPhase == 'mori_declared' ? Colors.red : Colors.orange,
+            disabledBackgroundColor: Colors.grey[700],
+            padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 12),
+          ),
+          child: Text(
+            moriPhase == 'mori_declared' ? 'もり返し！！' : 'もり！',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: isButtonEnabled ? Colors.white : Colors.white38,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildFieldArea({
+    required BoardLayoutMetrics metrics,
+    required bool showFlipButton,
     required bool isMyTurn,
     required bool canDraw,
     required bool inDrawCompetition,
     required GlobalKey fieldKey,
     required GlobalKey deckKey,
   }) {
+    final cardW = metrics.playCardWidth;
+    final cardH = metrics.playCardHeight;
+    final gap = metrics.deckFieldGap;
+
     return Column(children: [
-      if (isInitialPhase && isHost)
+      if (showFlipButton)
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
           child: ElevatedButton(
@@ -1055,21 +1340,34 @@ class GameBoardView extends StatelessWidget {
           onTap: (canDraw && !isInitialPhase && moriPhase == 'none') ? onDraw : null,
           child: Container(
             key: deckKey,
-            width: 60, height: 90,
+            width: cardW,
+            height: cardH,
             decoration: BoxDecoration(
               color: canDraw ? Colors.blueGrey[800] : Colors.grey[900],
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(cardW * 0.13),
               border: Border.all(color: canDraw ? Colors.yellow : Colors.white24),
             ),
-            child: const Icon(Icons.help_outline, color: Colors.white24),
+            child: Icon(Icons.help_outline, color: Colors.white24, size: cardW * 0.45),
           ),
         ),
-        const SizedBox(width: 20),
+        SizedBox(width: gap),
         fieldNumber == -1
-            ? Container(width: 60, height: 90, decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(8)))
+            ? Container(
+                width: cardW,
+                height: cardH,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white24),
+                  borderRadius: BorderRadius.circular(cardW * 0.13),
+                ),
+              )
             : KeyedSubtree(
                 key: fieldKey,
-                child: CardWidget(suit: fieldSuit, number: fieldNumber),
+                child: CardWidget(
+                  suit: fieldSuit,
+                  number: fieldNumber,
+                  width: cardW,
+                  height: cardH,
+                ),
               ),
       ]),
     ]);
@@ -1077,8 +1375,10 @@ class GameBoardView extends StatelessWidget {
 
   Widget _buildOthersStatus(
     Map<String, GlobalKey> opponentKeys, {
+    required BoardLayoutMetrics metrics,
     required Size area,
     required double deckCenterY,
+    required double bottomReserve,
   }) {
     final others = GameRules.opponentEntriesClockwiseFrom(myId, playerIds);
     if (others.isEmpty) return const SizedBox.shrink();
@@ -1087,6 +1387,9 @@ class GameBoardView extends StatelessWidget {
       area,
       others.length,
       deckCenterY: deckCenterY,
+      bottomReserve: bottomReserve,
+      baseCardWidth: metrics.opponentCardWidth,
+      deckRowHalfWidth: metrics.deckRowHalfWidth,
     );
     final centers = layout.panelCenters();
 
@@ -1156,14 +1459,6 @@ class GameBoardView extends StatelessWidget {
                 color: (playerPoints[playerId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
                 fontSize: layout.pointsFontSize,
                 fontWeight: FontWeight.bold,
-              ),
-            ),
-          if (gameStarted && morrieRate > 0 && BotLogic.isBot(playerId))
-            Text(
-              '${MorrieRules.botFixedBalance}モリー',
-              style: TextStyle(
-                color: Colors.lightGreenAccent,
-                fontSize: layout.pointsFontSize - 1,
               ),
             ),
           const SizedBox(height: 2),
@@ -1265,7 +1560,7 @@ class GameBoardView extends StatelessWidget {
       width: layout.totalWidth(cards.length),
       height: layout.height,
       child: Stack(
-        clipBehavior: Clip.none,
+        clipBehavior: Clip.hardEdge,
         children: List.generate(cards.length, (i) {
           return Positioned(
             left: i * layout.step,
@@ -1282,56 +1577,72 @@ class GameBoardView extends StatelessWidget {
     );
   }
 
-  Widget _buildMyHandSection(bool isMyTurn, {required bool inDrawCompetition}) {
-    bool isBurstWarning = myHand.length >= 6;
+  Widget _buildMyHandSection(
+    BoardLayoutMetrics metrics,
+    bool isMyTurn, {
+    required bool inDrawCompetition,
+  }) {
+    final isBurstWarning = myHand.length >= 6;
+    final layout = metrics.handLayout;
+    final showTurnBanner = isMyTurn || inDrawCompetition;
+
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      clipBehavior: Clip.hardEdge,
       decoration: const BoxDecoration(color: Colors.black26),
-      child: Column(children: [
-        if (isMyTurn || inDrawCompetition)
-          Text(
-            '${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}',
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        if (gameStarted)
-          Padding(
-            padding: const EdgeInsets.only(top: 2, bottom: 5),
-            child: Text(
-              '累計 ${playerPoints[myId] ?? 0}点',
-              style: TextStyle(
-                color: (playerPoints[myId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showTurnBanner)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${isMyTurn ? '（あなたのターン）' : ''}${inDrawCompetition ? ' · ドロー競合中' : ''}',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
               ),
             ),
-          )
-        else
-          const SizedBox(height: 5),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final layout = HandCardLayout.compute(constraints.maxWidth, myHand.length);
-            return SizedBox(
-              height: layout.height + 8,
-              width: double.infinity,
-              child: Center(
+          if (gameStarted)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                '累計 ${playerPoints[myId] ?? 0}点',
+                style: TextStyle(
+                  color: (playerPoints[myId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else
+            const SizedBox(height: 6),
+          SizedBox(
+            height: layout.height,
+            width: double.infinity,
+            child: Center(
+              child: ClipRect(
                 child: _buildOverlappingHandRow(
                   cards: myHand,
                   layout: layout,
                   onTap: onCardTap,
                 ),
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '${myHand.length}枚',
-          style: TextStyle(
-            color: isBurstWarning ? Colors.red : Colors.white,
-            fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-      ]),
+          const SizedBox(height: 8),
+          Text(
+            '${myHand.length}枚',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isBurstWarning ? Colors.red : Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1405,206 +1716,230 @@ class PostGameOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final cardWidth = (size.width * 0.94).clamp(300.0, 520.0);
-    final maxCardHeight = size.height * 0.72;
+    final media = MediaQuery.of(context);
+    final size = media.size;
+    final cardWidth = (size.width * 0.94).clamp(280.0, 520.0);
+    final maxCardHeight = size.height * 0.88 - media.padding.vertical;
+    final maxTableHeight = (maxCardHeight * 0.42).clamp(120.0, 240.0);
     final titleSize = (size.width / 24).clamp(16.0, 20.0);
     final bodySize = (size.width / 28).clamp(12.0, 15.0);
     final headerSize = (size.width / 32).clamp(11.0, 13.0);
 
-    return Container(
+    return ColoredBox(
       color: Colors.black.withValues(alpha: 0.72),
-      child: Center(
-        child: Container(
-          width: cardWidth,
-          constraints: BoxConstraints(maxHeight: maxCardHeight),
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1B3A1B),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.orangeAccent, width: 2),
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                summary?.title ?? '試合結果',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: titleSize,
-                  fontWeight: FontWeight.bold,
-                ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: cardWidth,
+                maxHeight: maxCardHeight,
               ),
-              if (summary?.resultMessage != null) ...[
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.redAccent, width: 1.5),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: headerSize + 4),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'バースト: ${summary!.resultMessage!}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B3A1B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.orangeAccent, width: 2),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          summary?.title ?? '試合結果',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: bodySize,
-                            height: 1.25,
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                    ],
+                        if (summary?.resultMessage != null) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.redAccent, width: 1.5),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: Colors.redAccent,
+                                  size: headerSize + 4,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'バースト: ${summary!.resultMessage!}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: bodySize,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        _buildResultsTable(
+                          bodySize,
+                          headerSize,
+                          maxHeight: maxTableHeight,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _subtitle(),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white70, fontSize: headerSize),
+                        ),
+                        if (seriesAutoContinuing && countdownSeconds != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '残り $countdownSeconds 秒で次の対戦',
+                            style: TextStyle(
+                              color: Colors.amberAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: bodySize,
+                            ),
+                          ),
+                        ],
+                        if (isHost &&
+                            !awaitingGuestStayResponses &&
+                            !seriesAutoContinuing &&
+                            countdownSeconds != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '残り $countdownSeconds 秒（未選択でルーム閉鎖）',
+                            style: TextStyle(
+                              color: Colors.amberAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: bodySize,
+                            ),
+                          ),
+                        ],
+                        if (awaitingGuestStayResponses && guestCountdownSeconds != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '残り $guestCountdownSeconds 秒（未回答は自動退室）',
+                            style: TextStyle(
+                              color: Colors.amberAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: bodySize,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        if (seriesAutoContinuing)
+                          Text(
+                            'シリーズ対戦中は自動的に次の対戦へ進みます',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white54, fontSize: headerSize),
+                          )
+                        else if (isSpectator)
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: onLeaveToLobby,
+                              child: const Text('ロビーへ'),
+                            ),
+                          )
+                        else if (awaitingGuestStayResponses) ...[
+                          if (isHost)
+                            Text(
+                              '全員の回答が揃うとルームを公開します',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white54, fontSize: headerSize),
+                            )
+                          else if (mustRespondToStay) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: onGuestStayInRoom,
+                                child: const Text('ルームに残る'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: onLeaveToLobby,
+                                child: const Text('ロビーへ'),
+                              ),
+                            ),
+                          ] else if (!canPlayAgain && minMorrieBalance > 0) ...[
+                            Text(
+                              '最低入室モリー $minMorrieBalance 未満のため、もう一度遊ぶを選べません',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.redAccent, fontSize: bodySize),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: onLeaveToLobby,
+                                child: const Text('ロビーへ'),
+                              ),
+                            ),
+                          ] else
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: onLeaveToLobby,
+                                child: const Text('ロビーへ'),
+                              ),
+                            ),
+                        ] else if (isHost) ...[
+                          if (canPlayAgain)
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: onHostRematch,
+                                child: const Text('もう一度遊ぶ'),
+                              ),
+                            )
+                          else if (minMorrieBalance > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '最低入室モリー $minMorrieBalance 未満のため、もう一度遊ぶを選べません',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.redAccent, fontSize: bodySize),
+                              ),
+                            ),
+                          if (canPlayAgain) const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: onHostReturnToLobby,
+                              child: const Text('ロビーへ（ルームを閉鎖）'),
+                            ),
+                          ),
+                        ] else
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: onLeaveToLobby,
+                              child: const Text('ロビーへ'),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-              const SizedBox(height: 12),
-              _buildResultsTable(bodySize, headerSize),
-              const SizedBox(height: 10),
-              Text(
-                _subtitle(),
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: headerSize),
               ),
-              if (seriesAutoContinuing && countdownSeconds != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '残り $countdownSeconds 秒で次の対戦',
-                  style: TextStyle(
-                    color: Colors.amberAccent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: bodySize,
-                  ),
-                ),
-              ],
-              if (isHost && !awaitingGuestStayResponses && !seriesAutoContinuing && countdownSeconds != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '残り $countdownSeconds 秒（未選択でルーム閉鎖）',
-                  style: TextStyle(
-                    color: Colors.amberAccent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: bodySize,
-                  ),
-                ),
-              ],
-              if (awaitingGuestStayResponses && guestCountdownSeconds != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '残り $guestCountdownSeconds 秒（未回答は自動退室）',
-                  style: TextStyle(
-                    color: Colors.amberAccent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: bodySize,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              if (seriesAutoContinuing)
-                Text(
-                  'シリーズ対戦中は自動的に次の対戦へ進みます',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: headerSize),
-                )
-              else if (isSpectator)
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: onLeaveToLobby,
-                    child: const Text('ロビーへ'),
-                  ),
-                )
-              else if (awaitingGuestStayResponses) ...[
-                if (isHost)
-                  Text(
-                    '全員の回答が揃うとルームを公開します',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: headerSize),
-                  )
-                else if (mustRespondToStay) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: onGuestStayInRoom,
-                      child: const Text('ルームに残る'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: onLeaveToLobby,
-                      child: const Text('ロビーへ'),
-                    ),
-                  ),
-                ] else if (!canPlayAgain && minMorrieBalance > 0) ...[
-                  Text(
-                    '最低入室モリー $minMorrieBalance 未満のため、もう一度遊ぶを選べません',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.redAccent, fontSize: bodySize),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: onLeaveToLobby,
-                      child: const Text('ロビーへ'),
-                    ),
-                  ),
-                ] else
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: onLeaveToLobby,
-                      child: const Text('ロビーへ'),
-                    ),
-                  ),
-              ] else if (isHost) ...[
-                if (canPlayAgain)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: onHostRematch,
-                      child: const Text('もう一度遊ぶ'),
-                    ),
-                  )
-                else if (minMorrieBalance > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      '最低入室モリー $minMorrieBalance 未満のため、もう一度遊ぶを選べません',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.redAccent, fontSize: bodySize),
-                    ),
-                  ),
-                if (canPlayAgain) const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: onHostReturnToLobby,
-                    child: const Text('ロビーへ（ルームを閉鎖）'),
-                  ),
-                ),
-              ] else
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: onLeaveToLobby,
-                    child: const Text('ロビーへ'),
-                  ),
-                ),
-            ],
             ),
           ),
         ),
@@ -1612,7 +1947,11 @@ class PostGameOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildResultsTable(double bodySize, double headerSize) {
+  Widget _buildResultsTable(
+    double bodySize,
+    double headerSize, {
+    required double maxHeight,
+  }) {
     final players = summary?.players ?? [];
     final showRating = summary?.showRating ?? false;
     final showMorrie = summary?.showMorrie ?? false;
@@ -1655,8 +1994,8 @@ class PostGameOverlay extends StatelessWidget {
 
     final tableHeight = rowHeight * (players.length + 1) + 4;
 
-    return SizedBox(
-      height: tableHeight.clamp(rowHeight * 2, 260),
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white24),
@@ -1665,39 +2004,44 @@ class PostGameOverlay extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _resultTableRow(
-                  widths: widths,
-                  height: rowHeight,
-                  cells: headers,
-                  fontSize: headerSize,
-                  isHeader: true,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                height: tableHeight,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _resultTableRow(
+                      widths: widths,
+                      height: rowHeight,
+                      cells: headers,
+                      fontSize: headerSize,
+                      isHeader: true,
+                    ),
+                    for (final row in players)
+                      _resultTableRow(
+                        widths: widths,
+                        height: rowHeight,
+                        fontSize: bodySize,
+                        cells: [
+                          '${row.rank}',
+                          row.name,
+                          _formatDelta(row.matchDelta),
+                          '${row.totalPoints}',
+                          if (showMorrie)
+                            row.morrieDelta != null ? _formatDelta(row.morrieDelta) : '—',
+                          if (showMorrie)
+                            row.morrieBalance != null ? '${row.morrieBalance}' : '—',
+                          if (showRating)
+                            row.rating != null
+                                ? '${row.rating} (${_formatDelta(row.ratingDelta)})'
+                                : '—',
+                        ],
+                      ),
+                  ],
                 ),
-                for (final row in players)
-                  _resultTableRow(
-                    widths: widths,
-                    height: rowHeight,
-                    fontSize: bodySize,
-                    cells: [
-                      '${row.rank}',
-                      row.name,
-                      _formatDelta(row.matchDelta),
-                      '${row.totalPoints}',
-                      if (showMorrie)
-                        row.morrieDelta != null ? _formatDelta(row.morrieDelta) : '—',
-                      if (showMorrie)
-                        row.morrieBalance != null ? '${row.morrieBalance}' : '—',
-                      if (showRating)
-                        row.rating != null
-                            ? '${row.rating} (${_formatDelta(row.ratingDelta)})'
-                            : '—',
-                    ],
-                  ),
-              ],
+              ),
             ),
           ),
         ),

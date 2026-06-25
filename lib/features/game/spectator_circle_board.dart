@@ -141,11 +141,11 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
                 handMaxWidth: layout.handMaxWidth,
               ),
             Positioned(
-              left: layout.fieldCenter.dx - ReplayCircleLayout.fieldCardWidth / 2,
-              top: layout.fieldCenter.dy - ReplayCircleLayout.fieldCardHeight / 2,
+              left: layout.fieldCenter.dx - layout.layoutFieldCardWidth / 2,
+              top: layout.fieldCenter.dy - layout.layoutFieldCardHeight / 2,
               child: KeyedSubtree(
                 key: _fieldKey,
-                child: _buildFieldCard(),
+                child: _buildFieldCard(layout),
               ),
             ),
             if (_arrowFrom != null && _arrowTo != null)
@@ -299,15 +299,15 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     );
   }
 
-  Widget _buildFieldCard() {
+  Widget _buildFieldCard(ReplayCircleLayout layout) {
     if (widget.fieldNumber < 0) {
       return Container(
-        width: ReplayCircleLayout.fieldCardWidth,
-        height: ReplayCircleLayout.fieldCardHeight,
+        width: layout.layoutFieldCardWidth,
+        height: layout.layoutFieldCardHeight,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white24),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(layout.layoutFieldCardWidth * 0.13),
         ),
         child: const Text('—', style: TextStyle(color: Colors.white38)),
       );
@@ -316,8 +316,8 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
     return CardWidget(
       number: widget.fieldNumber,
       suit: widget.fieldSuit,
-      width: ReplayCircleLayout.fieldCardWidth,
-      height: ReplayCircleLayout.fieldCardHeight,
+      width: layout.layoutFieldCardWidth,
+      height: layout.layoutFieldCardHeight,
     );
   }
 }

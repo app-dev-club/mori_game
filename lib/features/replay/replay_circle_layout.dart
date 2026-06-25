@@ -12,20 +12,35 @@ class ReplayCircleLayout {
   final List<Offset> playerCenters;
   final Offset fieldCenter;
   final double handMaxWidth;
+  final double layoutFieldCardWidth;
+  final double layoutFieldCardHeight;
 
   const ReplayCircleLayout({
     required this.playerCenters,
     required this.fieldCenter,
     required this.handMaxWidth,
-  });
+    double? layoutFieldCardWidth,
+    double? layoutFieldCardHeight,
+  })  : layoutFieldCardWidth = layoutFieldCardWidth ?? fieldCardWidth,
+        layoutFieldCardHeight = layoutFieldCardHeight ?? fieldCardHeight;
+
+  static double _responsiveFieldCardWidth(Size area) {
+    final isWide = area.width >= 720;
+    return isWide
+        ? (area.width * 0.075).clamp(68.0, 96.0)
+        : (area.width * 0.17).clamp(56.0, 84.0);
+  }
 
   factory ReplayCircleLayout.compute(Size area, int playerCount) {
     final fieldCenter = Offset(area.width / 2, area.height / 2);
+    final fieldW = _responsiveFieldCardWidth(area);
     if (playerCount <= 0) {
       return ReplayCircleLayout(
         playerCenters: const [],
         fieldCenter: fieldCenter,
         handMaxWidth: area.width * 0.4,
+        layoutFieldCardWidth: fieldW,
+        layoutFieldCardHeight: fieldW * 1.5,
       );
     }
 
@@ -49,17 +64,22 @@ class ReplayCircleLayout {
       playerCenters: centers,
       fieldCenter: fieldCenter,
       handMaxWidth: handMaxWidth,
+      layoutFieldCardWidth: fieldW,
+      layoutFieldCardHeight: fieldW * 1.5,
     );
   }
 
   /// 観戦用: プレイヤー間を広げ、手札エリアを少し大きく取る
   factory ReplayCircleLayout.computeForSpectator(Size area, int playerCount) {
     final fieldCenter = Offset(area.width / 2, area.height / 2);
+    final fieldW = _responsiveFieldCardWidth(area);
     if (playerCount <= 0) {
       return ReplayCircleLayout(
         playerCenters: const [],
         fieldCenter: fieldCenter,
         handMaxWidth: area.width * 0.5,
+        layoutFieldCardWidth: fieldW,
+        layoutFieldCardHeight: fieldW * 1.5,
       );
     }
 
@@ -83,6 +103,8 @@ class ReplayCircleLayout {
       playerCenters: centers,
       fieldCenter: fieldCenter,
       handMaxWidth: handMaxWidth,
+      layoutFieldCardWidth: fieldW,
+      layoutFieldCardHeight: fieldW * 1.5,
     );
   }
 

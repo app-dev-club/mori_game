@@ -312,11 +312,11 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
                 handMaxWidth: layout.handMaxWidth,
               ),
             Positioned(
-              left: layout.fieldCenter.dx - ReplayCircleLayout.fieldCardWidth / 2,
-              top: layout.fieldCenter.dy - ReplayCircleLayout.fieldCardHeight / 2,
+              left: layout.fieldCenter.dx - layout.layoutFieldCardWidth / 2,
+              top: layout.fieldCenter.dy - layout.layoutFieldCardHeight / 2,
               child: KeyedSubtree(
                 key: _fieldKey,
-                child: _buildFieldCard(frame),
+                child: _buildFieldCard(frame, layout),
               ),
             ),
             if (_arrowFrom != null && _arrowTo != null)
@@ -448,15 +448,15 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     );
   }
 
-  Widget _buildFieldCard(ReplayFrame frame) {
+  Widget _buildFieldCard(ReplayFrame frame, ReplayCircleLayout layout) {
     if (frame.fieldNumber < 0 || (frame.fieldSuit == Suit.joker && frame.fieldHistory.isEmpty)) {
       return Container(
-        width: ReplayCircleLayout.fieldCardWidth,
-        height: ReplayCircleLayout.fieldCardHeight,
+        width: layout.layoutFieldCardWidth,
+        height: layout.layoutFieldCardHeight,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white24),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(layout.layoutFieldCardWidth * 0.13),
         ),
         child: const Text('—', style: TextStyle(color: Colors.white38)),
       );
@@ -468,8 +468,8 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
         CardWidget(
           number: frame.fieldNumber,
           suit: frame.fieldSuit,
-          width: ReplayCircleLayout.fieldCardWidth,
-          height: ReplayCircleLayout.fieldCardHeight,
+          width: layout.layoutFieldCardWidth,
+          height: layout.layoutFieldCardHeight,
         ),
         if (frame.fieldHistory.length > 1)
           Padding(
