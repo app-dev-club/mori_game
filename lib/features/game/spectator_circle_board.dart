@@ -237,15 +237,19 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
             ),
           const SizedBox(height: 6),
           if (hasOpenJoker)
-            OpenJokerIndicator(
-              handCount: hand.length,
-              cardWidth: 20,
-              cardHeight: 30,
-              overlap: 7,
-              fontSize: 9,
-            )
-          else
-            _buildFaceUpHand(hand: hand, maxWidth: handMaxWidth),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'オープンジョーカー',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.yellowAccent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          _buildFaceUpHand(hand: hand, maxWidth: handMaxWidth),
           Text(
             '${hand.length}枚',
             style: TextStyle(
