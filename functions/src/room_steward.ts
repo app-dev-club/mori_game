@@ -218,7 +218,6 @@ async function startNextSeriesMatch(
     return { ok: false, action: "empty_deck" };
   }
 
-  const firstCard = deckCards.pop()!;
   const remainingDeck = deckCards.map(serializeCard);
 
   await roomRef.update({
@@ -227,12 +226,12 @@ async function startNextSeriesMatch(
     playerHands,
     deck: remainingDeck,
     deckIndex: remainingDeck,
-    field: serializeCard(firstCard),
-    fieldHistory: [serializeCard(firstCard)],
+    field: { number: -1, suit: "joker" },
+    fieldHistory: [],
     isInitialPhase: true,
     currentTurnIndex: 0,
-    gameStarted: true,
-    roomStatus: "closed",
+    gameStarted: false,
+    roomStatus: "open",
     postGameActive: false,
     postGameEndedAt: null,
     seriesRestarting: false,
@@ -241,7 +240,7 @@ async function startNextSeriesMatch(
     ...seriesMatchResetFields(),
   });
 
-  return { ok: true, action: "series_started" };
+  return { ok: true, action: "series_prepared" };
 }
 
 async function advanceSeriesAfterMatch(

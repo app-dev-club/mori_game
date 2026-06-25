@@ -1695,7 +1695,7 @@ class PostGameOverlay extends StatelessWidget {
 
   String _subtitle() {
     if (isSpectator) return '観戦を終了する場合はロビーへ戻ってください';
-    if (seriesAutoContinuing) return 'まもなく次の対戦を開始します';
+    if (seriesAutoContinuing) return 'カウントダウン後、ホストが山札をめくると次の対戦が始まります';
     if (awaitingGuestStayResponses) {
       if (isHost) return '参加者の回答: $guestStayReadyCount / $guestStayTotalCount 人';
       if (mustRespondToStay) return 'ルームに残りますか？';
@@ -1844,7 +1844,7 @@ class PostGameOverlay extends StatelessWidget {
                         const SizedBox(height: 14),
                         if (seriesAutoContinuing)
                           Text(
-                            'シリーズ対戦中は自動的に次の対戦へ進みます',
+                            'カウントダウン後、ホストが山札をめくると次の対戦が始まります',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: Colors.white54, fontSize: headerSize),
                           )

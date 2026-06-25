@@ -129,6 +129,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool _seriesRestartInProgress = false;
   Timer? _seriesContinueTimer;
   Timer? _seriesUiCountdownTimer;
+  int? _seriesNextMatchAtMs;
 
   String? lastDrawerId;
   bool isDrawCompetitive = false;
@@ -607,6 +608,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         deckResetAt != null && deckResetAt != _lastDeckResetAt;
     setState(() {
       hostId = data['host'];
+      _seriesNextMatchAtMs = seriesNextMatchAt;
       playerIds = List<String>.from(data['players'] ?? []);
       maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
       totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
@@ -877,6 +879,31 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _botHasPlayedThisTurn.clear();
         _cancelPostGameTimers();
         _cancelGuestStayTimers();
+      }
+
+      final fieldNum = (data['field'] is Map)
+          ? ((data['field'] as Map)['number'] as num?)?.round() ?? fieldNumber
+          : fieldNumber;
+      final seriesAwaitingHostFlip = gameStarted == false &&
+          !dataPostGameActive &&
+          seriesNextMatchAt == null &&
+          completedMatches > 0 &&
+          fieldNum == -1 &&
+          moriPhase == 'none' &&
+          burstPlayerId == null &&
+          !dataSeriesRestarting &&
+          totalMatches > 1 &&
+          completedMatches < totalMatches;
+      if (seriesAwaitingHostFlip) {
+        _postGameEntered = false;
+        _postGameSummary = null;
+        _cancelPostGameTimers();
+        _seriesUiCountdownTimer?.cancel();
+        _seriesUiCountdownTimer = null;
+        _countdownSeconds = null;
+        _seriesAutoContinueScheduled = false;
+        _seriesContinueTimer?.cancel();
+        _seriesContinueTimer = null;
       }
     });
 
@@ -2401,6 +2428,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _onFlip() {
     if (!isHost) return;
+    if (_showPostGameOverlay && _hasRemainingSeriesMatches) {
+      _showGameMessage('カウントダウンが終わるまでお待ちください');
+      return;
+    }
+    if (_seriesNextMatchAtMs != null &&
+        DateTime.now().millisecondsSinceEpoch < _seriesNextMatchAtMs!) {
+      _showGameMessage('カウントダウンが終わるまでお待ちください');
+      return;
+    }
     if (!RoomConfig.hasMinPlayers(playerIds.length)) {
       _showGameMessage('ゲーム開始には${RoomConfig.minPlayers}人以上必要です');
       return;
@@ -2416,8 +2452,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     fieldSuit = card.suit;
     fieldHistory = updatedHistory;
     final isNewGame = !gameStarted;
-    final playOrder =
-        isNewGame ? GameRules.shuffledPlayerOrder(playerIds) : playerIds;
+    final isFirstMatchStart = isNewGame && completedMatches == 0;
+    final playOrder = isFirstMatchStart
+        ? GameRules.shuffledPlayerOrder(playerIds)
+        : playerIds;
     _db.updateGameStatus({
       'field': {'number': card.number, 'suit': card.suit.name},
       'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
@@ -2427,7 +2465,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'lastPlayerId': 'system',
       'roomStatus': 'closed',
       'gameStarted': true,
-      if (isNewGame) ...{
+      if (isFirstMatchStart) ...{
         'players': playOrder,
         'currentTurnIndex': 0,
       },
@@ -2463,13 +2501,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _postGameSummary = null;
       _postGameEntered = false;
       _seriesAutoContinueScheduled = false;
-      if (isNewGame) {
+      if (isFirstMatchStart) {
         playerIds = playOrder;
         currentTurn = 0;
-        if (totalMatches > 1 && completedMatches == 0) {
+        if (totalMatches > 1) {
           seriesPlayerIds = List<String>.from(playOrder);
         }
         _showGameMessage('${_displayName(playOrder.first)} から開始（手番順をシャッフル）');
+      } else if (isNewGame) {
+        _showGameMessage('第$_currentMatchNumber戦を開始（${_displayName(playerIds.first)} から）');
       }
     });
     unawaited(_onFlipRecorded(card, deck.sublist(0, deck.length - 1)));
@@ -3051,20 +3091,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
 
-      final firstCard = deckCards.removeLast();
       final remainingDeck =
           deckCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
-      final fieldHistoryData = [
-        {'number': firstCard.number, 'suit': firstCard.suit.name},
-      ];
 
       await _db.startSeriesNextMatch(
         players: roster,
         playerCards: playerCards,
         playerHands: playerHandCounts,
         deck: remainingDeck,
-        field: {'number': firstCard.number, 'suit': firstCard.suit.name},
-        fieldHistory: fieldHistoryData,
       );
 
       if (!mounted) return;
@@ -3078,12 +3112,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         rematchReadyMap = {};
         myStayResponseSubmitted = false;
         postGameActive = false;
-        gameStarted = true;
-        roomStatus = 'closed';
+        gameStarted = false;
+        roomStatus = 'open';
         isInitialPhase = true;
-        fieldNumber = firstCard.number;
-        fieldSuit = firstCard.suit;
-        fieldHistory = [firstCard];
+        fieldNumber = -1;
+        fieldSuit = Suit.joker;
+        fieldHistory = [];
+        lastPlayerId = null;
         deck = List<CardWidget>.from(deckCards);
         myHand = (playerCards[myId] ?? [])
             .map((i) => CardWidget(
@@ -3092,25 +3127,23 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
                 ))
             .toList();
         _hasPlayedThisTurn = false;
+        _seriesNextMatchAtMs = null;
+        _countdownSeconds = null;
       });
+      _seriesUiCountdownTimer?.cancel();
+      _seriesUiCountdownTimer = null;
       if (_hasStewardAuthority || _hasBotRunnerAuthority) {
         for (final pid in roster.where(_isAutomatedPlayer)) {
           _allPlayerCards[pid] = _parseHandFromFirebase(playerCards[pid]);
           _botHasPlayedThisTurn[pid] = false;
         }
-        unawaited(_startMatchRecording(
-          deckOverride: List<CardWidget>.from(deckCards),
-          fieldCard: firstCard,
-        ));
       }
       if (_hasBotRunnerAuthority) {
-        _syncAllBotTimers();
+        _cancelAllBotTimers();
       } else if (isSpectator) {
         unawaited(_syncSpectatorBotLease());
       }
-      _showGameMessage(
-        '第$_currentMatchNumber戦を開始（${_displayName(roster.first)} から）',
-      );
+      _showGameMessage('第$_currentMatchNumber戦の準備ができました。ホストが山札をめくると開始します');
     } catch (_) {
       if (mounted) {
         await _db.updateGameStatus({

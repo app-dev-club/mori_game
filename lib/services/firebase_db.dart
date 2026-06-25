@@ -301,14 +301,13 @@ class FirebaseDB {
     await _roomRef.update(updates);
   }
 
-  /// シリーズ対戦の次の1戦を、ロビー経由せず1回の更新で開始する
+  /// シリーズ対戦の次の1戦を、ロビー経由せず1回の更新で開始する。
+  /// 手札の配布まで行い、山札のめくりはホストが行う。
   Future<void> startSeriesNextMatch({
     required List<String> players,
     required Map<String, List<Map<String, dynamic>>> playerCards,
     required Map<String, int> playerHands,
     required List<Map<String, dynamic>> deck,
-    required Map<String, dynamic> field,
-    required List<Map<String, dynamic>> fieldHistory,
   }) async {
     await _roomRef.update({
       'players': players,
@@ -316,12 +315,12 @@ class FirebaseDB {
       'playerHands': playerHands,
       'deck': deck,
       'deckIndex': deck,
-      'field': field,
-      'fieldHistory': fieldHistory,
+      'field': {'number': -1, 'suit': 'joker'},
+      'fieldHistory': [],
       'isInitialPhase': true,
       'currentTurnIndex': 0,
-      'gameStarted': true,
-      'roomStatus': 'closed',
+      'gameStarted': false,
+      'roomStatus': 'open',
       'postGameActive': false,
       'postGameEndedAt': null,
       'rematchHostRequested': false,
@@ -354,7 +353,7 @@ class FirebaseDB {
       'settlementCompletedAt': null,
       'postGameSeriesAdvanced': null,
       'lastDrawerId': null,
-      'lastPlayerId': 'system',
+      'lastPlayerId': null,
       'isDrawCompetitive': false,
       'deckResetAt': null,
       'seriesRestarting': false,
