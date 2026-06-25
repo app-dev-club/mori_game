@@ -297,12 +297,16 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final area = Size(constraints.maxWidth, constraints.maxHeight);
-        final layout = ReplayCircleLayout.compute(area, playerIds.length);
+        final layout = ReplayCircleLayout.computeForReplay(
+          area: area,
+          playerIds: playerIds,
+          hands: frame.hands,
+        );
         _scheduleArrowMeasure();
 
         return Stack(
           key: _boardStackKey,
-          clipBehavior: Clip.none,
+          clipBehavior: Clip.hardEdge,
           children: [
             for (var i = 0; i < playerIds.length; i++)
               _buildPositionedPlayerPanel(
@@ -310,6 +314,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
                 frame: frame,
                 center: layout.playerCenters[i],
                 handMaxWidth: layout.handMaxWidth,
+                compact: layout.handMaxWidth < 108,
               ),
             Positioned(
               left: layout.fieldCenter.dx - layout.layoutFieldCardWidth / 2,
@@ -342,9 +347,14 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     required ReplayFrame frame,
     required Offset center,
     required double handMaxWidth,
+    bool compact = false,
   }) {
     final hand = frame.hands[playerId] ?? const <CardWidget>[];
-    final panelSize = ReplayCircleLayout.panelSize(hand, handMaxWidth);
+    final panelSize = ReplayCircleLayout.replayPanelSize(
+      hand,
+      handMaxWidth,
+      compact: compact,
+    );
 
     return Positioned(
       left: center.dx - panelSize.width / 2,
@@ -356,6 +366,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
           playerId: playerId,
           frame: frame,
           handMaxWidth: handMaxWidth,
+          compact: compact,
         ),
       ),
     );
@@ -364,6 +375,7 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
   Widget _buildFaceUpHand({
     required List<CardWidget> hand,
     required double maxWidth,
+    bool compact = false,
   }) {
     if (hand.isEmpty) {
       return const SizedBox(
@@ -374,17 +386,23 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
       );
     }
 
-    final cardLayout = HandCardLayout.compute(
-      maxWidth,
-      hand.length.clamp(1, 7),
-    );
+    final cardLayout = compact || maxWidth < 108
+        ? HandCardLayout.computeSpectator(
+            maxWidth,
+            hand.length.clamp(1, 7),
+            gap: 4,
+          )
+        : HandCardLayout.compute(
+            maxWidth,
+            hand.length.clamp(1, 7),
+          );
     final rowWidth = cardLayout.totalWidth(hand.length);
 
     return SizedBox(
       width: rowWidth,
       height: cardLayout.height,
       child: Stack(
-        clipBehavior: Clip.none,
+        clipBehavior: Clip.hardEdge,
         alignment: Alignment.bottomCenter,
         children: [
           for (var i = 0; i < hand.length; i++)
@@ -407,14 +425,17 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
     required String playerId,
     required ReplayFrame frame,
     required double handMaxWidth,
+    bool compact = false,
   }) {
     final hand = frame.hands[playerId] ?? const <CardWidget>[];
     final meta = _record!.meta;
     final isActive = frame.turnPlayerId(meta.playerIds) == playerId;
     final isLastActor = frame.lastPlayerId == playerId;
+    final nameSize = compact ? 10.0 : 12.0;
+    final metaSize = compact ? 10.0 : 11.0;
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: EdgeInsets.all(compact ? 6 : 8),
       decoration: BoxDecoration(
         color: isActive ? Colors.orange.withValues(alpha: 0.25) : Colors.black26,
         borderRadius: BorderRadius.circular(10),
@@ -430,18 +451,24 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
             _playerLabel(playerId),
             style: TextStyle(
               color: isActive ? Colors.orangeAccent : Colors.white,
-              fontSize: 12,
+              fontSize: nameSize,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 6),
-          Center(child: _buildFaceUpHand(hand: hand, maxWidth: handMaxWidth)),
+          SizedBox(height: compact ? 4 : 6),
+          Center(
+            child: _buildFaceUpHand(
+              hand: hand,
+              maxWidth: handMaxWidth,
+              compact: compact,
+            ),
+          ),
           Text(
             '${hand.length}枚',
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
+            style: TextStyle(color: Colors.white54, fontSize: metaSize),
           ),
         ],
       ),

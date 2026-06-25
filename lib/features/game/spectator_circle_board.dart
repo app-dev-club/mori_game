@@ -145,7 +145,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
                 playerId: widget.playerIds[i],
                 center: layout.playerCenters[i],
                 handMaxWidth: layout.handMaxWidth,
-                compact: layout.handMaxWidth < 100,
+                compact: layout.handMaxWidth < 108,
               ),
             Positioned(
               left: layout.fieldCenter.dx - layout.layoutFieldCardWidth / 2,
@@ -186,6 +186,7 @@ class _SpectatorCircleBoardState extends State<SpectatorCircleBoard> {
       handMaxWidth,
       gameStarted: widget.gameStarted,
       hasOpenJoker: hasOpenJoker,
+      compact: compact,
     );
 
     return Positioned(

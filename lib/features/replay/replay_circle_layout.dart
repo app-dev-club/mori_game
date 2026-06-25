@@ -77,12 +77,35 @@ class ReplayCircleLayout {
     Set<String> openJokerPlayerIds = const {},
     bool gameStarted = true,
   }) {
-    return _computeSpectatorFitted(
+    return _computeCircleFitted(
       area: area,
       playerIds: playerIds,
       hands: hands,
-      openJokerPlayerIds: openJokerPlayerIds,
-      gameStarted: gameStarted,
+      panelSizeFor: (id, hand, handMaxWidth) => spectatorPanelSize(
+        hand: hand,
+        handMaxWidth: handMaxWidth,
+        gameStarted: gameStarted,
+        hasOpenJoker: openJokerPlayerIds.contains(id),
+        compact: _isCompactHandMax(handMaxWidth),
+      ),
+    );
+  }
+
+  /// リプレイ用: 円形配置で手札・パネルが画面内に収まるようスケールを調整
+  factory ReplayCircleLayout.computeForReplay({
+    required Size area,
+    required List<String> playerIds,
+    required Map<String, List<CardWidget>> hands,
+  }) {
+    return _computeCircleFitted(
+      area: area,
+      playerIds: playerIds,
+      hands: hands,
+      panelSizeFor: (id, hand, handMaxWidth) => replayPanelSize(
+        hand,
+        handMaxWidth,
+        compact: _isCompactHandMax(handMaxWidth),
+      ),
     );
   }
 
@@ -91,18 +114,19 @@ class ReplayCircleLayout {
     required double handMaxWidth,
     required bool gameStarted,
     required bool hasOpenJoker,
+    bool compact = false,
   }) {
-    const horizontalPadding = 12.0;
-    const verticalPadding = 12.0;
+    final horizontalPadding = compact ? 8.0 : 12.0;
+    final verticalPadding = compact ? 8.0 : 12.0;
     const handTopGap = 6.0;
-    const footerHeight = 14.0;
-    var headerHeight = 30.0;
-    if (gameStarted) headerHeight += 16;
-    if (hasOpenJoker) headerHeight += 18;
+    final footerHeight = compact ? 12.0 : 14.0;
+    var headerHeight = compact ? 26.0 : 30.0;
+    if (gameStarted) headerHeight += compact ? 14.0 : 16.0;
+    if (hasOpenJoker) headerHeight += compact ? 16.0 : 18.0;
 
     if (hand.isEmpty) {
       return Size(
-        96,
+        compact ? 84 : 96,
         headerHeight + 20 + footerHeight + verticalPadding,
       );
     }
@@ -113,20 +137,51 @@ class ReplayCircleLayout {
       gap: 4,
     );
     return Size(
-      math.max(layout.totalWidth(hand.length) + horizontalPadding, 72),
+      math.max(layout.totalWidth(hand.length) + horizontalPadding, compact ? 64 : 72),
       headerHeight + handTopGap + layout.height + footerHeight + verticalPadding,
     );
   }
 
-  static ReplayCircleLayout _computeSpectatorFitted({
+  static Size replayPanelSize(
+    List<CardWidget> hand,
+    double handMaxWidth, {
+    bool compact = false,
+  }) {
+    final horizontalPadding = compact ? 12.0 : 16.0;
+    final verticalPadding = compact ? 12.0 : 16.0;
+    const handTopGap = 6.0;
+    final headerHeight = compact ? 28.0 : 34.0;
+    final footerHeight = compact ? 14.0 : 16.0;
+
+    if (hand.isEmpty) {
+      return Size(
+        compact ? 100 : 120,
+        headerHeight + 24 + footerHeight + verticalPadding,
+      );
+    }
+
+    final layout = HandCardLayout.computeSpectator(
+      handMaxWidth,
+      hand.length.clamp(1, 7),
+      gap: 4,
+    );
+    return Size(
+      math.max(layout.totalWidth(hand.length) + horizontalPadding, compact ? 64 : 72),
+      headerHeight + handTopGap + layout.height + footerHeight + verticalPadding,
+    );
+  }
+
+  static bool _isCompactHandMax(double handMaxWidth) => handMaxWidth < 108;
+
+  static ReplayCircleLayout _computeCircleFitted({
     required Size area,
     required List<String> playerIds,
     required Map<String, List<CardWidget>> hands,
-    required Set<String> openJokerPlayerIds,
-    required bool gameStarted,
+    required Size Function(String playerId, List<CardWidget> hand, double handMaxWidth)
+        panelSizeFor,
   }) {
-    const margin = 4.0;
-    const minPanelGap = 6.0;
+    final margin = area.width < 400 ? 6.0 : 4.0;
+    final minPanelGap = area.width < 400 ? 8.0 : 6.0;
     final fieldCenter = Offset(area.width / 2, area.height / 2);
     final n = playerIds.length;
 
@@ -141,44 +196,113 @@ class ReplayCircleLayout {
       );
     }
 
-    ReplayCircleLayout? best;
-    var scale = 1.0;
+    const startAngle = math.pi / 2;
+    final shortSide = math.min(area.width, area.height);
+    final maxRadius = shortSide * 0.48;
+    final minRadius = shortSide * 0.11;
 
-    for (var attempt = 0; attempt < 40; attempt++) {
-      final fieldW = (_responsiveFieldCardWidth(area) * scale).clamp(28.0, 96.0);
-      final fieldH = fieldW * 1.5;
-      final shortSide = math.min(area.width, area.height);
-      final radius = (shortSide * 0.40 * scale).clamp(shortSide * 0.14, shortSide * 0.44);
+    List<Offset> centersFor(double radius) {
+      return List.generate(n, (i) {
+        final theta = startAngle - i * (2 * math.pi / n);
+        return Offset(
+          fieldCenter.dx + radius * math.cos(theta),
+          fieldCenter.dy - radius * math.sin(theta),
+        );
+      });
+    }
 
-      final chord = n <= 1
-          ? area.width * 0.68
-          : 2 * radius * math.sin(math.pi / n);
+    double chordAt(double radius) {
+      return n <= 1 ? area.width * 0.62 : 2 * radius * math.sin(math.pi / n);
+    }
 
-      var tryHandMax = (chord * 0.92).clamp(24.0, area.width * 0.48);
+    for (var radiusStep = 0; radiusStep < 34; radiusStep++) {
+      final radius = maxRadius - (maxRadius - minRadius) * (radiusStep / 33);
+      final centers = centersFor(radius);
+      final chord = chordAt(radius);
 
-      const startAngle = math.pi / 2;
-      ReplayCircleLayout? attemptBest;
+      for (var fieldStep = 0; fieldStep < 14; fieldStep++) {
+        final fieldScale = 1.0 - fieldStep * 0.055;
+        final fieldW = (_responsiveFieldCardWidth(area) * fieldScale).clamp(22.0, 96.0);
+        final fieldH = fieldW * 1.5;
 
-      for (var shrink = 0; shrink < 18; shrink++) {
-        final centers = List.generate(n, (i) {
-          final theta = startAngle - i * (2 * math.pi / n);
-          return Offset(
-            fieldCenter.dx + radius * math.cos(theta),
-            fieldCenter.dy - radius * math.sin(theta),
+        var tryHandMax = (chord - minPanelGap - 16).clamp(16.0, area.width * 0.44);
+
+        for (var shrink = 0; shrink < 24; shrink++) {
+          final panelSizes = <Size>[];
+          for (final id in playerIds) {
+            final hand = hands[id] ?? const <CardWidget>[];
+            panelSizes.add(panelSizeFor(id, hand, tryHandMax));
+          }
+
+          final candidate = ReplayCircleLayout(
+            playerCenters: centers,
+            fieldCenter: fieldCenter,
+            handMaxWidth: tryHandMax,
+            layoutFieldCardWidth: fieldW,
+            layoutFieldCardHeight: fieldH,
           );
-        });
 
+          if (_circlePanelsFit(
+            area: area,
+            centers: centers,
+            panelSizes: panelSizes,
+            fieldCenter: fieldCenter,
+            fieldSize: Size(fieldW, fieldH),
+            margin: margin,
+            minPanelGap: minPanelGap,
+          )) {
+            return candidate;
+          }
+
+          tryHandMax *= 0.87;
+          if (tryHandMax < 14) break;
+        }
+      }
+    }
+
+    return _minimalFittedLayout(
+      area: area,
+      playerIds: playerIds,
+      hands: hands,
+      panelSizeFor: panelSizeFor,
+      fieldCenter: fieldCenter,
+      margin: margin,
+      minPanelGap: minPanelGap,
+    );
+  }
+
+  static ReplayCircleLayout _minimalFittedLayout({
+    required Size area,
+    required List<String> playerIds,
+    required Map<String, List<CardWidget>> hands,
+    required Size Function(String playerId, List<CardWidget> hand, double handMaxWidth)
+        panelSizeFor,
+    required Offset fieldCenter,
+    required double margin,
+    required double minPanelGap,
+  }) {
+    const startAngle = math.pi / 2;
+    final n = playerIds.length;
+    final shortSide = math.min(area.width, area.height);
+    final fieldW = 22.0;
+    final fieldH = fieldW * 1.5;
+    var tryHandMax = 14.0;
+
+    for (var radiusStep = 0; radiusStep < 40; radiusStep++) {
+      final radius = shortSide * 0.48 - (shortSide * 0.37) * (radiusStep / 39);
+      final centers = List.generate(n, (i) {
+        final theta = startAngle - i * (2 * math.pi / n);
+        return Offset(
+          fieldCenter.dx + radius * math.cos(theta),
+          fieldCenter.dy - radius * math.sin(theta),
+        );
+      });
+
+      for (var shrink = 0; shrink < 8; shrink++) {
         final panelSizes = <Size>[];
         for (final id in playerIds) {
           final hand = hands[id] ?? const <CardWidget>[];
-          panelSizes.add(
-            spectatorPanelSize(
-              hand: hand,
-              handMaxWidth: tryHandMax,
-              gameStarted: gameStarted,
-              hasOpenJoker: openJokerPlayerIds.contains(id),
-            ),
-          );
+          panelSizes.add(panelSizeFor(id, hand, tryHandMax));
         }
 
         final candidate = ReplayCircleLayout(
@@ -189,7 +313,7 @@ class ReplayCircleLayout {
           layoutFieldCardHeight: fieldH,
         );
 
-        if (_spectatorPanelsFit(
+        if (_circlePanelsFit(
           area: area,
           centers: centers,
           panelSizes: panelSizes,
@@ -201,20 +325,27 @@ class ReplayCircleLayout {
           return candidate;
         }
 
-        attemptBest = candidate;
-        tryHandMax *= 0.9;
+        tryHandMax = math.max(12.0, tryHandMax - 0.5);
       }
-
-      if (attemptBest != null) {
-        best = attemptBest;
-      }
-      scale *= 0.87;
     }
 
-    return best ?? ReplayCircleLayout.compute(area, n);
+    final fallbackRadius = shortSide * 0.2;
+    return ReplayCircleLayout(
+      playerCenters: List.generate(n, (i) {
+        final theta = startAngle - i * (2 * math.pi / n);
+        return Offset(
+          fieldCenter.dx + fallbackRadius * math.cos(theta),
+          fieldCenter.dy - fallbackRadius * math.sin(theta),
+        );
+      }),
+      fieldCenter: fieldCenter,
+      handMaxWidth: 12,
+      layoutFieldCardWidth: fieldW,
+      layoutFieldCardHeight: fieldH,
+    );
   }
 
-  static bool _spectatorPanelsFit({
+  static bool _circlePanelsFit({
     required Size area,
     required List<Offset> centers,
     required List<Size> panelSizes,
@@ -248,7 +379,7 @@ class ReplayCircleLayout {
 
     for (var i = 0; i < panelRects.length; i++) {
       for (var j = i + 1; j < panelRects.length; j++) {
-        if (panelRects[i].inflate(minPanelGap / 2).overlaps(panelRects[j])) {
+        if (panelRects[i].inflate(minPanelGap).overlaps(panelRects[j])) {
           return false;
         }
       }
@@ -258,20 +389,7 @@ class ReplayCircleLayout {
   }
 
   static Size panelSize(List<CardWidget> hand, double handMaxWidth) {
-    const headerHeight = 34.0;
-    const footerHeight = 16.0;
-    const horizontalPadding = 16.0;
-    if (hand.isEmpty) {
-      return const Size(120, headerHeight + 24 + footerHeight);
-    }
-    final layout = HandCardLayout.compute(
-      handMaxWidth,
-      hand.length.clamp(1, 7),
-    );
-    return Size(
-      layout.totalWidth(hand.length) + horizontalPadding,
-      layout.height + headerHeight + footerHeight,
-    );
+    return replayPanelSize(hand, handMaxWidth, compact: _isCompactHandMax(handMaxWidth));
   }
 
   static Size panelSizeForSpectator(
@@ -279,12 +397,14 @@ class ReplayCircleLayout {
     double handMaxWidth, {
     bool gameStarted = true,
     bool hasOpenJoker = false,
+    bool compact = false,
   }) {
     return spectatorPanelSize(
       hand: hand,
       handMaxWidth: handMaxWidth,
       gameStarted: gameStarted,
       hasOpenJoker: hasOpenJoker,
+      compact: compact,
     );
   }
 }
