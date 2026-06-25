@@ -791,6 +791,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         moriDeclarationFactors = [];
         moriDeclaredPlayerIds = [];
       }
+
+      if (data['roomDismissedByHost'] == true &&
+          !isHost &&
+          !_isIntentionalLeave &&
+          !_postGameClosing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isIntentionalLeave || _postGameClosing) return;
+          _forceReturnToLobby();
+        });
+      }
       
       // 山札めくりやゲーム終了後の閉鎖では弾かない（ホスト切断時のロビー閉鎖のみ）
       if (roomStatus == 'closed' &&
@@ -3276,7 +3286,21 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   Future<void> _onHostReturnToLobby() async {
-    await _leaveRoomToLobby();
+    if (!isHost || _postGameClosing) return;
+    _postGameClosing = true;
+    _isIntentionalLeave = true;
+    _cancelPostGameTimers();
+    _cancelGuestStayTimers();
+    _automationLeaseTimer?.cancel();
+    if (_automationLeaseHeld) {
+      await _db.releaseAutomationLease(myId);
+      _automationLeaseHeld = false;
+    }
+    await _db.dismissRoomByHost();
+    await _db.removePlayerPresence(myId);
+    _sub?.cancel();
+    if (!mounted) return;
+    Navigator.popUntil(context, (r) => r.isFirst);
   }
 
   Future<void> _leaveRoomToLobby() async {

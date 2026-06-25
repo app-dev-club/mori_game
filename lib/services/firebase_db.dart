@@ -227,8 +227,13 @@ class FirebaseDB {
     await _roomRef.update({
       'roomDismissedByHost': true,
       'roomStatus': 'closed',
+      'gameStarted': false,
       'postGameActive': false,
+      'postGameEndedAt': null,
       'awaitingGuestStayResponses': false,
+      'rematchHostRequested': false,
+      'seriesNextMatchAt': null,
+      'seriesRestarting': false,
     });
   }
 
