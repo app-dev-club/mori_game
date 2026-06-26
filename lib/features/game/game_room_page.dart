@@ -2666,7 +2666,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool _allGuestStayResponsesResolved({required bool timedOut}) {
     for (final id in rematchEligiblePlayers) {
       if (!playerIds.contains(id)) continue;
-      if (rematchReadyMap[id] != true && !timedOut) return false;
+      if (_afkPlayerIds.contains(id)) continue;
+      final ready = rematchReadyMap[id];
+      if (ready == true || ready == false) continue;
+      if (!timedOut) return false;
     }
     return true;
   }
@@ -3312,6 +3315,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     if (isSpectator) {
       await _db.leaveAsSpectator(myId);
+    } else if (awaitingGuestStayResponses && rematchEligiblePlayers.contains(myId)) {
+      await _db.declineRematch(myId);
+      await _db.removePlayerPresence(myId);
+      final p = List<String>.from(playerIds)..remove(myId);
+      await _db.updateGameStatus({
+        'players': p,
+        'playerHands/$myId': null,
+        'playerCards/$myId': null,
+        'playerNames/$myId': null,
+        'rematchReady/$myId': null,
+        'afkPlayerIds/$myId': null,
+      });
+      await _db.deleteRoomIfAbandoned();
     } else if (gameStarted) {
       await _db.markPlayerAfk(myId);
     } else {

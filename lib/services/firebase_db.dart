@@ -196,6 +196,10 @@ class FirebaseDB {
   Future<void> setStayInRoom(String playerId) =>
       _roomRef.child('rematchReady/$playerId').set(true);
 
+  /// 再戦意思確認で「ロビーへ戻る」を選んだゲストが不参加を記録する
+  Future<void> declineRematch(String playerId) =>
+      _roomRef.child('rematchReady/$playerId').set(false);
+
   /// ホストが再戦を選んだ直後：既存ゲストの残存意思を集める（ルームはまだ閉鎖）
   Future<void> requestHostRematch(List<String> eligibleGuestIds) async {
     await _roomRef.update({
