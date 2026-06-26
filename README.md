@@ -31,9 +31,9 @@
     - [クイックスタート](https://docs.flutter.dev/install/quick)からダウンロード
     - 基本的に上記リンクの手順に従う
   - Editor: VS Code (Visual Studio Code)で「Flutter」と「Dart」の拡張機能をインストールしてください。
-  - Android Studio: Androidアプリをビルドするために必要です。インストール後、Android SDK と Command-line Tools をセットアップします。
+  - Android Studio: Androidアプリをビルドするために必要です。インストール後、Android SDK と Command-line Tools と NDK をセットアップします。
     - SDK Managerを選択（バージョンによって場所が異なる）
-      - Android SDKのSDK ToolsタブからCommand-line Tools (latest)を探してチェック入れる
+      - Android SDKのSDK ToolsタブからCommand-line Tools (latest), NDKを探してチェック入れる
     - flutter config --android-sdk "コピーしたパス"
       - Windowsなら `C:\Users\ユーザ名\AppData\Local\Android\Sdk` など
     - flutter doctor --android-licenses
@@ -96,8 +96,22 @@
 ## 共同開発では必須ではない手順のメモ
 ## 更新後のビルド手順
 - ビルドは基本hirotakasuzuki1219が実行する
-  - `flutter build web`
-  - `firebase deploy --only hosting`
+  - Web
+    - `flutter build web`
+    - `firebase deploy --only hosting`
+  - Android
+    - `flutter pub get`
+    - `flutter devices`
+      - 番号確認
+    - `flutter run -d <device-id>`
+    - `flutter build apk --release`
+    - `flutter build appbundle --release`
+  - iOS
+    - cd mori_game
+    - flutter pub get
+    - cd ios && pod install && cd ..
+    - flutter run -d <iPhoneのID>
+    - flutter build ipa
 ### Flutterプロジェクトを新しく立ち上げる
 - 作りたい場所にターミナルで移動した後
   - flutter create .
