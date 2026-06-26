@@ -375,9 +375,19 @@ void main() {
           'gameStarted': true,
           'players': ['u1', 'u2'],
           'presence': {},
+          'afkPlayerIds': {'u1': true, 'u2': true},
           'moriPhase': 'none',
         }),
         isTrue,
+      );
+      expect(
+        RoomLifecycle.needsBackgroundAutomation({
+          'gameStarted': true,
+          'players': ['u1', 'u2'],
+          'presence': {},
+          'moriPhase': 'none',
+        }),
+        isFalse,
       );
     });
 

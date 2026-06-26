@@ -307,8 +307,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   String get _spectatorBotLeaseId => 'spectator_$myId';
 
+  bool _isHumanAfkOffline(String playerId) {
+    if (BotLogic.isBot(playerId)) return false;
+    return _afkPlayerIds.contains(playerId) && !_presentPlayerIds.contains(playerId);
+  }
+
   bool _isAutomatedPlayer(String playerId) =>
-      BotLogic.isBot(playerId) || _afkPlayerIds.contains(playerId);
+      BotLogic.isBot(playerId) || _isHumanAfkOffline(playerId);
 
   int get _turnTimeoutMs => turnTimeoutSeconds * 1000;
 
@@ -1347,6 +1352,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   bool _shouldAutoPlayOnTimeout() {
     if (!mounted || _postGameClosing || _showPostGameOverlay) return false;
+    if (_afkPlayerIds.contains(myId)) return false;
     return GameRules.shouldAutoPlayOnTimeout(
       gameStarted: gameStarted,
       isInitialPhase: isInitialPhase,
@@ -1589,7 +1595,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     _cancelBotTimer(botId);
     _botTimerKeys[botId] = key;
-    final delayMs = _botActionDelayMs(moriDeclaredPhase: moriPhase == 'mori_declared');
+    final delayMs = BotLogic.isBot(botId)
+        ? _botActionDelayMs(moriDeclaredPhase: moriPhase == 'mori_declared')
+        : _turnTimeoutMs;
     _botTimers[botId] = Timer(
       Duration(milliseconds: delayMs),
       () => _performBotAction(botId),

@@ -83,12 +83,8 @@ class _OrphanRoomAutomationScopeState extends State<OrphanRoomAutomationScope> {
   bool _isUserActivelyPlaying(Map<dynamic, dynamic> data, String userId) {
     final players = RoomLifecycle.playerIdsFromData(data);
     if (!players.contains(userId)) return false;
-    if (RoomLifecycle.afkPlayerIdsFromData(data).contains(userId)) {
-      return false;
-    }
-    final presence = data['presence'];
-    if (presence is! Map) return false;
-    return presence.containsKey(userId);
+    // presence の同期遅延中でも、参加中かつ離脱扱いでなければ自端末での二重自動進行を防ぐ
+    return !RoomLifecycle.afkPlayerIdsFromData(data).contains(userId);
   }
 
   bool _isUserSpectatingRoom(Map<dynamic, dynamic> data, String userId) {

@@ -61,11 +61,17 @@ class RoomLifecycle {
     final playerIds = playerIdsFromData(data);
     if (playerIds.isEmpty) return false;
 
+    if (hasPresentHumanPlayers(data)) return false;
+
     final presence = data['presence'];
     final presentIds = presence is Map
         ? presence.keys.map((e) => e.toString()).toSet()
         : <String>{};
     final afkIds = afkPlayerIdsFromData(data);
+
+    // presence の一瞬の欠落だけでは自動進行しない（全人間が離脱扱いのときのみ）
+    if (!_allHumanPlayersMarkedAfk(playerIds, afkIds)) return false;
+
     final authority = RoomAuthority.resolveAuthorityId(
       playerIds: playerIds,
       hostId: data['host']?.toString(),
@@ -80,6 +86,17 @@ class RoomLifecycle {
       hasAutomatedPlayers:
           playerIds.any((id) => BotLogic.isBot(id) || afkIds.contains(id)),
     );
+  }
+
+  static bool _allHumanPlayersMarkedAfk(
+    List<String> playerIds,
+    Set<String> afkIds,
+  ) {
+    for (final id in playerIds) {
+      if (BotLogic.isBot(id)) continue;
+      if (!afkIds.contains(id)) return false;
+    }
+    return true;
   }
 
   /// 試合終了後の精算・ルーム削除をバックグラウンドで行う必要があるか
