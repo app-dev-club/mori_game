@@ -9,6 +9,9 @@ class RoomLifecycle {
   /// 一定時間更新がなければ放置ルームとみなす（待機ロビー向け）
   static const int inactiveLobbyAgeMs = 15 * 60 * 1000;
 
+  /// 作成直後は presence 登録前でも削除しない（cleanup との競合防止）
+  static const int newRoomGraceMs = 60 * 1000;
+
   /// シリーズ次戦の自動開始が失敗したときの猶予（ミリ秒）
   static const int seriesContinueGraceMs = 30 * 1000;
 
@@ -166,6 +169,13 @@ class RoomLifecycle {
     final createdAtRaw = data['createdAt'];
     final createdAt = createdAtRaw is num ? createdAtRaw.round() : nowMs;
     if (nowMs - createdAt > maxRoomAgeMs) return true;
+
+    final players = playerIdsFromData(data);
+    if (players.isNotEmpty &&
+        data['gameStarted'] != true &&
+        nowMs - createdAt < newRoomGraceMs) {
+      return false;
+    }
 
     if (isGameFullyConcluded(data, nowMs: nowMs)) return true;
 

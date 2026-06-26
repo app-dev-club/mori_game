@@ -163,7 +163,7 @@ void main() {
       expect(
         RoomLifecycle.shouldAutoDeleteRoom(
           {
-            'createdAt': now,
+            'createdAt': now - RoomLifecycle.newRoomGraceMs - 1,
             'players': ['host'],
             'presence': {},
             'roomStatus': 'closed',
@@ -175,11 +175,27 @@ void main() {
       );
     });
 
+    test('作成直後（presence 登録前）は削除しない', () {
+      expect(
+        RoomLifecycle.shouldAutoDeleteRoom(
+          {
+            'createdAt': now - 5_000,
+            'players': ['host'],
+            'presence': {},
+            'roomStatus': 'open',
+            'gameStarted': false,
+          },
+          nowMs: now,
+        ),
+        isFalse,
+      );
+    });
+
     test('presence 未導入の open 待機ロビー（players のみ）は削除する', () {
       expect(
         RoomLifecycle.shouldAutoDeleteRoom(
           {
-            'createdAt': now,
+            'createdAt': now - RoomLifecycle.newRoomGraceMs - 1,
             'players': ['host'],
             'roomStatus': 'open',
             'gameStarted': false,

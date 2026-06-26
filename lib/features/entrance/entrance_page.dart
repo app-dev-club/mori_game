@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../logic/player_display_name.dart';
@@ -252,7 +251,17 @@ class _EntrancePageState extends State<EntrancePage> {
       return;
     }
 
-    final newRoomId = (Random().nextInt(9000) + 1000).toString();
+    String newRoomId;
+    try {
+      newRoomId = await FirebaseDB.allocateUniqueRoomId();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ルームIDの割り当てに失敗しました。もう一度お試しください。')),
+      );
+      return;
+    }
+    if (!mounted) return;
     await _openRoom(
       newRoomId,
       isPrivate: isPrivate,

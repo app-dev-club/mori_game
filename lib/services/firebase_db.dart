@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:firebase_database/firebase_database.dart';
 import '../features/game/game_board_view.dart';
 import '../logic/room_config.dart';
@@ -14,7 +16,7 @@ class FirebaseDB {
 
   Stream<DatabaseEvent> get roomStream => _roomRef.onValue;
 
-  Future<void> setupRoom(
+  Map<String, dynamic> _newRoomPayload(
     String myId,
     List<CardWidget> deck,
     bool isPrivate, {
@@ -26,8 +28,8 @@ class FirebaseDB {
     required int minMorrieBalance,
     required List<Map<String, dynamic>> deckIndex,
     required List<Map<String, dynamic>> initialHand,
-  }) async {
-    await _roomRef.set({
+  }) {
+    return {
       'host': myId,
       'players': [myId],
       'maxPlayers': maxPlayers,
@@ -53,10 +55,86 @@ class FirebaseDB {
       'fieldHistory': [],
       'seriesRestarting': false,
       'seriesNextMatchAt': null,
-      'presence': {},
-      // 万が一の残存バグを防ぐため、作成日時をタイムスタンプで記録
+      'presence': {myId: ServerValue.timestamp},
       'createdAt': ServerValue.timestamp,
+    };
+  }
+
+  /// 既存ルームを上書きせず、空き ID のみに作成する
+  Future<bool> trySetupRoom(
+    String myId,
+    List<CardWidget> deck,
+    bool isPrivate, {
+    required String playerName,
+    required int maxPlayers,
+    required int totalMatches,
+    required int turnTimeoutSeconds,
+    required int morrieRate,
+    required int minMorrieBalance,
+    required List<Map<String, dynamic>> deckIndex,
+    required List<Map<String, dynamic>> initialHand,
+  }) async {
+    final payload = _newRoomPayload(
+      myId,
+      deck,
+      isPrivate,
+      playerName: playerName,
+      maxPlayers: maxPlayers,
+      totalMatches: totalMatches,
+      turnTimeoutSeconds: turnTimeoutSeconds,
+      morrieRate: morrieRate,
+      minMorrieBalance: minMorrieBalance,
+      deckIndex: deckIndex,
+      initialHand: initialHand,
+    );
+    final result = await _roomRef.runTransaction((current) {
+      if (current != null) return Transaction.abort();
+      return Transaction.success(payload);
     });
+    return result.committed;
+  }
+
+  Future<void> setupRoom(
+    String myId,
+    List<CardWidget> deck,
+    bool isPrivate, {
+    required String playerName,
+    required int maxPlayers,
+    required int totalMatches,
+    required int turnTimeoutSeconds,
+    required int morrieRate,
+    required int minMorrieBalance,
+    required List<Map<String, dynamic>> deckIndex,
+    required List<Map<String, dynamic>> initialHand,
+  }) async {
+    final created = await trySetupRoom(
+      myId,
+      deck,
+      isPrivate,
+      playerName: playerName,
+      maxPlayers: maxPlayers,
+      totalMatches: totalMatches,
+      turnTimeoutSeconds: turnTimeoutSeconds,
+      morrieRate: morrieRate,
+      minMorrieBalance: minMorrieBalance,
+      deckIndex: deckIndex,
+      initialHand: initialHand,
+    );
+    if (!created) {
+      throw StateError('Room $roomId already exists');
+    }
+  }
+
+  /// 既存ルームと衝突しない 4 桁 ID を割り当てる
+  static Future<String> allocateUniqueRoomId() async {
+    final ref = FirebaseDatabase.instance.ref('rooms');
+    final random = Random();
+    for (var attempt = 0; attempt < 20; attempt++) {
+      final id = '${1000 + random.nextInt(9000)}';
+      final snap = await ref.child(id).get();
+      if (!snap.exists) return id;
+    }
+    throw StateError('Failed to allocate a unique room id');
   }
 
   /// 接続中プレイヤーとして登録（切断時に presence 削除 + 離脱扱い）

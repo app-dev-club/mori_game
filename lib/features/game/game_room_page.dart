@@ -382,6 +382,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       unawaited(_releaseAutomationLeaseIfHeld());
     } else if (!_isIntentionalLeave) {
       _cleanupRoomOnLeave();
+    } else if (!widget.automationOnly && !isSpectator) {
+      unawaited(_db.removePlayerPresence(myId));
     }
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
@@ -472,7 +474,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       List<CardWidget> fullDeck = _generateDeck()..shuffle();
       final hand = fullDeck.sublist(0, 5);
       fullDeck.removeRange(0, 5);
-      await _db.setupRoom(
+      final created = await _db.trySetupRoom(
         myId,
         fullDeck,
         widget.isPrivate,
@@ -486,6 +488,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
+      if (!created) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _showErrorDialog('ルームの作成に失敗しました。ロビーからもう一度お試しください。'),
+        );
+        return;
+      }
       maxPlayers = widget.maxPlayers ?? RoomConfig.defaultMaxPlayers;
       totalMatches = widget.totalMatches ?? RoomConfig.defaultMatchCount;
       turnTimeoutSeconds =
@@ -2604,10 +2612,27 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _forceReturnToLobby() {
     if (_postGameClosing || _isIntentionalLeave) return;
+    unawaited(_forceReturnToLobbyAsync());
+  }
+
+  Future<void> _forceReturnToLobbyAsync() async {
+    if (_postGameClosing || _isIntentionalLeave) return;
     _postGameClosing = true;
     _isIntentionalLeave = true;
     _cancelPostGameTimers();
     _cancelGuestStayTimers();
+    await _releaseAutomationLeaseIfHeld();
+    if (!widget.automationOnly && !isSpectator) {
+      try {
+        if (gameStarted) {
+          await _db.markPlayerAfk(myId);
+        } else {
+          await _db.removePlayerPresence(myId);
+        }
+      } catch (_) {
+        // ルーム削除済みなど
+      }
+    }
     _sub?.cancel();
     if (!mounted) return;
     Navigator.popUntil(context, (r) => r.isFirst);
