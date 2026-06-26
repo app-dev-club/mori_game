@@ -103,15 +103,18 @@
     - `flutter pub get`
     - `flutter devices`
       - 番号確認
-    - `flutter run -d <device-id>`
-    - `flutter build apk --release`
-    - `flutter build appbundle --release`
+    - 動作確認
+      - `flutter run -d <device-id>`
+    - 共有用
+      - `flutter build apk --release`
+    - 公開用
+      - `flutter build appbundle --release`
   - iOS
-    - cd mori_game
-    - flutter pub get
-    - cd ios && pod install && cd ..
-    - flutter run -d <iPhoneのID>
-    - flutter build ipa
+    - `cd mori_game`
+    - `flutter pub get`
+    - `cd ios && pod install && cd ..`
+    - `flutter run -d <iPhoneのID>`
+    - `flutter build ipa`
 ### Flutterプロジェクトを新しく立ち上げる
 - 作りたい場所にターミナルで移動した後
   - flutter create .
