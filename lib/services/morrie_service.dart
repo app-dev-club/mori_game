@@ -205,7 +205,6 @@ class MorrieService {
       participantIds: participantIds,
       finalPoints: finalPoints,
       rate: morrieRate,
-      humanBalances: humanBalances,
     );
 
     final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);

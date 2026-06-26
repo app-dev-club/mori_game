@@ -273,7 +273,6 @@ export async function settleRoomSeries(
       participantIds: roster,
       finalPoints,
       rate: morrieRate,
-      humanBalances,
     });
 
     const ranked = rankByPoints(roster, finalPoints);
