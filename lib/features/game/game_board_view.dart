@@ -353,6 +353,8 @@ class BoardLayoutMetrics {
   final HandCardLayout handLayout;
   final double opponentCardWidth;
   final double moriBandHeight;
+  final double moriBelowPadding;
+  final double moriMessageGap;
   final double handToDeckGap;
   final double playAreaToHandGap;
   final double deckLiftGap;
@@ -366,6 +368,8 @@ class BoardLayoutMetrics {
     required this.handLayout,
     required this.opponentCardWidth,
     required this.moriBandHeight,
+    required this.moriBelowPadding,
+    required this.moriMessageGap,
     required this.handToDeckGap,
     required this.playAreaToHandGap,
     required this.deckLiftGap,
@@ -395,7 +399,7 @@ class BoardLayoutMetrics {
 
   double fieldBottomOffset({required bool showFlipButton}) {
     if (isSpectator) return 0;
-    return moriBandHeight + deckLiftGap;
+    return moriBandHeight + moriBelowPadding + deckLiftGap;
   }
 
   double fieldHintHeight({required bool showFlipButton}) {
@@ -418,25 +422,44 @@ class BoardLayoutMetrics {
     return playAreaHeight - fieldBottomOffset(showFlipButton: showFlipButton);
   }
 
-  double deckCenterY(double playAreaHeight, {required bool showFlipButton}) {
+  double deckCenterY(
+    double playAreaHeight, {
+    required bool showFlipButton,
+    bool lockPosition = false,
+  }) {
     if (isSpectator) return playAreaHeight * 0.46;
     final fieldBottom =
         fieldBottomOffset(showFlipButton: showFlipButton) + fieldBandHeight(showFlipButton: showFlipButton);
-    return playAreaHeight - fieldBottom + playCardHeight * 0.5;
+    final bottomAnchored = playAreaHeight - fieldBottom + playCardHeight * 0.5;
+    if (!lockPosition) return bottomAnchored;
+    final lockedY = playAreaHeight * 0.47;
+    final minY = playCardHeight + opponentDeckGap + 36;
+    if (bottomAnchored > lockedY) {
+      return lockedY.clamp(minY, playAreaHeight - playCardHeight);
+    }
+    return bottomAnchored;
   }
 
-  double opponentBottomReserve(double playAreaHeight, {required bool showFlipButton}) {
-    final centerY = deckCenterY(playAreaHeight, showFlipButton: showFlipButton);
-    // 手札はプレイエリア外（画面下部固定）のため、下端余白はもり帯分のみ
+  double opponentBottomReserve(
+    double playAreaHeight, {
+    required bool showFlipButton,
+    bool lockPosition = false,
+  }) {
+    final centerY = deckCenterY(
+      playAreaHeight,
+      showFlipButton: showFlipButton,
+      lockPosition: lockPosition,
+    );
     return playAreaHeight - centerY + playCardHeight * 0.45 + 8.0;
   }
 
-  /// プレイエリアの高さに合わせて山札・場・他プレイヤー表示を縮小
+  /// プレイエリアの高さに合わせて山札・場を縮小（対戦開始後はレイアウト固定）
   BoardLayoutMetrics adaptedForPlayHeight(
     double playH, {
     required bool showFlipButton,
+    bool lockLayout = false,
   }) {
-    if (isSpectator || playH <= 0 || !playH.isFinite) return this;
+    if (isSpectator || playH <= 0 || !playH.isFinite || lockLayout) return this;
 
     const minOpponentZone = 36.0;
     final bottom = fieldBottomOffset(showFlipButton: showFlipButton);
@@ -460,6 +483,8 @@ class BoardLayoutMetrics {
       handLayout: handLayout,
       opponentCardWidth: oppW,
       moriBandHeight: moriBandHeight,
+      moriBelowPadding: moriBelowPadding,
+      moriMessageGap: moriMessageGap,
       handToDeckGap: (handToDeckGap * scale).clamp(10.0, handToDeckGap),
       playAreaToHandGap: playAreaToHandGap,
       deckLiftGap: (deckLiftGap * scale).clamp(4.0, deckLiftGap),
@@ -495,8 +520,8 @@ class BoardLayoutMetrics {
 
   static double moriCountdownBandHeight(double width) {
     const sample = '🔥 もり宣言！ 残り 99 秒（もり返し受付中） 🔥';
-    final lines = (sample.length * 10.0 / (width - 24)).ceil().clamp(1, 3);
-    return 6 + lines * 26.0;
+    final lines = (sample.length * 12.0 / (width - 28)).ceil().clamp(2, 4);
+    return 12 + lines * 30.0;
   }
 
   static BoardLayoutMetrics fromSize({
@@ -524,7 +549,9 @@ class BoardLayoutMetrics {
 
     final deckCardW = isWide
         ? (width * 0.072).clamp(64.0, 90.0)
-        : (handLayout.width * 0.72).clamp(36.0, 50.0);
+        : isCompact
+            ? (width * 0.165).clamp(54.0, 66.0)
+            : (width * 0.15).clamp(48.0, 58.0);
     final deckCardH = deckCardW * 1.5;
 
     var oppCW = (deckCardW * 0.44).clamp(20.0, 36.0);
@@ -537,10 +564,12 @@ class BoardLayoutMetrics {
       deckFieldGap: (deckCardW * 0.26).clamp(12.0, 24.0),
       handLayout: handLayout,
       opponentCardWidth: oppCW,
-      moriBandHeight: showMoriControls ? 58 : 0,
+      moriBandHeight: showMoriControls ? (isCompact ? 56.0 : 52.0) : 0,
+      moriBelowPadding: isCompact ? 16.0 : 12.0,
+      moriMessageGap: isCompact ? 14.0 : 10.0,
       handToDeckGap: isCompact ? 24.0 : 18.0,
       playAreaToHandGap: 0,
-      deckLiftGap: isSpectator ? 0 : (isCompact ? 10.0 : 6.0),
+      deckLiftGap: isSpectator ? 0 : (isCompact ? 22.0 : 16.0),
       opponentDeckGap: isCompact ? 12.0 : 10.0,
       isSpectator: isSpectator,
     );
@@ -1160,54 +1189,59 @@ class GameBoardView extends StatelessWidget {
             showTurnBanner: showTurnBanner,
           );
           final messageBandsH = _messageBandsHeight(metrics, columnConstraints.maxWidth);
+          final bottomGap =
+              gameStarted && !isSpectator ? metrics.moriMessageGap : 0.0;
           final bottomReservedH = handSectionH +
-              (messageBandsH > 0 ? messageBandsH : 0);
+              (messageBandsH > 0 ? messageBandsH + 12 : 0) +
+              bottomGap;
 
           Widget buildMessageBands() {
             if (messageBandsH <= 0) return const SizedBox.shrink();
-            return ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: messageBandsH),
-              child: SingleChildScrollView(
-                reverse: true,
-                physics: const ClampingScrollPhysics(),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isSpectator)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          '観戦モード（操作不可）',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontSize: 14,
-                          ),
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: gameStarted && !isSpectator ? metrics.moriMessageGap * 0.5 : 0,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isSpectator)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        '観戦モード（操作不可）',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 14,
                         ),
                       ),
-                    if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          moriRevealedType == 'gaeshi'
-                              ? '🔥 もり返し！ 残り $moriCountdownSeconds 秒 🔥'
-                              : '🔥 もり宣言！ 残り $moriCountdownSeconds 秒（もり返し受付中） 🔥',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    ),
+                  if (moriPhase == 'mori_declared' && moriCountdownSeconds != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        moriRevealedType == 'gaeshi'
+                            ? '🔥 もり返し！ 残り $moriCountdownSeconds 秒 🔥'
+                            : '🔥 もり宣言！ 残り $moriCountdownSeconds 秒（もり返し受付中） 🔥',
+                        textAlign: TextAlign.center,
+                        softWrap: true,
+                        maxLines: 4,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          height: 1.35,
                         ),
                       ),
-                    if (moriPhase != 'none' &&
-                        moriRevealedHand.isNotEmpty &&
-                        lastMoriPlayerId != null)
-                      _buildMoriRevealedHandSection(metrics, width: columnConstraints.maxWidth),
-                    if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
-                    if (autoPlayCountdownSeconds != null)
-                      _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
-                  ],
-                ),
+                    ),
+                  if (moriPhase != 'none' &&
+                      moriRevealedHand.isNotEmpty &&
+                      lastMoriPlayerId != null)
+                    _buildMoriRevealedHandSection(metrics, width: columnConstraints.maxWidth),
+                  if (statusMessage != null) _buildStatusMessageBanner(statusMessage!),
+                  if (autoPlayCountdownSeconds != null)
+                    _buildAutoPlayCountdownBanner(autoPlayCountdownSeconds!),
+                ],
               ),
             );
           }
@@ -1259,15 +1293,19 @@ class GameBoardView extends StatelessWidget {
                 final playMetrics = metrics.adaptedForPlayHeight(
                   playH,
                   showFlipButton: showFlipButton,
+                  lockLayout: gameStarted,
                 );
                 final area = Size(constraints.maxWidth, playH);
+                final lockDeck = gameStarted && !isSpectator;
                 final deckCenterY = playMetrics.deckCenterY(
                   playH,
                   showFlipButton: showFlipButton,
+                  lockPosition: lockDeck,
                 );
                 final bottomReserve = playMetrics.opponentBottomReserve(
                   playH,
                   showFlipButton: showFlipButton,
+                  lockPosition: lockDeck,
                 );
 
                 return Stack(
@@ -1277,7 +1315,7 @@ class GameBoardView extends StatelessWidget {
                       Positioned(
                         left: 0,
                         right: 0,
-                        bottom: 4,
+                        bottom: playMetrics.moriBelowPadding,
                         child: _buildMoriControlRow(
                           isButtonEnabled: isButtonEnabled,
                           canOpenJoker: canOpenJoker,
@@ -1386,15 +1424,16 @@ class GameBoardView extends StatelessWidget {
       h += metrics.moriRevealBandHeight(width, moriRevealedHand.length);
     }
     if (statusMessage != null) {
-      h += _estimateStatusBannerHeight(statusMessage!);
+      h += _estimateStatusBannerHeight(statusMessage!, width);
     }
-    if (autoPlayCountdownSeconds != null) h += 52;
+    if (autoPlayCountdownSeconds != null) h += 56;
     return h;
   }
 
-  double _estimateStatusBannerHeight(String message) {
-    final lines = (message.length / 26).ceil().clamp(1, 4);
-    return 6 + 20 + lines * 20.0;
+  double _estimateStatusBannerHeight(String message, double width) {
+    final charsPerLine = ((width - 72) / 13).floor().clamp(12, 40);
+    final lines = (message.length / charsPerLine).ceil().clamp(1, 5);
+    return 10 + 22 + lines * 21.0;
   }
 
   Widget _buildSpectatorPlayColumn() {
