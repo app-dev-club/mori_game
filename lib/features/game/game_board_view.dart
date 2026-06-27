@@ -986,6 +986,7 @@ class GameBoardView extends StatelessWidget {
   final int morrieRate;
   final int minMorrieBalance;
   final int? myMorrieBalance;
+  final Map<String, int> playerMorrieBalances;
   final bool seriesAutoContinuing;
   final String? statusMessage;
   final int? autoPlayCountdownSeconds;
@@ -1029,6 +1030,7 @@ class GameBoardView extends StatelessWidget {
     this.morrieRate = 1,
     this.minMorrieBalance = 0,
     this.myMorrieBalance,
+    this.playerMorrieBalances = const {},
     this.seriesAutoContinuing = false,
     this.statusMessage,
     this.autoPlayCountdownSeconds,
@@ -1821,6 +1823,30 @@ class GameBoardView extends StatelessWidget {
                 color: (playerPoints[playerId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
                 fontSize: layout.pointsFontSize,
                 fontWeight: FontWeight.bold,
+              ),
+            ),
+          if (gameStarted && morrieRate > 0 && playerMorrieBalances[playerId] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.paid,
+                    color: Colors.lightGreenAccent,
+                    size: layout.pointsFontSize + 1,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${playerMorrieBalances[playerId]}',
+                    style: TextStyle(
+                      color: Colors.lightGreenAccent,
+                      fontSize: layout.pointsFontSize,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
           const SizedBox(height: 2),

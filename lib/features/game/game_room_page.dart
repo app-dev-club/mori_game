@@ -96,6 +96,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Map<String, int> _lastMatchPointDeltas = {};
   Map<String, int> _lastMatchMorrieDeltas = {};
   Map<String, int> _lastMatchMorrieBalances = {};
+  Map<String, int> _playerMorrieBalances = {};
+  String? _morrieBalanceFetchKey;
   Map<String, Map<String, dynamic>> _seriesRatingDetails = {};
   Map<String, Map<String, dynamic>> _seriesMorrieDetails = {};
   String? _morrieBurstPlayerId;
@@ -980,6 +982,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         _myMorrieBalance = syncedBalance;
       }
     }
+    _applyPlayerMorrieBalancesFromData(data);
     _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
     if (data['seriesRatingDetails'] is Map) {
@@ -1062,6 +1065,80 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if ((_hasStewardAuthority || widget.automationOnly) && mounted) {
       _scheduleCloseIfFullyConcluded(data);
     }
+
+    if (morrieRate > 0) {
+      _ensureOpponentMorrieBalancesLoaded();
+    }
+  }
+
+  void _applyPlayerMorrieBalancesFromData(Map data) {
+    if (morrieRate <= 0) {
+      _playerMorrieBalances = {};
+      return;
+    }
+
+    final next = <String, int>{..._playerMorrieBalances};
+
+    if (data['botMorrieBalances'] is Map) {
+      for (final entry in (data['botMorrieBalances'] as Map).entries) {
+        final value = entry.value;
+        if (value is num) {
+          next[entry.key.toString()] = value.round();
+        }
+      }
+    }
+
+    if (data['lastMatchMorrieBalances'] is Map) {
+      for (final entry in (data['lastMatchMorrieBalances'] as Map).entries) {
+        final value = entry.value;
+        if (value is num) {
+          next[entry.key.toString()] = value.round();
+        }
+      }
+    }
+
+    for (final id in playerIds) {
+      if (BotLogic.isBot(id) && !next.containsKey(id)) {
+        next[id] = MorrieRules.botFixedBalance;
+      }
+    }
+
+    if (!BotLogic.isBot(myId)) {
+      final synced = next[myId];
+      if (synced != null) {
+        _myMorrieBalance = synced;
+      }
+    }
+
+    _playerMorrieBalances = next;
+  }
+
+  void _ensureOpponentMorrieBalancesLoaded() {
+    final missing = playerIds
+        .where((id) => !BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id))
+        .toList();
+    if (missing.isEmpty) return;
+
+    final fetchKey = missing.join(',');
+    if (_morrieBalanceFetchKey == fetchKey) return;
+    _morrieBalanceFetchKey = fetchKey;
+
+    unawaited(
+      _morrieService.getRankingBalances(missing).then((fetched) {
+        if (!mounted || fetched.isEmpty) return;
+        setState(() {
+          _playerMorrieBalances = {..._playerMorrieBalances, ...fetched};
+          if (!BotLogic.isBot(myId)) {
+            final myBalance = _playerMorrieBalances[myId];
+            if (myBalance != null) {
+              _myMorrieBalance = myBalance;
+            }
+          }
+        });
+      }).whenComplete(() {
+        _morrieBalanceFetchKey = null;
+      }),
+    );
   }
 
   Future<void> _resumeStewardDuties(Map data) async {
@@ -3011,6 +3088,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
       _lastMatchMorrieDeltas = result.deltas;
       _lastMatchMorrieBalances = result.balances;
+      _playerMorrieBalances = {..._playerMorrieBalances, ...result.balances};
       _lastMatchMorrieSummary = result.summary;
       if (result.morrieBurst) {
         _morrieBurstPlayerId = burstPlayerId;
@@ -3046,6 +3124,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     _lastMatchMorrieDeltas = result.deltas;
     _lastMatchMorrieBalances = result.balances;
+    _playerMorrieBalances = {..._playerMorrieBalances, ...result.balances};
     _lastMatchMorrieSummary = result.summary;
     if (result.morrieBurst) {
       _morrieBurstPlayerId = loserPlayerId;
@@ -3676,6 +3755,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       morrieRate: morrieRate,
       minMorrieBalance: minMorrieBalance,
       myMorrieBalance: _myMorrieBalance,
+      playerMorrieBalances: _playerMorrieBalances,
       seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
       statusMessage: _statusMessage,
       autoPlayCountdownSeconds: _autoPlayCountdownSeconds,

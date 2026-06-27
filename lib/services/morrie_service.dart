@@ -186,6 +186,27 @@ class MorrieService {
     return MorrieRules.defaultStartingBalance;
   }
 
+  /// ランキングから複数プレイヤーのモリー残高を取得（他ユーザーの users/ は読めないため）
+  Future<Map<String, int>> getRankingBalances(Iterable<String> userIds) async {
+    final balances = <String, int>{};
+    for (final userId in userIds) {
+      if (BotLogic.isBot(userId)) continue;
+      try {
+        final snap = await _morrieRankingsRef.child(userId).get();
+        final value = snap.value;
+        if (value is Map) {
+          final balance = value['morrieBalance'];
+          if (balance is num) {
+            balances[userId] = balance.round();
+          }
+        }
+      } catch (_) {
+        // 読み取り不可はスキップ
+      }
+    }
+    return balances;
+  }
+
   Future<void> ensureBalance(String userId) async {
     try {
       final ref = _usersRef.child(userId).child('morrieBalance');
