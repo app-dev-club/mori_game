@@ -23,7 +23,7 @@ import {
   moriWinnerDelta,
 } from "./scoring_rules";
 import { settleRoomSeries } from "./settle_room";
-import { applyMatchMorrieTransferIfNeeded, applyMorrieBurstRecoveryIfNeeded } from "./morrie_transfer";
+import { applyBurstMorrieDeductionIfNeeded, applyMatchMorrieTransferIfNeeded, applyMorrieBurstRecoveryIfNeeded } from "./morrie_transfer";
 import {
   asIntMap,
   asStringList,
@@ -355,7 +355,11 @@ export async function processRoomSteward(
     return { ok: true, action: "skip_not_ended" };
   }
 
-  await applyMatchMorrieTransferIfNeeded(db, roomId, room);
+  if (room.burstPlayerId != null) {
+    await applyBurstMorrieDeductionIfNeeded(db, roomId, room);
+  } else {
+    await applyMatchMorrieTransferIfNeeded(db, roomId, room);
+  }
 
   const afterMorrieSnap = await roomRef.get();
   if (!afterMorrieSnap.exists()) {

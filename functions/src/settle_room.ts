@@ -55,6 +55,23 @@ async function ensureHumanBalance(
   return Math.max(0, Math.round(balance));
 }
 
+async function ensureBotMorrieRanking(db: Database, botId: string): Promise<void> {
+  const ref = db.ref(`morrieRankings/${botId}`);
+  const snap = await ref.get();
+  if (snap.exists()) return;
+  await ref.set({
+    playerName: botDisplayName(botId),
+    morrieBalance: BOT_FIXED_BALANCE,
+    updatedAt: Date.now(),
+  });
+}
+
+async function ensureAllBotMorrieRankings(db: Database): Promise<void> {
+  for (let slot = 1; slot <= 7; slot++) {
+    await ensureBotMorrieRanking(db, `bot_${slot}`);
+  }
+}
+
 async function ensureBotRating(db: Database, botId: string): Promise<void> {
   const ref = db.ref(`ratings/${botId}`);
   const snap = await ref.get();
@@ -234,6 +251,7 @@ export async function settleRoomSeries(
   }
 
   if (morrieNeeded && !morrieDone) {
+    await ensureAllBotMorrieRankings(db);
     const seriesDeltas = asIntMap(room.playerMorrieSeriesDeltas);
     const storedBotBalances = asIntMap(room.botMorrieBalances);
     const ranked = rankByPoints(roster, finalPoints);

@@ -25,6 +25,61 @@ class MorrieRules {
     return pointDelta * rate;
   }
 
+  /// バースト時のモリー減少量（2点 × レート）
+  static const int burstPointPenalty = 2;
+
+  static int burstMorrieAmount(int rate) {
+    if (rate <= 0) return 0;
+    return burstPointPenalty * rate;
+  }
+
+  static BurstMorrieDeduction computeBurstMorrieDeduction({
+    required int rate,
+    required String burstPlayerId,
+    required Map<String, int> playerBalances,
+  }) {
+    final requested = burstMorrieAmount(rate);
+    if (requested <= 0) {
+      return const BurstMorrieDeduction(
+        requestedMorrie: 0,
+        actualMorrie: 0,
+        morrieBurst: false,
+        deltas: {},
+      );
+    }
+
+    final available = resolvePlayerBalance(burstPlayerId, playerBalances);
+    final actual = requested < available ? requested : available;
+    final morrieBurst = requested > available;
+
+    return BurstMorrieDeduction(
+      requestedMorrie: requested,
+      actualMorrie: actual,
+      morrieBurst: morrieBurst,
+      deltas: {burstPlayerId: -actual},
+    );
+  }
+
+  static String describeBurstMorrieDeduction({
+    required String burstPlayerName,
+    required String burstPlayerId,
+    required int rate,
+    required BurstMorrieDeduction deduction,
+  }) {
+    if (deduction.actualMorrie <= 0 && !deduction.morrieBurst) return '';
+    final lines = <String>[
+      if (deduction.actualMorrie > 0)
+        'モリー: $burstPlayerName -${deduction.actualMorrie}（$burstPointPenalty点×$rate）',
+    ];
+    if (deduction.morrieBurst) {
+      lines.add('$burstPlayerName は所持モリー不足のため全財産を失い、飛びとなりました');
+      if (BotLogic.isBot(burstPlayerId)) {
+        lines.add('（試合終了後に$burstRecoveryAmountモリーが付与されます）');
+      }
+    }
+    return lines.join('\n');
+  }
+
   /// もり成立時: 最後にもりを宣言された側 → 宣言者へモリー移動
   static MoriMorrieTransfer computeMoriMorrieTransfer({
     required int pointDelta,
@@ -91,6 +146,20 @@ class MoriMorrieTransfer {
   final Map<String, int> deltas;
 
   const MoriMorrieTransfer({
+    required this.requestedMorrie,
+    required this.actualMorrie,
+    required this.morrieBurst,
+    required this.deltas,
+  });
+}
+
+class BurstMorrieDeduction {
+  final int requestedMorrie;
+  final int actualMorrie;
+  final bool morrieBurst;
+  final Map<String, int> deltas;
+
+  const BurstMorrieDeduction({
     required this.requestedMorrie,
     required this.actualMorrie,
     required this.morrieBurst,

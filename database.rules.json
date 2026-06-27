@@ -51,7 +51,7 @@
     "morrieRankings": {
       ".read": "auth != null",
       "$userId": {
-        ".write": "auth != null && auth.uid == $userId",
+        ".write": "auth != null && (auth.uid == $userId || $userId.matches(/^bot_[0-9]+$/))",
         ".validate": "newData.hasChildren(['morrieBalance', 'playerName']) && newData.child('morrieBalance').isNumber() && newData.child('morrieBalance').val() >= 0 && newData.child('playerName').isString() && newData.child('playerName').val().length > 0 && newData.child('playerName').val().length <= 12"
       }
     },

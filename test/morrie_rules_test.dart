@@ -86,5 +86,57 @@ void main() {
         {'bot_1': MorrieRules.botFixedBalance},
       );
     });
+
+    test('バースト時は2点×レート分だけ減る', () {
+      expect(MorrieRules.burstMorrieAmount(5), 10);
+
+      final deduction = MorrieRules.computeBurstMorrieDeduction(
+        rate: 3,
+        burstPlayerId: 'player',
+        playerBalances: const {'player': 20},
+      );
+
+      expect(deduction.requestedMorrie, 6);
+      expect(deduction.actualMorrie, 6);
+      expect(deduction.morrieBurst, isFalse);
+      expect(deduction.deltas['player'], -6);
+    });
+
+    test('バースト時Botも減算対象', () {
+      final deduction = MorrieRules.computeBurstMorrieDeduction(
+        rate: 2,
+        burstPlayerId: 'bot_1',
+        playerBalances: const {'bot_1': 5},
+      );
+
+      expect(deduction.actualMorrie, 4);
+      expect(deduction.morrieBurst, isFalse);
+      expect(deduction.deltas['bot_1'], -4);
+    });
+
+    test('バースト時所持不足なら全財産を失い飛び', () {
+      final deduction = MorrieRules.computeBurstMorrieDeduction(
+        rate: 5,
+        burstPlayerId: 'player',
+        playerBalances: const {'player': 3},
+      );
+
+      expect(deduction.requestedMorrie, 10);
+      expect(deduction.actualMorrie, 3);
+      expect(deduction.morrieBurst, isTrue);
+      expect(deduction.deltas['player'], -3);
+    });
+
+    test('バースト時所持0でも飛び', () {
+      final deduction = MorrieRules.computeBurstMorrieDeduction(
+        rate: 3,
+        burstPlayerId: 'bot_1',
+        playerBalances: const {'bot_1': 0},
+      );
+
+      expect(deduction.actualMorrie, 0);
+      expect(deduction.morrieBurst, isTrue);
+      expect(deduction.deltas['bot_1'], 0);
+    });
   });
 }

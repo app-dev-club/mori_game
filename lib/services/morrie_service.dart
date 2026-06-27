@@ -47,6 +47,34 @@ class MorrieService {
     return null;
   }
 
+  Future<void> ensureBotMorrieRankings() async {
+    for (var slot = 1; slot <= BotLogic.maxBotSlot; slot++) {
+      final botId = BotLogic.botIdForSlot(slot);
+      try {
+        final snap = await _morrieRankingsRef.child(botId).get();
+        if (snap.exists) continue;
+        await syncBotRankingEntry(
+          botId,
+          morrieBalance: MorrieRules.botFixedBalance,
+        );
+      } catch (_) {
+        // 未ログインやルール未デプロイ時はスキップ（次回表示時に再試行）
+      }
+    }
+  }
+
+  Future<void> syncBotRankingEntry(
+    String botId, {
+    required int morrieBalance,
+    String? playerName,
+  }) async {
+    if (!BotLogic.isBot(botId)) return;
+    final name = playerName?.trim().isNotEmpty == true
+        ? playerName!.trim()
+        : BotLogic.botDisplayName(botId);
+    await syncRankingEntry(botId, morrieBalance: morrieBalance, playerName: name);
+  }
+
   Future<void> syncRankingEntry(
     String userId, {
     required int morrieBalance,
@@ -114,7 +142,6 @@ class MorrieService {
     raw.forEach((key, value) {
       if (value is! Map) return;
       final id = key.toString();
-      if (BotLogic.isBot(id)) return;
       final balanceValue = value['morrieBalance'];
       if (balanceValue is! num) return;
 
@@ -208,6 +235,131 @@ class MorrieService {
     };
   }
 
+  /// バースト時にモリーを減算（2点 × レート、二重適用防止付き）
+  Future<MoriMorrieTransferResult?> applyBurstMorrieDeduction({
+    required String roomId,
+    required String burstPlayerId,
+    required int morrieRate,
+    required Map<String, String> displayNames,
+    required List<String> participantIds,
+  }) async {
+    if (morrieRate <= 0) return null;
+
+    final roomRef = FirebaseDatabase.instance.ref('rooms/$roomId');
+    if ((await roomRef.child('lastMatchMorrieApplied').get()).value == true) {
+      return null;
+    }
+
+    final playerBalances = <String, int>{};
+    if (BotLogic.isBot(burstPlayerId)) {
+      playerBalances.addAll(
+        await _loadBotMorrieBalances(roomRef, [burstPlayerId]),
+      );
+    } else {
+      await ensureBalance(burstPlayerId);
+      playerBalances[burstPlayerId] = await getBalance(burstPlayerId);
+    }
+
+    final deduction = MorrieRules.computeBurstMorrieDeduction(
+      rate: morrieRate,
+      burstPlayerId: burstPlayerId,
+      playerBalances: playerBalances,
+    );
+    if (deduction.actualMorrie <= 0 && !deduction.morrieBurst) {
+      await roomRef.update({'lastMatchMorrieApplied': true});
+      return null;
+    }
+
+    final newBalances = <String, int>{};
+    final botBalanceUpdates = <String, int>{};
+    for (final entry in deduction.deltas.entries) {
+      final id = entry.key;
+      if (BotLogic.isBot(id)) {
+        final current = playerBalances[id] ?? MorrieRules.botFixedBalance;
+        final next = (current + entry.value).clamp(0, 1 << 30);
+        botBalanceUpdates[id] = next;
+        newBalances[id] = next;
+        await syncBotRankingEntry(
+          id,
+          morrieBalance: next,
+          playerName: displayNames[id],
+        );
+        continue;
+      }
+
+      final current = playerBalances[id] ?? await getBalance(id);
+      final next = (current + entry.value).clamp(0, 1 << 30);
+      newBalances[id] = next;
+      final name = displayNames[id]?.trim().isNotEmpty == true
+          ? displayNames[id]!.trim()
+          : 'プレイヤー';
+      try {
+        await _usersRef.child(id).update({
+          'morrieBalance': next,
+          'updatedAt': ServerValue.timestamp,
+        });
+        await syncRankingEntry(id, morrieBalance: next, playerName: name);
+        await roomRef.child('morrieClaimed/$id').set(true);
+        await FirebaseDatabase.instance
+            .ref('userMorriePending/$id/$roomId')
+            .remove();
+      } catch (_) {
+        await FirebaseDatabase.instance.ref('userMorriePending/$id/$roomId').set({
+          'morrieBalance': next,
+          'playerName': name,
+          'settledAt': ServerValue.timestamp,
+        });
+      }
+    }
+
+    final seriesSnap = await roomRef.child('playerMorrieSeriesDeltas').get();
+    final seriesDeltas = seriesSnap.value is Map
+        ? Map<String, int>.from(
+            (seriesSnap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+            ),
+          )
+        : <String, int>{};
+    for (final entry in deduction.deltas.entries) {
+      seriesDeltas[entry.key] = (seriesDeltas[entry.key] ?? 0) + entry.value;
+    }
+
+    final summary = MorrieRules.describeBurstMorrieDeduction(
+      burstPlayerName: displayNames[burstPlayerId] ?? burstPlayerId,
+      burstPlayerId: burstPlayerId,
+      rate: morrieRate,
+      deduction: deduction,
+    );
+
+    final balanceSnapshot = <String, int>{
+      burstPlayerId: newBalances[burstPlayerId] ??
+          playerBalances[burstPlayerId] ??
+          0,
+    };
+
+    final roomUpdates = <String, dynamic>{
+      'lastMatchMorrieApplied': true,
+      'lastMatchMorrieDeltas': deduction.deltas,
+      'lastMatchMorrieSummary': summary,
+      'playerMorrieSeriesDeltas': seriesDeltas,
+      'lastMatchMorrieBalances': balanceSnapshot,
+    };
+    if (deduction.morrieBurst) {
+      roomUpdates['morrieBurstPlayerId'] = burstPlayerId;
+    }
+    for (final entry in botBalanceUpdates.entries) {
+      roomUpdates['botMorrieBalances/${entry.key}'] = entry.value;
+    }
+    await roomRef.update(roomUpdates);
+
+    return MoriMorrieTransferResult(
+      summary: summary,
+      deltas: deduction.deltas,
+      balances: balanceSnapshot,
+      morrieBurst: deduction.morrieBurst,
+    );
+  }
+
   /// もり成立時にモリーを loser → winner へ移動（二重適用防止付き）
   Future<MoriMorrieTransferResult?> applyMatchMorrieTransfer({
     required String roomId,
@@ -255,6 +407,11 @@ class MorrieService {
         final next = (current + entry.value).clamp(0, 1 << 30);
         botBalanceUpdates[id] = next;
         newBalances[id] = next;
+        await syncBotRankingEntry(
+          id,
+          morrieBalance: next,
+          playerName: displayNames[id],
+        );
         continue;
       }
 
@@ -363,6 +520,11 @@ class MorrieService {
     final next = current + amount;
     updates['botMorrieBalances/$burstId'] = next;
     updates['lastMatchMorrieBalances/$burstId'] = next;
+    await syncBotRankingEntry(
+      burstId,
+      morrieBalance: next,
+      playerName: displayNames[burstId],
+    );
 
     final summary = data['lastMatchMorrieSummary']?.toString() ?? '';
     if (summary.isNotEmpty) {

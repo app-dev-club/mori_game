@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../logic/bot_logic.dart';
 import '../../logic/player_display_name.dart';
 import '../../models/morrie_ranking_entry.dart';
 import '../../models/ranking_entry.dart';
@@ -25,6 +26,7 @@ class _RankingPageState extends State<RankingPage> {
   void initState() {
     super.initState();
     _loadDisplaySettings();
+    _morrieService.ensureBotMorrieRankings();
   }
 
   Future<void> _loadDisplaySettings() async {
@@ -254,7 +256,12 @@ class _RankingPageState extends State<RankingPage> {
                             fontSize: 16,
                           ),
                         ),
-                        if (isMe)
+                        if (BotLogic.isBot(entry.id))
+                          const Text(
+                            'Bot',
+                            style: TextStyle(color: Colors.white38, fontSize: 11),
+                          )
+                        else if (isMe)
                           const Text(
                             'あなた',
                             style: TextStyle(color: Colors.lightGreenAccent, fontSize: 11),

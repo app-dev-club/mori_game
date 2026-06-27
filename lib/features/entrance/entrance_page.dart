@@ -72,6 +72,7 @@ class _EntrancePageState extends State<EntrancePage> {
       if (user == null) return;
       _scheduleRoomCleanup();
       _ratingService.ensureBotRatings();
+      _morrieService.ensureBotMorrieRankings();
       _refreshRating();
     });
   }

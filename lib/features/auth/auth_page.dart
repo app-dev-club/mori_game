@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../effects/app_sound_effects.dart';
 import '../../services/firebase_auth_service.dart';
 import '../../services/rating_service.dart';
+import '../../services/morrie_service.dart';
 
 /// アプリ起動時に表示するログイン / 新規登録画面
 class AuthPage extends StatefulWidget {
@@ -16,6 +17,7 @@ class _AuthPageState extends State<AuthPage> {
   final TextEditingController _authIdController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final RatingService _ratingService = RatingService();
+  final MorrieService _morrieService = MorrieService();
 
   bool _busy = false;
   String? _error;
@@ -71,6 +73,7 @@ class _AuthPageState extends State<AuthPage> {
 
       await _ratingService.ensureUserRating(uid, displayName: id);
       await _ratingService.ensureBotRatings();
+      await _morrieService.ensureBotMorrieRankings();
     } catch (e) {
       if (!mounted) return;
       setState(() {

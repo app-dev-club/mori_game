@@ -28,7 +28,7 @@ void main() {
       expect(entries[2].playerName, 'Carol');
     });
 
-    test('Bot ID はランキングに含めない', () {
+    test('Bot もランキングに含める', () {
       final entries = MorrieService.parseMorrieRankingSnapshot({
         'user_a': {
           'morrieBalance': 20,
@@ -40,8 +40,10 @@ void main() {
         },
       });
 
-      expect(entries.length, 1);
-      expect(entries.single.id, 'user_a');
+      expect(entries.length, 2);
+      expect(entries[0].id, 'bot_1');
+      expect(entries[0].morrieBalance, 999);
+      expect(entries[1].id, 'user_a');
     });
 
     test('空データは空リスト', () {

@@ -1733,6 +1733,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'deck': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'deckIndex': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
     });
+    await _morrieService.syncBotRankingEntry(
+      botId,
+      morrieBalance: MorrieRules.botFixedBalance,
+      playerName: botName,
+    );
     _showGameMessage('$botName を追加しました');
   }
 
@@ -2934,9 +2939,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   String? _postGameResultMessage() {
     if (burstPlayerId != null) {
-      return ScoringRules.describeBurstScoring(
+      final pointMsg = ScoringRules.describeBurstScoring(
         burstPlayerName: _displayName(burstPlayerId),
       );
+      final morrieSummary = _lastMatchMorrieSummary?.trim();
+      if (morrieSummary != null && morrieSummary.isNotEmpty) {
+        return '$pointMsg\n$morrieSummary';
+      }
+      return pointMsg;
     }
     final morrieSummary = _lastMatchMorrieSummary?.trim();
     if (morrieSummary != null && morrieSummary.isNotEmpty) {
@@ -2947,25 +2957,50 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   Future<void> _applyMatchMorrieTransfer() async {
     if (!_hasStewardAuthority || morrieRate <= 0) return;
-    if (burstPlayerId != null || moriPhase != 'finished') return;
-    if (lastMoriPlayerId == null || loserPlayerId == null) return;
-    if (moriDeclarationFactors.isEmpty) return;
 
     final snap = await _db.getSnapshot();
     if (!snap.exists) return;
     final data = Map<dynamic, dynamic>.from(snap.value as Map);
     if (data['lastMatchMorrieApplied'] == true) return;
 
+    final roster = seriesPlayerIds.isNotEmpty
+        ? List<String>.from(seriesPlayerIds)
+        : List<String>.from(playerIds);
+    final names = {for (final id in roster) id: _displayName(id)};
+
+    if (burstPlayerId != null) {
+      final result = await _morrieService.applyBurstMorrieDeduction(
+        roomId: widget.roomId,
+        burstPlayerId: burstPlayerId!,
+        morrieRate: morrieRate,
+        displayNames: names,
+        participantIds: roster,
+      );
+      if (result == null || !mounted) return;
+
+      _lastMatchMorrieDeltas = result.deltas;
+      _lastMatchMorrieBalances = result.balances;
+      _lastMatchMorrieSummary = result.summary;
+      if (result.morrieBurst) {
+        _morrieBurstPlayerId = burstPlayerId;
+      }
+      final myBalance = result.balances[myId];
+      if (myBalance != null) {
+        _myMorrieBalance = myBalance;
+      }
+      _syncPostGameSummary();
+      return;
+    }
+
+    if (moriPhase != 'finished') return;
+    if (lastMoriPlayerId == null || loserPlayerId == null) return;
+    if (moriDeclarationFactors.isEmpty) return;
+
     final pointDelta = ScoringRules.moriWinnerDelta(
       moriDeclarationFactors,
       moriGaeshiCount,
     );
     if (pointDelta <= 0) return;
-
-    final roster = seriesPlayerIds.isNotEmpty
-        ? List<String>.from(seriesPlayerIds)
-        : List<String>.from(playerIds);
-    final names = {for (final id in roster) id: _displayName(id)};
 
     final result = await _morrieService.applyMatchMorrieTransfer(
       roomId: widget.roomId,

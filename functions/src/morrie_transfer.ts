@@ -3,7 +3,9 @@ import { moriWinnerDelta } from "./scoring_rules";
 import {
   BOT_FIXED_BALANCE,
   BURST_RECOVERY_AMOUNT,
+  computeBurstMorrieDeduction,
   computeMoriMorrieTransfer,
+  describeBurstMorrieDeduction,
   describeMoriMorrieTransfer,
   resolvePlayerBalance,
 } from "./morrie_rules";
@@ -70,6 +72,21 @@ function resolveDisplayName(
   return isBot(playerId) ? botDisplayName(playerId) : "プレイヤー";
 }
 
+async function syncBotRankingEntry(
+  db: Database,
+  botId: string,
+  morrieBalance: number,
+  playerNames: Record<string, string>,
+  now: number,
+): Promise<void> {
+  if (!isBot(botId)) return;
+  await db.ref(`morrieRankings/${botId}`).set({
+    playerName: resolveDisplayName(botId, playerNames),
+    morrieBalance,
+    updatedAt: now,
+  });
+}
+
 /** もり成立時にモリーを loser → winner へ移動（二重適用防止付き） */
 export async function applyMatchMorrieTransferIfNeeded(
   db: Database,
@@ -126,6 +143,7 @@ export async function applyMatchMorrieTransferIfNeeded(
       const next = Math.max(0, current + delta);
       botBalanceUpdates[id] = next;
       newBalances[id] = next;
+      await syncBotRankingEntry(db, id, next, playerNames, now);
       continue;
     }
 
@@ -183,6 +201,105 @@ export async function applyMatchMorrieTransferIfNeeded(
   return true;
 }
 
+/** バースト時にモリーを減算（2点 × レート、二重適用防止付き） */
+export async function applyBurstMorrieDeductionIfNeeded(
+  db: Database,
+  roomId: string,
+  room: Record<string, unknown>,
+): Promise<boolean> {
+  const morrieRate = resolveMorrieRate(room.morrieRate);
+  if (morrieRate <= 0) return false;
+  if (room.lastMatchMorrieApplied === true) return false;
+
+  const burstPlayerId = room.burstPlayerId?.toString();
+  if (!burstPlayerId) return false;
+
+  const playerNames = asStringMap(room.playerNames);
+  const playerBalances: Record<string, number> = {};
+  if (isBot(burstPlayerId)) {
+    Object.assign(
+      playerBalances,
+      loadBotMorrieBalances(room, [burstPlayerId]),
+    );
+  } else {
+    playerBalances[burstPlayerId] = await ensureHumanBalance(db, burstPlayerId);
+  }
+
+  const deduction = computeBurstMorrieDeduction({
+    rate: morrieRate,
+    burstPlayerId,
+    playerBalances,
+  });
+  if (deduction.actualMorrie <= 0 && !deduction.morrieBurst) {
+    await db.ref(`rooms/${roomId}`).update({ lastMatchMorrieApplied: true });
+    return false;
+  }
+
+  const now = Date.now();
+  const newBalances: Record<string, number> = {};
+  const botBalanceUpdates: Record<string, number> = {};
+  for (const [id, delta] of Object.entries(deduction.deltas)) {
+    if (isBot(id)) {
+      const current = resolvePlayerBalance(id, playerBalances);
+      const next = Math.max(0, current + delta);
+      botBalanceUpdates[id] = next;
+      newBalances[id] = next;
+      await syncBotRankingEntry(db, id, next, playerNames, now);
+      continue;
+    }
+
+    const current = playerBalances[id] ?? (await ensureHumanBalance(db, id));
+    const next = Math.max(0, current + delta);
+    newBalances[id] = next;
+    const name = resolveDisplayName(id, playerNames);
+    await db.ref(`users/${id}`).update({
+      morrieBalance: next,
+      updatedAt: now,
+    });
+    await db.ref(`morrieRankings/${id}`).set({
+      playerName: name,
+      morrieBalance: next,
+      updatedAt: now,
+    });
+    await db.ref(`rooms/${roomId}/morrieClaimed/${id}`).set(true);
+    await db.ref(`userMorriePending/${id}/${roomId}`).remove();
+  }
+
+  const seriesDeltas = asIntMap(room.playerMorrieSeriesDeltas);
+  for (const [id, delta] of Object.entries(deduction.deltas)) {
+    seriesDeltas[id] = (seriesDeltas[id] ?? 0) + delta;
+  }
+
+  const summary = describeBurstMorrieDeduction({
+    burstPlayerName: resolveDisplayName(burstPlayerId, playerNames),
+    burstPlayerId,
+    rate: morrieRate,
+    deduction,
+  });
+
+  const balanceSnapshot: Record<string, number> = {
+    [burstPlayerId]:
+      newBalances[burstPlayerId] ?? playerBalances[burstPlayerId] ?? 0,
+  };
+
+  const updates: Record<string, unknown> = {
+    lastMatchMorrieApplied: true,
+    lastMatchMorrieDeltas: deduction.deltas,
+    lastMatchMorrieSummary: summary,
+    playerMorrieSeriesDeltas: seriesDeltas,
+    lastMatchMorrieBalances: balanceSnapshot,
+  };
+  if (deduction.morrieBurst) {
+    updates.morrieBurstPlayerId = burstPlayerId;
+  }
+  for (const [id, balance] of Object.entries(botBalanceUpdates)) {
+    updates[`botMorrieBalances/${id}`] = balance;
+  }
+
+  await db.ref(`rooms/${roomId}`).update(updates);
+  return true;
+}
+
 /** 飛び発生ボットへ試合終了後に回復モリーを付与（人間には付与しない） */
 export async function applyMorrieBurstRecoveryIfNeeded(
   db: Database,
@@ -200,6 +317,7 @@ export async function applyMorrieBurstRecoveryIfNeeded(
 
   const playerNames = asStringMap(room.playerNames);
   const amount = BURST_RECOVERY_AMOUNT;
+  const now = Date.now();
   const updates: Record<string, unknown> = {
     morrieBurstRecoveryApplied: true,
   };
@@ -209,6 +327,7 @@ export async function applyMorrieBurstRecoveryIfNeeded(
   const next = current + amount;
   updates[`botMorrieBalances/${burstId}`] = next;
   updates[`lastMatchMorrieBalances/${burstId}`] = next;
+  await syncBotRankingEntry(db, burstId, next, playerNames, now);
 
   const summary = room.lastMatchMorrieSummary?.toString() ?? "";
   if (summary) {
