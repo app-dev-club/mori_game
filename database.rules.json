@@ -4,7 +4,7 @@
       ".read": true,
       "$roomId": {
         ".read": true,
-        ".write": "auth != null",
+        ".write": "auth != null && newData.exists()",
         "seriesRatingApplied": { ".write": false },
         "seriesRatingSummary": { ".write": false },
         "seriesRatingDetails": { ".write": false },

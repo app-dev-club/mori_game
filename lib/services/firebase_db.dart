@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import '../features/game/game_board_view.dart';
 import '../logic/room_config.dart';
-import '../logic/room_lifecycle.dart';
 
 /// Firebaseとの通信をカプセル化。
 class FirebaseDB {
@@ -208,16 +207,6 @@ class FirebaseDB {
     }
   }
 
-  Future<void> deleteRoomIfAbandoned() async {
-    final snapshot = await getSnapshot();
-    if (!snapshot.exists || snapshot.value == null) return;
-    final data = Map<dynamic, dynamic>.from(snapshot.value as Map);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (RoomLifecycle.shouldAutoDeleteRoom(data, nowMs: now)) {
-      await deleteRoom();
-    }
-  }
-
   Future<void> playCard(int nextTurn, CardWidget card, String myId) async {
     await _roomRef.update({
       'field': {'number': card.number, 'suit': card.suit.name},
@@ -261,8 +250,6 @@ class FirebaseDB {
     }
     return false;
   }
-  Future<void> deleteRoom() => _roomRef.remove();
-
   Future<void> joinAsSpectator(String spectatorId, String spectatorName) async {
     await _roomRef.child('spectators/$spectatorId').set(spectatorName);
   }
@@ -528,34 +515,5 @@ class FirebaseDB {
       'postGameEndedAt': null,
       'roomStatus': 'open',
     });
-  }
-
-  // --- 追加：ホスト不在や古いルームの一括クリーンアップ処理 ---
-  // インスタンス化せずに呼べるように static メソッドとして定義します
-  static Future<int> cleanupOldRooms() async {
-    try {
-      final ref = FirebaseDatabase.instance.ref('rooms');
-      final snapshot = await ref.get();
-
-      if (!snapshot.exists || snapshot.value == null) return 0;
-
-      final rooms = snapshot.value as Map;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final deletions = <Future<void>>[];
-
-      for (final entry in rooms.entries) {
-        final value = entry.value;
-        if (value is! Map) continue;
-        final roomData = Map<dynamic, dynamic>.from(value);
-        if (!RoomLifecycle.shouldAutoDeleteRoom(roomData, nowMs: now)) continue;
-        deletions.add(FirebaseDatabase.instance.ref('rooms/${entry.key}').remove());
-      }
-
-      if (deletions.isEmpty) return 0;
-      await Future.wait(deletions);
-      return deletions.length;
-    } catch (_) {
-      return 0;
-    }
   }
 }

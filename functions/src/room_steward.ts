@@ -7,7 +7,6 @@ import {
 } from "./game_deck";
 import {
   HOST_REMATCH_DECISION_MS,
-  isGameFullyConcluded,
   isMatchEnded,
   isSeriesContinuationPending,
   isSettlementComplete,
@@ -335,11 +334,6 @@ export async function processRoomSteward(
   const room = snap.val() as Record<string, unknown>;
   if (!shouldServerStewardRoom(room, nowMs)) {
     return { ok: true, action: "skip" };
-  }
-
-  if (isGameFullyConcluded(room, nowMs) && isSettlementComplete(room)) {
-    await roomRef.remove();
-    return { ok: true, action: "deleted" };
   }
 
   const seriesNext = room.seriesNextMatchAt;

@@ -59,8 +59,6 @@ class _EntrancePageState extends State<EntrancePage> {
   double? _mySigma;
   bool _namePrefilled = false;
   bool _hideOpponentNames = false;
-  bool _roomCleanupRunning = false;
-  bool _roomCleanupFromStreamTriggered = false;
   String? _spectatingRoomId;
 
   @override
@@ -70,22 +68,10 @@ class _EntrancePageState extends State<EntrancePage> {
     _loadDisplaySettings();
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user == null) return;
-      _scheduleRoomCleanup();
       _ratingService.ensureBotRatings();
       _morrieService.ensureBotMorrieRankings();
       _refreshRating();
     });
-  }
-
-  void _scheduleRoomCleanup() {
-    if (_roomCleanupRunning) return;
-    if (FirebaseAuth.instance.currentUser == null) return;
-    _roomCleanupRunning = true;
-    unawaited(
-      FirebaseDB.cleanupOldRooms().catchError((_) => 0).whenComplete(() {
-        _roomCleanupRunning = false;
-      }),
-    );
   }
 
   Future<void> _loadUserProfile() async {
@@ -768,11 +754,6 @@ class _EntrancePageState extends State<EntrancePage> {
                 return StreamBuilder(
                   stream: _roomsRef.onValue,
                   builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-                if (!_roomCleanupFromStreamTriggered && snapshot.hasData) {
-                  _roomCleanupFromStreamTriggered = true;
-                  WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleRoomCleanup());
-                }
-
                 if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
                   return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
                 }

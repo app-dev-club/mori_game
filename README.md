@@ -121,6 +121,8 @@
       - `flutter build ipa --export-method app-store`
     - Functionの更新
       - `deploy --only functions`
+    - Databaseルールの更新
+      - `deploy --only database`
 ### Flutterプロジェクトを新しく立ち上げる
 - 作りたい場所にターミナルで移動した後
   - flutter create .

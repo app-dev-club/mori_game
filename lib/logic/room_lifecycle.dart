@@ -184,6 +184,7 @@ class RoomLifecycle {
   }
 
   static bool shouldAutoDeleteRoom(Map<dynamic, dynamic> data, {required int nowMs}) {
+    // ルーム削除は Cloud Functions (room_cleanup.ts) が担当。テスト用の参照実装。
     final createdAtRaw = data['createdAt'];
     final createdAt = createdAtRaw is num ? createdAtRaw.round() : nowMs;
     if (nowMs - createdAt > maxRoomAgeMs) return true;

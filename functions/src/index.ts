@@ -5,6 +5,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import { processRoomSteward, sweepRoomStewards } from "./room_steward";
 import { settleRoomSeries } from "./settle_room";
+import { sweepRoomCleanup, tryDeleteRoomIfNeeded } from "./room_cleanup";
 
 initializeApp();
 
@@ -20,6 +21,25 @@ async function runRoomSteward(roomId: string, source: string): Promise<void> {
   } catch (error) {
     logger.error("roomSteward error", { roomId, source, error });
   }
+}
+
+async function runRoomCleanup(roomId: string, source: string): Promise<void> {
+  try {
+    const result = await tryDeleteRoomIfNeeded(db, roomId);
+    if (result.deleted) {
+      logger.info("roomCleanup", { roomId, source, reason: result.reason });
+    }
+  } catch (error) {
+    logger.error("roomCleanup error", { roomId, source, error });
+  }
+}
+
+async function runRoomStewardAndCleanup(
+  roomId: string,
+  source: string,
+): Promise<void> {
+  await runRoomSteward(roomId, source);
+  await runRoomCleanup(roomId, source);
 }
 
 export const onRoomSettlementRequested = onValueWritten(
@@ -50,7 +70,7 @@ export const onRoomSettlementRequested = onValueWritten(
         }
       } else {
         logger.info("settleRoomSeries completed", { roomId, reason: result.reason });
-        await runRoomSteward(roomId, "after_settlement");
+        await runRoomStewardAndCleanup(roomId, "after_settlement");
       }
     } catch (error) {
       logger.error("settleRoomSeries error", { roomId, error });
@@ -68,7 +88,7 @@ export const onRoomPresenceChanged = onValueWritten(
     region,
   },
   async (event) => {
-    await runRoomSteward(event.params.roomId, "presence");
+    await runRoomStewardAndCleanup(event.params.roomId, "presence");
   },
 );
 
@@ -115,6 +135,20 @@ export const scheduledRoomStewardSweep = onSchedule(
     const processed = await sweepRoomStewards(db);
     if (processed > 0) {
       logger.info("roomSteward sweep", { processed });
+    }
+  },
+);
+
+export const scheduledRoomCleanupSweep = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    region,
+    timeZone: "Asia/Tokyo",
+  },
+  async () => {
+    const deleted = await sweepRoomCleanup(db);
+    if (deleted > 0) {
+      logger.info("roomCleanup sweep", { deleted });
     }
   },
 );

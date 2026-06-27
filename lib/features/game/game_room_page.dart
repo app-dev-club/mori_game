@@ -2647,10 +2647,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       unawaited(_db.markPlayerAfk(myId));
       return;
     }
-    unawaited(_removeSelfFromRoomAndMaybeDelete());
+    unawaited(_removeSelfFromRoom());
   }
 
-  Future<void> _removeSelfFromRoomAndMaybeDelete() async {
+  Future<void> _removeSelfFromRoom() async {
     await _db.removePlayerPresence(myId);
     final p = List<String>.from(playerIds)..remove(myId);
     await _db.updateGameStatus({
@@ -2661,7 +2661,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'rematchReady/$myId': null,
       'afkPlayerIds/$myId': null,
     });
-    await _db.deleteRoomIfAbandoned();
   }
 
   void _forceReturnToLobby() {
@@ -3501,8 +3500,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       await _db.releaseAutomationLease(myId);
       _automationLeaseHeld = false;
     }
+    if (!isSpectator) {
+      await _db.removePlayerPresence(myId);
+    }
     _sub?.cancel();
-    await _db.deleteRoom();
     if (!mounted || widget.automationOnly) return;
     Navigator.popUntil(context, (r) => r.isFirst);
   }
@@ -3546,7 +3547,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'rematchReady/$myId': null,
         'afkPlayerIds/$myId': null,
       });
-      await _db.deleteRoomIfAbandoned();
     } else if (gameStarted) {
       await _db.markPlayerAfk(myId);
     } else {
@@ -3561,7 +3561,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'afkPlayerIds/$myId': null,
       };
       await _db.updateGameStatus(updates);
-      await _db.deleteRoomIfAbandoned();
     }
 
     if (!mounted) return;
