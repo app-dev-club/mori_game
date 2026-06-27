@@ -539,6 +539,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
             return;
           }
           _myMorrieBalance = balance;
+        } else if (morrieRate > 0) {
+          await _morrieService.ensureBalance(myId);
+          _myMorrieBalance = await _morrieService.getBalance(myId);
         }
         final rawHand = snap.child('playerCards/$myId').value;
         if (rawHand is List) {
@@ -547,6 +550,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         await _db.clearPlayerAfk(myId);
         await _db.registerPlayerPresence(myId);
         unawaited(_morrieService.claimMorrieFromRoom(widget.roomId, myId));
+        if (morrieRate > 0) {
+          unawaited(_loadMorrieBalance());
+        }
         if (widget.playerName.isNotEmpty) {
           await _db.updateGameStatus({'playerNames/$myId': widget.playerName});
         }
@@ -581,6 +587,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
             return;
           }
           _myMorrieBalance = balance;
+        } else if (morrieRate > 0) {
+          await _morrieService.ensureBalance(myId);
+          _myMorrieBalance = await _morrieService.getBalance(myId);
         }
         p.add(myId);
       }
@@ -964,6 +973,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
         ),
       );
+      final syncedBalance = _lastMatchMorrieBalances[myId];
+      if (syncedBalance != null &&
+          morrieRate > 0 &&
+          !BotLogic.isBot(myId)) {
+        _myMorrieBalance = syncedBalance;
+      }
     }
     _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;

@@ -1967,14 +1967,36 @@ class GameBoardView extends StatelessWidget {
           if (gameStarted)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                '累計 ${playerPoints[myId] ?? 0}点',
-                style: TextStyle(
-                  color: (playerPoints[myId] ?? 0) >= 0 ? Colors.amberAccent : Colors.redAccent,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-                textAlign: TextAlign.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '累計 ${playerPoints[myId] ?? 0}点',
+                    style: TextStyle(
+                      color: (playerPoints[myId] ?? 0) >= 0
+                          ? Colors.amberAccent
+                          : Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  if (morrieRate > 0 && myMorrieBalance != null) ...[
+                    const Text(
+                      ' · ',
+                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                    ),
+                    const Icon(Icons.paid, color: Colors.lightGreenAccent, size: 15),
+                    const SizedBox(width: 3),
+                    Text(
+                      '所持 $myMorrieBalance',
+                      style: const TextStyle(
+                        color: Colors.lightGreenAccent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             )
           else
