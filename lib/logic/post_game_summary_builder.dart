@@ -14,7 +14,9 @@ class PostGameSummaryBuilder {
     required int totalMatches,
     required int completedMatches,
     required bool seriesComplete,
-    String? resultMessage,
+    String? cardBurstMessage,
+    String? morrieBurstMessage,
+    String? morrieResultMessage,
   }) {
     if (roster.isEmpty) {
       return const PostGameSummary(title: '試合結果', players: []);
@@ -95,7 +97,9 @@ class PostGameSummaryBuilder {
       players: rows,
       showRating: showRating,
       showMorrie: showMorrie,
-      resultMessage: resultMessage,
+      cardBurstMessage: cardBurstMessage,
+      morrieBurstMessage: morrieBurstMessage,
+      morrieResultMessage: morrieResultMessage,
     );
   }
 }

@@ -27,13 +27,20 @@ class PostGameSummary {
   final List<PostGamePlayerRow> players;
   final bool showRating;
   final bool showMorrie;
-  final String? resultMessage;
+  /// 7枚バースト（得点 -2）のメッセージ
+  final String? cardBurstMessage;
+  /// モリー飛びのメッセージ
+  final String? morrieBurstMessage;
+  /// モリー移動・減算のサマリー（飛び文言を除く）
+  final String? morrieResultMessage;
 
   const PostGameSummary({
     required this.title,
     required this.players,
     this.showRating = false,
     this.showMorrie = false,
-    this.resultMessage,
+    this.cardBurstMessage,
+    this.morrieBurstMessage,
+    this.morrieResultMessage,
   });
 }

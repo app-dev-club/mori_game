@@ -2077,6 +2077,57 @@ class PostGameOverlay extends StatelessWidget {
     return delta > 0 ? '+$delta' : '$delta';
   }
 
+  Widget _buildResultBanner({
+    required String label,
+    required String message,
+    required Color accent,
+    required Color background,
+    required IconData icon,
+    required double bodySize,
+    required double headerSize,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent, width: 1.5),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: accent, size: headerSize + 4),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: headerSize,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: bodySize,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _subtitle() {
     if (isSpectator) return '観戦を終了する場合はロビーへ戻ってください';
     if (seriesAutoContinuing) return 'カウントダウン後、ホストが山札をめくると次の対戦が始まります';
@@ -2142,39 +2193,40 @@ class PostGameOverlay extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        if (summary?.resultMessage != null) ...[
+                        if (summary?.cardBurstMessage != null) ...[
                           const SizedBox(height: 10),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.redAccent, width: 1.5),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.warning_amber_rounded,
-                                  color: Colors.redAccent,
-                                  size: headerSize + 4,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'バースト: ${summary!.resultMessage!}',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: bodySize,
-                                      height: 1.25,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                          _buildResultBanner(
+                            label: 'バースト',
+                            message: summary!.cardBurstMessage!,
+                            accent: Colors.redAccent,
+                            background: Colors.red.withValues(alpha: 0.2),
+                            icon: Icons.warning_amber_rounded,
+                            bodySize: bodySize,
+                            headerSize: headerSize,
+                          ),
+                        ],
+                        if (summary?.morrieBurstMessage != null) ...[
+                          const SizedBox(height: 10),
+                          _buildResultBanner(
+                            label: '飛び',
+                            message: summary!.morrieBurstMessage!,
+                            accent: Colors.deepOrangeAccent,
+                            background: Colors.deepOrange.withValues(alpha: 0.22),
+                            icon: Icons.trending_down,
+                            bodySize: bodySize,
+                            headerSize: headerSize,
+                          ),
+                        ],
+                        if (summary?.morrieResultMessage != null) ...[
+                          const SizedBox(height: 10),
+                          _buildResultBanner(
+                            label: 'モリー',
+                            message: summary!.morrieResultMessage!,
+                            accent: Colors.lightGreenAccent,
+                            background: Colors.green.withValues(alpha: 0.18),
+                            icon: Icons.paid,
+                            bodySize: bodySize,
+                            headerSize: headerSize,
                           ),
                         ],
                         const SizedBox(height: 12),

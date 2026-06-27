@@ -60,6 +60,19 @@ class MorrieRules {
     );
   }
 
+  static String describeMorrieBurstEvent({
+    required String playerName,
+    required String playerId,
+  }) {
+    final lines = <String>[
+      '$playerName は所持モリー不足のため全財産を失い、飛びとなりました',
+    ];
+    if (BotLogic.isBot(playerId)) {
+      lines.add('（試合終了後に$burstRecoveryAmountモリーが付与されます）');
+    }
+    return lines.join('\n');
+  }
+
   static String describeBurstMorrieDeduction({
     required String burstPlayerName,
     required String burstPlayerId,
@@ -72,10 +85,10 @@ class MorrieRules {
         'モリー: $burstPlayerName -${deduction.actualMorrie}（$burstPointPenalty点×$rate）',
     ];
     if (deduction.morrieBurst) {
-      lines.add('$burstPlayerName は所持モリー不足のため全財産を失い、飛びとなりました');
-      if (BotLogic.isBot(burstPlayerId)) {
-        lines.add('（試合終了後に$burstRecoveryAmountモリーが付与されます）');
-      }
+      lines.add(describeMorrieBurstEvent(
+        playerName: burstPlayerName,
+        playerId: burstPlayerId,
+      ));
     }
     return lines.join('\n');
   }
@@ -126,10 +139,10 @@ class MorrieRules {
       'モリー: $loserName → $winnerName ${transfer.actualMorrie}（$pointDelta点×$rate）',
     ];
     if (transfer.morrieBurst) {
-      lines.add('$loserName は所持モリー不足のため全財産を失い、飛びとなりました');
-      if (BotLogic.isBot(loserId)) {
-        lines.add('（試合終了後に$burstRecoveryAmountモリーが付与されます）');
-      }
+      lines.add(describeMorrieBurstEvent(
+        playerName: loserName,
+        playerId: loserId,
+      ));
     }
     return lines.join('\n');
   }

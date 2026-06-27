@@ -2929,7 +2929,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       totalMatches: totalMatches,
       completedMatches: completedMatches,
       seriesComplete: seriesComplete,
-      resultMessage: _postGameResultMessage(),
+      cardBurstMessage: _cardBurstResultMessage(),
+      morrieBurstMessage: _morrieBurstResultMessage(),
+      morrieResultMessage: _morrieResultMessageForDisplay(),
     );
 
     if (mounted) setState(() => _postGameSummary = summary);
@@ -2952,22 +2954,37 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
   }
 
-  String? _postGameResultMessage() {
-    if (burstPlayerId != null) {
-      final pointMsg = ScoringRules.describeBurstScoring(
-        burstPlayerName: _displayName(burstPlayerId),
-      );
-      final morrieSummary = _lastMatchMorrieSummary?.trim();
-      if (morrieSummary != null && morrieSummary.isNotEmpty) {
-        return '$pointMsg\n$morrieSummary';
-      }
-      return pointMsg;
-    }
-    final morrieSummary = _lastMatchMorrieSummary?.trim();
-    if (morrieSummary != null && morrieSummary.isNotEmpty) {
-      return morrieSummary;
-    }
-    return null;
+  String? _cardBurstResultMessage() {
+    if (burstPlayerId == null) return null;
+    return ScoringRules.describeBurstScoring(
+      burstPlayerName: _displayName(burstPlayerId),
+    );
+  }
+
+  String? _morrieBurstResultMessage() {
+    final burstId = _morrieBurstPlayerId;
+    if (burstId == null || morrieRate <= 0) return null;
+    return MorrieRules.describeMorrieBurstEvent(
+      playerName: _displayName(burstId),
+      playerId: burstId,
+    );
+  }
+
+  String? _morrieResultMessageForDisplay() {
+    if (morrieRate <= 0) return null;
+    final raw = _lastMatchMorrieSummary?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    if (_morrieBurstPlayerId == null) return raw;
+
+    final lines = raw.split('\n').where((line) {
+      final t = line.trim();
+      if (t.isEmpty) return false;
+      if (t.contains('飛びとなりました')) return false;
+      if (t.contains('回復') && t.contains('モリー付与')) return false;
+      return true;
+    });
+    final joined = lines.join('\n').trim();
+    return joined.isEmpty ? null : joined;
   }
 
   Future<void> _applyMatchMorrieTransfer() async {
