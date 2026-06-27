@@ -1097,12 +1097,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
     }
 
-    for (final id in playerIds) {
-      if (BotLogic.isBot(id) && !next.containsKey(id)) {
-        next[id] = MorrieRules.botFixedBalance;
-      }
-    }
-
     if (!BotLogic.isBot(myId)) {
       final synced = next[myId];
       if (synced != null) {
@@ -1114,18 +1108,33 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _ensureOpponentMorrieBalancesLoaded() {
-    final missing = playerIds
+    final missingHumans = playerIds
         .where((id) => !BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id))
         .toList();
-    if (missing.isEmpty) return;
+    final missingBots = playerIds
+        .where((id) => BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id))
+        .toList();
+    if (missingHumans.isEmpty && missingBots.isEmpty) return;
 
-    final fetchKey = missing.join(',');
+    final fetchKey = [...missingHumans, ...missingBots].join(',');
     if (_morrieBalanceFetchKey == fetchKey) return;
     _morrieBalanceFetchKey = fetchKey;
 
     unawaited(
-      _morrieService.getRankingBalances(missing).then((fetched) {
-        if (!mounted || fetched.isEmpty) return;
+      Future.wait([
+        if (missingHumans.isNotEmpty)
+          _morrieService.getRankingBalances(missingHumans),
+        if (missingBots.isNotEmpty)
+          Future.wait(missingBots.map(_morrieService.getBotBalance)).then(
+            (values) => Map<String, int>.fromIterables(missingBots, values),
+          ),
+      ]).then((results) {
+        if (!mounted) return;
+        final fetched = <String, int>{};
+        for (final map in results) {
+          fetched.addAll(map);
+        }
+        if (fetched.isEmpty) return;
         setState(() {
           _playerMorrieBalances = {..._playerMorrieBalances, ...fetched};
           if (!BotLogic.isBot(myId)) {
@@ -1807,6 +1816,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     final botName = BotLogic.botDisplayName(botId);
+    final botBalance = await _morrieService.getBotBalance(botId);
     final deckCopy = List<CardWidget>.from(deck);
     final botHand = <CardWidget>[];
     for (var i = 0; i < 5; i++) {
@@ -1821,13 +1831,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'playerNames/$botId': botName,
       'playerPoints/$botId': 0,
       'bots/$botId': true,
-      'botMorrieBalances/$botId': MorrieRules.botFixedBalance,
+      'botMorrieBalances/$botId': botBalance,
       'deck': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
       'deckIndex': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
     });
     await _morrieService.syncBotRankingEntry(
       botId,
-      morrieBalance: MorrieRules.botFixedBalance,
+      morrieBalance: botBalance,
       playerName: botName,
     );
     _showGameMessage('$botName を追加しました');

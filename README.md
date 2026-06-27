@@ -115,8 +115,7 @@
     - `cd ios && pod install && cd ..`
     - `flutter run -d <iPhoneのID>`
     - `flutter build ipa`
-      - `open /Users/hirotaka_suzuki/workspace/mori_game/ios/Runner.xcworkspace`
-      - からアップルアカウントを結びつける必要あり
+      - 上記実行の前に`open /Users/hirotaka_suzuki/workspace/mori_game/ios/Runner.xcworkspace`からアップルアカウントを結びつける必要あり
     - デバイスがない時はこれの方がいいかも
       - `flutter build ipa --export-method app-store`
     - Functionの更新

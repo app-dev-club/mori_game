@@ -1,5 +1,5 @@
 import { Database } from "firebase-admin/database";
-import { applyMorrieBurstRecoveryIfNeeded } from "./morrie_transfer";
+import { applyMorrieBurstRecoveryIfNeeded, getBotRankingBalance } from "./morrie_transfer";
 import {
   BOT_FIXED_BALANCE,
 } from "./morrie_rules";
@@ -263,11 +263,13 @@ export async function settleRoomSeries(
       const id = entry.id;
       const delta = seriesDeltas[id] ?? 0;
       if (isBot(id)) {
+        const balance =
+          storedBotBalances[id] ?? (await getBotRankingBalance(db, id));
         morrieDetails[id] = {
           rank: entry.rank,
           points: entry.points,
           morrieDelta: delta,
-          morrieBalance: storedBotBalances[id] ?? BOT_FIXED_BALANCE,
+          morrieBalance: balance,
           isBot: true,
         };
         continue;

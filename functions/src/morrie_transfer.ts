@@ -53,14 +53,31 @@ async function ensureHumanBalance(db: Database, userId: string): Promise<number>
   return Math.max(0, Math.round(balance));
 }
 
-function loadBotMorrieBalances(
+export async function getBotRankingBalance(
+  db: Database,
+  botId: string,
+): Promise<number> {
+  const snap = await db.ref(`morrieRankings/${botId}/morrieBalance`).get();
+  const balance = snap.val();
+  if (typeof balance === "number" && Number.isFinite(balance)) {
+    return Math.max(0, Math.round(balance));
+  }
+  return BOT_FIXED_BALANCE;
+}
+
+async function loadBotMorrieBalancesFromRoomOrRanking(
+  db: Database,
   room: Record<string, unknown>,
   botIds: string[],
-): Record<string, number> {
+): Promise<Record<string, number>> {
   const stored = asIntMap(room.botMorrieBalances);
   const out: Record<string, number> = {};
   for (const id of botIds) {
-    out[id] = stored[id] ?? BOT_FIXED_BALANCE;
+    if (stored[id] != null) {
+      out[id] = stored[id]!;
+    } else {
+      out[id] = await getBotRankingBalance(db, id);
+    }
   }
   return out;
 }
@@ -103,7 +120,8 @@ async function loadParticipantMorrieBalances(
   const balances: Record<string, number> = {};
   Object.assign(
     balances,
-    loadBotMorrieBalances(
+    await loadBotMorrieBalancesFromRoomOrRanking(
+      db,
       room,
       participantIds.filter((id) => isBot(id)),
     ),
@@ -365,7 +383,8 @@ export async function applyMorrieBurstRecoveryIfNeeded(
   };
 
   const stored = asIntMap(room.botMorrieBalances);
-  const current = stored[burstId] ?? BOT_FIXED_BALANCE;
+  const current =
+    stored[burstId] ?? (await getBotRankingBalance(db, burstId));
   const next = current + amount;
   updates[`botMorrieBalances/${burstId}`] = next;
   await syncBotRankingEntry(db, burstId, next, playerNames, now);

@@ -127,7 +127,7 @@ class MorrieService {
     var total = 0;
     for (final id in playerIds) {
       if (BotLogic.isBot(id)) {
-        total += MorrieRules.botFixedBalance;
+        total += balanceMap[id] ?? MorrieRules.botFixedBalance;
       } else {
         total += balanceMap[id] ?? MorrieRules.defaultStartingBalance;
       }
@@ -184,6 +184,21 @@ class MorrieService {
       // read 不可時は初期値扱い
     }
     return MorrieRules.defaultStartingBalance;
+  }
+
+  /// ボットのグローバル所持モリー（初回のみ botFixedBalance）
+  Future<int> getBotBalance(String botId) async {
+    if (!BotLogic.isBot(botId)) {
+      return MorrieRules.defaultStartingBalance;
+    }
+    try {
+      final snap = await _morrieRankingsRef.child(botId).child('morrieBalance').get();
+      final value = snap.value;
+      if (value is num) return value.round().clamp(0, 1 << 30);
+    } catch (_) {
+      // 読み取り不可時は初期値扱い
+    }
+    return MorrieRules.botFixedBalance;
   }
 
   /// ランキングから複数プレイヤーのモリー残高を取得（他ユーザーの users/ は読めないため）
@@ -250,10 +265,15 @@ class MorrieService {
             ),
           )
         : <String, int>{};
-    return {
-      for (final id in botIds)
-        id: stored[id] ?? MorrieRules.botFixedBalance,
-    };
+    final balances = <String, int>{};
+    for (final id in botIds) {
+      if (stored.containsKey(id)) {
+        balances[id] = stored[id]!;
+      } else {
+        balances[id] = await getBotBalance(id);
+      }
+    }
+    return balances;
   }
 
   Future<Map<String, int>> _loadParticipantMorrieBalances(
@@ -565,7 +585,7 @@ class MorrieService {
     final botSnap = await roomRef.child('botMorrieBalances/$burstId').get();
     final current = botSnap.value is num
         ? (botSnap.value as num).round()
-        : MorrieRules.botFixedBalance;
+        : await getBotBalance(burstId);
     final next = current + amount;
     updates['botMorrieBalances/$burstId'] = next;
     await syncBotRankingEntry(
