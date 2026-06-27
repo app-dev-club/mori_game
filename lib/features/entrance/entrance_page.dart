@@ -16,6 +16,7 @@ import '../ranking/ranking_page.dart';
 import '../replay/match_replay_list_page.dart';
 import '../legal/privacy_policy_page.dart';
 import '../rules/mori_rules_page.dart';
+import '../settings/settings_page.dart';
 import '../../effects/app_sound_effects.dart';
 import '../common/app_side_bar.dart';
 import '../common/morrie_ad_reward.dart';
@@ -132,15 +133,6 @@ class _EntrancePageState extends State<EntrancePage> {
     final hide = await _gameDisplaySettings.getHideOpponentNames();
     if (!mounted) return;
     setState(() => _hideOpponentNames = hide);
-  }
-
-  Future<void> _toggleHideOpponentNames() async {
-    await _setHideOpponentNames(!_hideOpponentNames);
-  }
-
-  Future<void> _setHideOpponentNames(bool value) async {
-    setState(() => _hideOpponentNames = value);
-    await _gameDisplaySettings.setHideOpponentNames(value);
   }
 
   @override
@@ -685,6 +677,15 @@ class _EntrancePageState extends State<EntrancePage> {
     );
   }
 
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsPage()),
+    ).then((_) {
+      if (mounted) _loadDisplaySettings();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -920,8 +921,6 @@ class _EntrancePageState extends State<EntrancePage> {
 
   Widget _buildSideTabs() {
     return AppSideBar(
-      hideOpponentNames: _hideOpponentNames,
-      onToggleHideOpponentNames: _toggleHideOpponentNames,
       items: [
         MorrieAdReward.sideBarItem(
           context,
@@ -952,9 +951,10 @@ class _EntrancePageState extends State<EntrancePage> {
           onTap: _openPrivacyPolicy,
         ),
         AppSideBarItem(
-          label: 'ログアウト',
-          icon: Icons.logout,
-          onTap: () => FirebaseAuth.instance.signOut(),
+          label: '設定',
+          icon: Icons.settings,
+          accent: Colors.white70,
+          onTap: _openSettings,
         ),
       ],
     );

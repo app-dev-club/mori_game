@@ -26,7 +26,7 @@ class AppSideBar extends StatelessWidget {
 
   const AppSideBar({
     super.key,
-    required this.hideOpponentNames,
+    this.hideOpponentNames = false,
     this.onToggleHideOpponentNames,
     this.items = const [],
   });
