@@ -23,7 +23,7 @@ import {
   moriWinnerDelta,
 } from "./scoring_rules";
 import { settleRoomSeries } from "./settle_room";
-import { applyMatchMorrieTransferIfNeeded } from "./morrie_transfer";
+import { applyMatchMorrieTransferIfNeeded, applyMorrieBurstRecoveryIfNeeded } from "./morrie_transfer";
 import {
   asIntMap,
   asStringList,
@@ -149,6 +149,7 @@ function seriesMatchResetFields(): Record<string, unknown> {
     moriRevealedType: null,
     burstPlayerId: null,
     morrieBurstPlayerId: null,
+    morrieBurstRecoveryApplied: null,
     moriGaeshiCount: null,
     moriDeclarationFactors: null,
     moriDeclaredPlayerIds: null,
@@ -368,7 +369,17 @@ export async function processRoomSteward(
   if (!afterScoringSnap.exists()) {
     return { ok: false, reason: "room_removed" };
   }
-  let current = afterScoringSnap.val() as Record<string, unknown>;
+  await applyMorrieBurstRecoveryIfNeeded(
+    db,
+    roomId,
+    afterScoringSnap.val() as Record<string, unknown>,
+  );
+
+  const refreshedAfterRecovery = await roomRef.get();
+  if (!refreshedAfterRecovery.exists()) {
+    return { ok: false, reason: "room_removed" };
+  }
+  let current = refreshedAfterRecovery.val() as Record<string, unknown>;
 
   if (current.postGameEndedAt == null) {
     await markPostGameStarted(db, roomId, nowMs);

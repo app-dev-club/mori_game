@@ -2,13 +2,13 @@ import { Database } from "firebase-admin/database";
 import { moriWinnerDelta } from "./scoring_rules";
 import {
   BOT_FIXED_BALANCE,
-  botBalancesAfterSettlement,
+  BURST_RECOVERY_AMOUNT,
   computeMoriMorrieTransfer,
   describeMoriMorrieTransfer,
+  resolvePlayerBalance,
 } from "./morrie_rules";
 import {
   asIntMap,
-  asStringList,
   asStringMap,
   botDisplayName,
   DEFAULT_STARTING_BALANCE,
@@ -49,6 +49,18 @@ async function ensureHumanBalance(db: Database, userId: string): Promise<number>
   return Math.max(0, Math.round(balance));
 }
 
+function loadBotMorrieBalances(
+  room: Record<string, unknown>,
+  botIds: string[],
+): Record<string, number> {
+  const stored = asIntMap(room.botMorrieBalances);
+  const out: Record<string, number> = {};
+  for (const id of botIds) {
+    out[id] = stored[id] ?? BOT_FIXED_BALANCE;
+  }
+  return out;
+}
+
 function resolveDisplayName(
   playerId: string,
   playerNames: Record<string, string>,
@@ -80,18 +92,25 @@ export async function applyMatchMorrieTransferIfNeeded(
   if (pointDelta <= 0) return false;
 
   const playerNames = asStringMap(room.playerNames);
-  const humanBalances: Record<string, number> = {};
+  const playerBalances: Record<string, number> = {};
   for (const id of [winnerId, loserId]) {
     if (isBot(id)) continue;
-    humanBalances[id] = await ensureHumanBalance(db, id);
+    playerBalances[id] = await ensureHumanBalance(db, id);
   }
+  Object.assign(
+    playerBalances,
+    loadBotMorrieBalances(
+      room,
+      [winnerId, loserId].filter((id) => isBot(id)),
+    ),
+  );
 
   const transfer = computeMoriMorrieTransfer({
     pointDelta,
     rate: morrieRate,
     winnerId,
     loserId,
-    humanBalances,
+    playerBalances,
   });
   if (transfer.actualMorrie <= 0) {
     await db.ref(`rooms/${roomId}`).update({ lastMatchMorrieApplied: true });
@@ -100,9 +119,18 @@ export async function applyMatchMorrieTransferIfNeeded(
 
   const now = Date.now();
   const newBalances: Record<string, number> = {};
+  const botBalanceUpdates: Record<string, number> = {};
   for (const [id, delta] of Object.entries(transfer.deltas)) {
-    const current = humanBalances[id] ?? (await ensureHumanBalance(db, id));
-    const next = current + delta;
+    if (isBot(id)) {
+      const current = resolvePlayerBalance(id, playerBalances);
+      const next = Math.max(0, current + delta);
+      botBalanceUpdates[id] = next;
+      newBalances[id] = next;
+      continue;
+    }
+
+    const current = playerBalances[id] ?? (await ensureHumanBalance(db, id));
+    const next = Math.max(0, current + delta);
     newBalances[id] = next;
     const name = resolveDisplayName(id, playerNames);
     await db.ref(`users/${id}`).update({
@@ -126,6 +154,7 @@ export async function applyMatchMorrieTransferIfNeeded(
   const summary = describeMoriMorrieTransfer({
     winnerName: resolveDisplayName(winnerId, playerNames),
     loserName: resolveDisplayName(loserId, playerNames),
+    loserId,
     pointDelta,
     rate: morrieRate,
     transfer,
@@ -133,10 +162,7 @@ export async function applyMatchMorrieTransferIfNeeded(
 
   const balanceSnapshot: Record<string, number> = {};
   for (const id of Object.keys(transfer.deltas)) {
-    balanceSnapshot[id] = newBalances[id] ?? humanBalances[id] ?? 0;
-  }
-  if (isBot(loserId)) {
-    balanceSnapshot[loserId] = BOT_FIXED_BALANCE;
+    balanceSnapshot[id] = newBalances[id] ?? playerBalances[id] ?? 0;
   }
 
   const updates: Record<string, unknown> = {
@@ -149,13 +175,46 @@ export async function applyMatchMorrieTransferIfNeeded(
   if (transfer.morrieBurst) {
     updates.morrieBurstPlayerId = loserId;
   }
+  for (const [id, balance] of Object.entries(botBalanceUpdates)) {
+    updates[`botMorrieBalances/${id}`] = balance;
+  }
 
-  const roster = asStringList(room.players);
-  const botBalances = botBalancesAfterSettlement(
-    roster.length > 0 ? roster : [winnerId, loserId],
-  );
-  if (Object.keys(botBalances).length > 0) {
-    updates.botMorrieBalances = botBalances;
+  await db.ref(`rooms/${roomId}`).update(updates);
+  return true;
+}
+
+/** 飛び発生ボットへ試合終了後に回復モリーを付与（人間には付与しない） */
+export async function applyMorrieBurstRecoveryIfNeeded(
+  db: Database,
+  roomId: string,
+  room: Record<string, unknown>,
+): Promise<boolean> {
+  const burstId = room.morrieBurstPlayerId?.toString();
+  if (!burstId) return false;
+  if (room.morrieBurstRecoveryApplied === true) return false;
+
+  if (!isBot(burstId)) {
+    await db.ref(`rooms/${roomId}`).update({ morrieBurstRecoveryApplied: true });
+    return false;
+  }
+
+  const playerNames = asStringMap(room.playerNames);
+  const amount = BURST_RECOVERY_AMOUNT;
+  const updates: Record<string, unknown> = {
+    morrieBurstRecoveryApplied: true,
+  };
+
+  const stored = asIntMap(room.botMorrieBalances);
+  const current = stored[burstId] ?? BOT_FIXED_BALANCE;
+  const next = current + amount;
+  updates[`botMorrieBalances/${burstId}`] = next;
+  updates[`lastMatchMorrieBalances/${burstId}`] = next;
+
+  const summary = room.lastMatchMorrieSummary?.toString() ?? "";
+  if (summary) {
+    const label = resolveDisplayName(burstId, playerNames);
+    updates.lastMatchMorrieSummary =
+      `${summary}\n（${label} に回復${amount}モリー付与）`;
   }
 
   await db.ref(`rooms/${roomId}`).update(updates);

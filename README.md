@@ -119,6 +119,8 @@
       - からアップルアカウントを結びつける必要あり
     - デバイスがない時はこれの方がいいかも
       - `flutter build ipa --export-method app-store`
+    - Functionの更新
+      - `deploy --only functions`
 ### Flutterプロジェクトを新しく立ち上げる
 - 作りたい場所にターミナルで移動した後
   - flutter create .

@@ -1,6 +1,5 @@
 import { Database } from "firebase-admin/database";
 import {
-  botBalancesAfterSettlement,
   BOT_FIXED_BALANCE,
 } from "./morrie_rules";
 import {
@@ -236,6 +235,7 @@ export async function settleRoomSeries(
 
   if (morrieNeeded && !morrieDone) {
     const seriesDeltas = asIntMap(room.playerMorrieSeriesDeltas);
+    const storedBotBalances = asIntMap(room.botMorrieBalances);
     const ranked = rankByPoints(roster, finalPoints);
     const morrieDetails: Record<string, unknown> = {};
     const summaryLines = ["シリーズ合計モリー変動"];
@@ -248,7 +248,7 @@ export async function settleRoomSeries(
           rank: entry.rank,
           points: entry.points,
           morrieDelta: delta,
-          morrieBalance: BOT_FIXED_BALANCE,
+          morrieBalance: storedBotBalances[id] ?? BOT_FIXED_BALANCE,
           isBot: true,
         };
         continue;
@@ -268,13 +268,9 @@ export async function settleRoomSeries(
       }
     }
 
-    const botBalances = botBalancesAfterSettlement(roster);
     updates["seriesMorrieSettled"] = true;
     updates["seriesMorrieSummary"] = summaryLines.join("\n");
     updates["seriesMorrieDetails"] = morrieDetails;
-    if (Object.keys(botBalances).length > 0) {
-      updates["botMorrieBalances"] = botBalances;
-    }
   } else if (!morrieNeeded && !morrieDone) {
     updates["seriesMorrieSettled"] = true;
     updates["seriesMorrieSummary"] = "";

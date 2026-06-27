@@ -2521,6 +2521,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'postGameActive': false,
       'burstPlayerId': null,
       'morrieBurstPlayerId': null,
+      'morrieBurstRecoveryApplied': null,
       'moriGaeshiCount': null,
       'moriDeclarationFactors': null,
       'moriDeclaredPlayerIds': null,
@@ -2990,6 +2991,33 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _syncPostGameSummary();
   }
 
+  Future<void> _applyMorrieBurstRecovery() async {
+    if (!_hasStewardAuthority || morrieRate <= 0) return;
+    final roster = seriesPlayerIds.isNotEmpty
+        ? List<String>.from(seriesPlayerIds)
+        : List<String>.from(playerIds);
+    final names = {for (final id in roster) id: _displayName(id)};
+    final recovered = await _morrieService.applyMorrieBurstRecoveryIfNeeded(
+      roomId: widget.roomId,
+      displayNames: names,
+    );
+    if (!recovered || !mounted) return;
+    final snap = await _db.getSnapshot();
+    if (!snap.exists) return;
+    final data = Map<dynamic, dynamic>.from(snap.value as Map);
+    _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
+    if (data['lastMatchMorrieBalances'] is Map) {
+      _lastMatchMorrieBalances = Map<String, int>.from(
+        (data['lastMatchMorrieBalances'] as Map).map(
+          (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+        ),
+      );
+      final myBalance = _lastMatchMorrieBalances[myId];
+      if (myBalance != null) _myMorrieBalance = myBalance;
+    }
+    _syncPostGameSummary();
+  }
+
   Future<void> _applyMatchScoring() async {
     if (!_hasStewardAuthority) return;
 
@@ -3054,6 +3082,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       } else if (_matchRecordService.isRecording) {
         await _finalizeMatchRecording();
       }
+
+      await _applyMorrieBurstRecovery();
+      if (!mounted) return;
 
       if (data['postGameEndedAt'] == null) {
         await _db.markPostGameStarted();

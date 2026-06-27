@@ -190,6 +190,24 @@ class MorrieService {
     return next;
   }
 
+  Future<Map<String, int>> _loadBotMorrieBalances(
+    DatabaseReference roomRef,
+    Iterable<String> botIds,
+  ) async {
+    final snap = await roomRef.child('botMorrieBalances').get();
+    final stored = snap.value is Map
+        ? Map<String, int>.from(
+            (snap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+            ),
+          )
+        : <String, int>{};
+    return {
+      for (final id in botIds)
+        id: stored[id] ?? MorrieRules.botFixedBalance,
+    };
+  }
+
   /// もり成立時にモリーを loser → winner へ移動（二重適用防止付き）
   Future<MoriMorrieTransferResult?> applyMatchMorrieTransfer({
     required String roomId,
@@ -207,19 +225,21 @@ class MorrieService {
       return null;
     }
 
-    final humanBalances = <String, int>{};
+    final playerBalances = <String, int>{};
     for (final id in {winnerId, loserId}) {
       if (BotLogic.isBot(id)) continue;
       await ensureBalance(id);
-      humanBalances[id] = await getBalance(id);
+      playerBalances[id] = await getBalance(id);
     }
+    final botIds = {winnerId, loserId}.where(BotLogic.isBot);
+    playerBalances.addAll(await _loadBotMorrieBalances(roomRef, botIds));
 
     final transfer = MorrieRules.computeMoriMorrieTransfer(
       pointDelta: pointDelta,
       rate: morrieRate,
       winnerId: winnerId,
       loserId: loserId,
-      humanBalances: humanBalances,
+      playerBalances: playerBalances,
     );
     if (transfer.actualMorrie <= 0) {
       await roomRef.update({'lastMatchMorrieApplied': true});
@@ -227,10 +247,19 @@ class MorrieService {
     }
 
     final newBalances = <String, int>{};
+    final botBalanceUpdates = <String, int>{};
     for (final entry in transfer.deltas.entries) {
       final id = entry.key;
-      final current = humanBalances[id] ?? await getBalance(id);
-      final next = current + entry.value;
+      if (BotLogic.isBot(id)) {
+        final current = playerBalances[id] ?? MorrieRules.botFixedBalance;
+        final next = (current + entry.value).clamp(0, 1 << 30);
+        botBalanceUpdates[id] = next;
+        newBalances[id] = next;
+        continue;
+      }
+
+      final current = playerBalances[id] ?? await getBalance(id);
+      final next = (current + entry.value).clamp(0, 1 << 30);
       newBalances[id] = next;
       final name = displayNames[id]?.trim().isNotEmpty == true
           ? displayNames[id]!.trim()
@@ -269,18 +298,16 @@ class MorrieService {
     final summary = MorrieRules.describeMoriMorrieTransfer(
       winnerName: displayNames[winnerId] ?? winnerId,
       loserName: displayNames[loserId] ?? loserId,
+      loserId: loserId,
       pointDelta: pointDelta,
       rate: morrieRate,
       transfer: transfer,
     );
 
-    final balanceSnapshot = <String, int>{};
-    for (final id in transfer.deltas.keys) {
-      balanceSnapshot[id] = newBalances[id] ?? humanBalances[id] ?? 0;
-    }
-    if (BotLogic.isBot(loserId)) {
-      balanceSnapshot[loserId] = MorrieRules.botFixedBalance;
-    }
+    final balanceSnapshot = <String, int>{
+      for (final id in transfer.deltas.keys)
+        id: newBalances[id] ?? playerBalances[id] ?? 0,
+    };
 
     final roomUpdates = <String, dynamic>{
       'lastMatchMorrieApplied': true,
@@ -292,9 +319,8 @@ class MorrieService {
     if (transfer.morrieBurst) {
       roomUpdates['morrieBurstPlayerId'] = loserId;
     }
-    final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);
-    if (botBalances.isNotEmpty) {
-      roomUpdates['botMorrieBalances'] = botBalances;
+    for (final entry in botBalanceUpdates.entries) {
+      roomUpdates['botMorrieBalances/${entry.key}'] = entry.value;
     }
     await roomRef.update(roomUpdates);
 
@@ -305,6 +331,51 @@ class MorrieService {
       morrieBurst: transfer.morrieBurst,
     );
   }
+
+  /// 飛び発生ボットへ試合終了後に回復モリーを付与（人間には付与しない）
+  Future<bool> applyMorrieBurstRecoveryIfNeeded({
+    required String roomId,
+    required Map<String, String> displayNames,
+  }) async {
+    final roomRef = FirebaseDatabase.instance.ref('rooms/$roomId');
+    final snap = await roomRef.get();
+    if (!snap.exists || snap.value is! Map) return false;
+
+    final data = Map<dynamic, dynamic>.from(snap.value as Map);
+    final burstId = data['morrieBurstPlayerId']?.toString();
+    if (burstId == null || burstId.isEmpty) return false;
+    if (data['morrieBurstRecoveryApplied'] == true) return false;
+
+    if (!BotLogic.isBot(burstId)) {
+      await roomRef.update({'morrieBurstRecoveryApplied': true});
+      return false;
+    }
+
+    final amount = MorrieRules.burstRecoveryAmount;
+    final updates = <String, dynamic>{
+      'morrieBurstRecoveryApplied': true,
+    };
+
+    final botSnap = await roomRef.child('botMorrieBalances/$burstId').get();
+    final current = botSnap.value is num
+        ? (botSnap.value as num).round()
+        : MorrieRules.botFixedBalance;
+    final next = current + amount;
+    updates['botMorrieBalances/$burstId'] = next;
+    updates['lastMatchMorrieBalances/$burstId'] = next;
+
+    final summary = data['lastMatchMorrieSummary']?.toString() ?? '';
+    if (summary.isNotEmpty) {
+      updates['lastMatchMorrieSummary'] =
+          '$summary\n（${_displayNameOrId(burstId, displayNames)} に回復$amountモリー付与）';
+    }
+
+    await roomRef.update(updates);
+    return true;
+  }
+
+  String _displayNameOrId(String id, Map<String, String> displayNames) =>
+      displayNames[id] ?? id;
 
   /// シリーズ終了時: モリー表示用サマリーのみ確定（残高は試合ごとに反映済み）
   Future<MorrieSettlementResult?> finalizeSeriesMorrieDisplay({
@@ -320,6 +391,10 @@ class MorrieService {
     if (appliedSnap.value == true) return null;
 
     final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);
+    final botBalances = await _loadBotMorrieBalances(
+      roomRef,
+      participantIds.where(BotLogic.isBot),
+    );
     final seriesSnap = await roomRef.child('playerMorrieSeriesDeltas').get();
     final seriesDeltas = seriesSnap.value is Map
         ? Map<String, int>.from(
@@ -340,7 +415,7 @@ class MorrieService {
           'rank': entry.rank,
           'points': entry.points,
           'morrieDelta': delta,
-          'morrieBalance': MorrieRules.botFixedBalance,
+          'morrieBalance': botBalances[id] ?? MorrieRules.botFixedBalance,
           'isBot': true,
         };
         continue;
@@ -360,15 +435,11 @@ class MorrieService {
       }
     }
 
-    final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);
     final roomUpdates = <String, dynamic>{
       'seriesMorrieSettled': true,
       'seriesMorrieSummary': summaryLines.join('\n'),
       'seriesMorrieDetails': morrieDetails,
     };
-    if (botBalances.isNotEmpty) {
-      roomUpdates['botMorrieBalances'] = botBalances;
-    }
     await roomRef.update(roomUpdates);
 
     return MorrieSettlementResult(

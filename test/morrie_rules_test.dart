@@ -14,7 +14,7 @@ void main() {
         rate: 2,
         winnerId: 'winner',
         loserId: 'loser',
-        humanBalances: const {'winner': 100, 'loser': 50},
+        playerBalances: const {'winner': 100, 'loser': 50},
       );
 
       expect(transfer.requestedMorrie, 12);
@@ -30,7 +30,7 @@ void main() {
         rate: 5,
         winnerId: 'winner',
         loserId: 'loser',
-        humanBalances: const {'winner': 100, 'loser': 3},
+        playerBalances: const {'winner': 100, 'loser': 3},
       );
 
       expect(transfer.requestedMorrie, 50);
@@ -40,24 +40,49 @@ void main() {
       expect(transfer.deltas['winner'], 3);
     });
 
-    test('Bot敗北時は5モリーまで', () {
+    test('Botもモリー増減の対象になる', () {
       final transfer = MorrieRules.computeMoriMorrieTransfer(
-        pointDelta: 10,
-        rate: 5,
+        pointDelta: 5,
+        rate: 1,
         winnerId: 'human',
         loserId: 'bot_1',
-        humanBalances: const {'human': 100},
+        playerBalances: const {'human': 100, 'bot_1': 8},
       );
 
-      expect(transfer.actualMorrie, 5);
-      expect(transfer.morrieBurst, isFalse);
+      expect(transfer.deltas['bot_1'], -5);
       expect(transfer.deltas['human'], 5);
-      expect(transfer.deltas.containsKey('bot_1'), isFalse);
+      expect(transfer.morrieBurst, isFalse);
     });
 
-    test('試合後のBot残高は常に5に戻す', () {
+    test('Bot所持不足でも飛びになる', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 10,
+        rate: 2,
+        winnerId: 'human',
+        loserId: 'bot_1',
+        playerBalances: const {'human': 100, 'bot_1': 3},
+      );
+
+      expect(transfer.actualMorrie, 3);
+      expect(transfer.morrieBurst, isTrue);
+    });
+
+    test('Bot勝利時もBot側にdeltaが入る', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 4,
+        rate: 2,
+        winnerId: 'bot_1',
+        loserId: 'human',
+        playerBalances: const {'human': 20, 'bot_1': 5},
+      );
+
+      expect(transfer.deltas['human'], -8);
+      expect(transfer.deltas['bot_1'], 8);
+    });
+
+    test('initialBotBalances', () {
       expect(
-        MorrieRules.botBalancesAfterSettlement(const ['bot_1', 'human']),
+        MorrieRules.initialBotBalances(const ['bot_1']),
         {'bot_1': MorrieRules.botFixedBalance},
       );
     });
