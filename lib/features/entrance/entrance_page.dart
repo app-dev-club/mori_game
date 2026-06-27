@@ -704,217 +704,257 @@ class _EntrancePageState extends State<EntrancePage> {
         children: [
           Expanded(
             child: Column(
-        children: [
-          _buildPlayerStatusBar(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            child: TextField(
-              controller: _nameController,
-              maxLength: _maxNameLength,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                counterStyle: const TextStyle(color: Colors.white38),
-                filled: true,
-                fillColor: Colors.black26,
-                labelText: 'プレイヤー名',
-                labelStyle: const TextStyle(color: Colors.white70),
-                hintText: '例: もり太郎',
-                hintStyle: const TextStyle(color: Colors.white38),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white24),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.orangeAccent),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildActionBtn('公開で作成', Icons.public, Colors.orangeAccent, () => _createRoom(isPrivate: false)),
-              const SizedBox(width: 15),
-              _buildActionBtn('非公開で作成', Icons.lock, Colors.blueGrey, () => _createRoom(isPrivate: true)),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const Divider(color: Colors.white24, indent: 40, endIndent: 40),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Text('公開ルーム', style: TextStyle(color: Colors.white70, fontSize: 16)),
-          ),
-          Expanded(
-            child: StreamBuilder<Map<String, int>>(
-              stream: _morrieService.watchMorrieBalanceMap(),
-              builder: (context, morrieSnapshot) {
-                final balanceMap = morrieSnapshot.data ?? const {};
-                return StreamBuilder(
-                  stream: _roomsRef.onValue,
-                  builder: (context, AsyncSnapshot<DatabaseEvent> snapshot) {
-                if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                  return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
-                }
-
-                Map rooms = snapshot.data!.snapshot.value as Map;
-
-                List<MapEntry> publicRooms = rooms.entries
-                    .where((e) => _isPublicRoomVisible(e.value as Map))
-                    .toList()
-                  ..sort((a, b) {
-                    final order = _roomListSortOrder(a.value as Map)
-                        .compareTo(_roomListSortOrder(b.value as Map));
-                    if (order != 0) return order;
-                    return a.key.toString().compareTo(b.key.toString());
-                  });
-
-                if (publicRooms.isEmpty) {
-                  return const Center(child: Text('公開ルームはありません', style: TextStyle(color: Colors.white38)));
-                }
-
-                return ListView.builder(
-                  itemCount: publicRooms.length,
-                  itemBuilder: (context, index) {
-                    final entry = publicRooms[index];
-                    String rid = entry.key.toString();
-                    final data = entry.value as Map;
-                    final players = data['players'] as List? ?? [];
-                    final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
-                    final isStarted = data['gameStarted'] == true;
-                    final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
-                    final canJoin = !isStarted && !isFull;
-                    final canSpectate = isStarted &&
-                        _userId != null &&
-                        RoomConfig.canUserSpectateRoom(data, _userId!);
-                    final playerIdList = players.map((e) => e.toString()).toList();
-                    final canRejoin = isStarted &&
-                        _userId != null &&
-                        playerIdList.contains(_userId);
-
-                    final Color cardColor;
-                    final Color titleColor;
-                    final IconData leadingIcon;
-                    final Color leadingColor;
-                    final String? statusBadge;
-
-                    if (isStarted) {
-                      cardColor = Colors.blue.withValues(alpha: 0.12);
-                      titleColor = Colors.white;
-                      leadingIcon = Icons.sports_esports;
-                      leadingColor = Colors.lightBlueAccent;
-                      statusBadge = '対戦中';
-                    } else if (isFull) {
-                      cardColor = Colors.orange.withValues(alpha: 0.12);
-                      titleColor = Colors.white;
-                      leadingIcon = Icons.groups;
-                      leadingColor = Colors.orangeAccent;
-                      statusBadge = '満員';
-                    } else {
-                      cardColor = Colors.white.withValues(alpha: 0.1);
-                      titleColor = Colors.white;
-                      leadingIcon = Icons.meeting_room;
-                      leadingColor = Colors.orangeAccent;
-                      statusBadge = null;
-                    }
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                      color: cardColor,
-                      child: ListTile(
-                        leading: Icon(leadingIcon, color: leadingColor),
-                        title: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'ルームID: $rid',
-                                style: TextStyle(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            if (statusBadge != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: leadingColor.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: leadingColor.withValues(alpha: 0.6)),
-                                ),
-                                child: Text(
-                                  statusBadge,
-                                  style: TextStyle(
-                                    color: leadingColor,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        subtitle: Text(
-                          _roomListSubtitle(data, balanceMap),
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                        trailing: canRejoin
-                            ? TextButton(
-                                onPressed: () => withButtonSound(() => _joinRoom(rid)),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.greenAccent,
-                                  backgroundColor: Colors.greenAccent.withValues(alpha: 0.15),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  '復帰',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              )
-                            : (canSpectate
-                            ? TextButton(
-                                onPressed: () => withButtonSound(() => _spectateRoom(rid, data)),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.lightBlueAccent,
-                                  backgroundColor: Colors.lightBlueAccent.withValues(alpha: 0.15),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  '観戦',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              )
-                            : (canJoin
-                                ? const Icon(
-                                    Icons.arrow_forward_ios,
-                                    color: Colors.white,
-                                    size: 16,
-                                  )
-                                : null)),
-                        enabled: canJoin || canRejoin,
-                        onTap: canJoin || canRejoin
-                            ? () => withButtonSound(() => _joinRoom(rid))
-                            : null,
-                      ),
-                    );
-                  },
-                );
-              },
-            );
-          },
-        ),
-      ),
-          _buildBottomBar(),
-        ],
+              children: [
+                _buildLobbyHeader(),
+                Expanded(child: _buildPublicRoomList()),
+                _buildBottomBar(),
+              ],
             ),
           ),
           _buildSideTabs(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLobbyHeader() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildPlayerStatusBar(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: TextField(
+            controller: _nameController,
+            maxLength: _maxNameLength,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              counterStyle: const TextStyle(color: Colors.white38),
+              filled: true,
+              fillColor: Colors.black26,
+              labelText: 'プレイヤー名',
+              labelStyle: const TextStyle(color: Colors.white70),
+              hintText: '例: もり太郎',
+              hintStyle: const TextStyle(color: Colors.white38),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.white24),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.orangeAccent),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildActionBtn('公開で作成', Icons.public, Colors.orangeAccent, () => _createRoom(isPrivate: false)),
+            const SizedBox(width: 15),
+            _buildActionBtn('非公開で作成', Icons.lock, Colors.blueGrey, () => _createRoom(isPrivate: true)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Divider(color: Colors.white24, indent: 40, endIndent: 40),
+      ],
+    );
+  }
+
+  Widget _buildPublicRoomList() {
+    return StreamBuilder<Map<String, int>>(
+      stream: _morrieService.watchMorrieBalanceMap(),
+      builder: (context, morrieSnapshot) {
+        final balanceMap = morrieSnapshot.data ?? const {};
+        return StreamBuilder<DatabaseEvent>(
+          stream: _roomsRef.onValue,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
+              return const _PublicRoomListPlaceholder(
+                message: '公開ルームはありません',
+              );
+            }
+
+            final rooms = snapshot.data!.snapshot.value as Map;
+            final publicRooms = rooms.entries
+                .where((e) => _isPublicRoomVisible(e.value as Map))
+                .toList()
+              ..sort((a, b) {
+                final order = _roomListSortOrder(a.value as Map)
+                    .compareTo(_roomListSortOrder(b.value as Map));
+                if (order != 0) return order;
+                return a.key.toString().compareTo(b.key.toString());
+              });
+
+            if (publicRooms.isEmpty) {
+              return const _PublicRoomListPlaceholder(
+                message: '公開ルームはありません',
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+                  child: Text(
+                    '公開ルーム (${publicRooms.length})',
+                    style: const TextStyle(color: Colors.white70, fontSize: 16),
+                  ),
+                ),
+                Expanded(
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      itemCount: publicRooms.length,
+                      itemBuilder: (context, index) {
+                        return _buildPublicRoomTile(
+                          entry: publicRooms[index],
+                          balanceMap: balanceMap,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPublicRoomTile({
+    required MapEntry entry,
+    required Map<String, int> balanceMap,
+  }) {
+    final rid = entry.key.toString();
+    final data = entry.value as Map;
+    final players = data['players'] as List? ?? [];
+    final maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
+    final isStarted = data['gameStarted'] == true;
+    final isFull = RoomConfig.isRoomFull(players.length, maxPlayers);
+    final canJoin = !isStarted && !isFull;
+    final canSpectate = isStarted &&
+        _userId != null &&
+        RoomConfig.canUserSpectateRoom(data, _userId!);
+    final playerIdList = players.map((e) => e.toString()).toList();
+    final canRejoin = isStarted &&
+        _userId != null &&
+        playerIdList.contains(_userId);
+
+    final Color cardColor;
+    final Color titleColor;
+    final IconData leadingIcon;
+    final Color leadingColor;
+    final String? statusBadge;
+
+    if (isStarted) {
+      cardColor = Colors.blue.withValues(alpha: 0.12);
+      titleColor = Colors.white;
+      leadingIcon = Icons.sports_esports;
+      leadingColor = Colors.lightBlueAccent;
+      statusBadge = '対戦中';
+    } else if (isFull) {
+      cardColor = Colors.orange.withValues(alpha: 0.12);
+      titleColor = Colors.white;
+      leadingIcon = Icons.groups;
+      leadingColor = Colors.orangeAccent;
+      statusBadge = '満員';
+    } else {
+      cardColor = Colors.white.withValues(alpha: 0.1);
+      titleColor = Colors.white;
+      leadingIcon = Icons.meeting_room;
+      leadingColor = Colors.orangeAccent;
+      statusBadge = null;
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      color: cardColor,
+      child: ListTile(
+        leading: Icon(leadingIcon, color: leadingColor),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'ルームID: $rid',
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (statusBadge != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: leadingColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: leadingColor.withValues(alpha: 0.6)),
+                ),
+                child: Text(
+                  statusBadge,
+                  style: TextStyle(
+                    color: leadingColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        subtitle: Text(
+          _roomListSubtitle(data, balanceMap),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        trailing: canRejoin
+            ? TextButton(
+                onPressed: () => withButtonSound(() => _joinRoom(rid)),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.greenAccent,
+                  backgroundColor: Colors.greenAccent.withValues(alpha: 0.15),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  '復帰',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              )
+            : (canSpectate
+                ? TextButton(
+                    onPressed: () => withButtonSound(() => _spectateRoom(rid, data)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.lightBlueAccent,
+                      backgroundColor: Colors.lightBlueAccent.withValues(alpha: 0.15),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      '観戦',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  )
+                : (canJoin
+                    ? const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.white,
+                        size: 16,
+                      )
+                    : null)),
+        enabled: canJoin || canRejoin,
+        onTap: canJoin || canRejoin
+            ? () => withButtonSound(() => _joinRoom(rid))
+            : null,
       ),
     );
   }
@@ -1096,6 +1136,46 @@ class _EntrancePageState extends State<EntrancePage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PublicRoomListPlaceholder extends StatelessWidget {
+  final String message;
+
+  const _PublicRoomListPlaceholder({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 10, 20, 4),
+          child: Text(
+            '公開ルーム',
+            style: TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            children: [
+              SizedBox(
+                height: 120,
+                child: Center(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: Colors.white38),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
