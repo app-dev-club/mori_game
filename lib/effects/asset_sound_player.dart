@@ -7,5 +7,5 @@ import 'asset_sound_player_stub.dart'
 
 export 'asset_sound_player_stub.dart' show AssetSoundHandle;
 
-Future<AssetSoundHandle?> playAssetSound(String assetPath) =>
-    impl.playAssetSound(assetPath);
+Future<AssetSoundHandle?> playAssetSound(String assetPath, {double volume = 1.0}) =>
+    impl.playAssetSound(assetPath, volume: volume);

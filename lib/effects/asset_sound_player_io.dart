@@ -37,11 +37,14 @@ class _IoAssetSoundHandle implements AssetSoundHandle {
   Future<void> dispose() => _player.dispose();
 }
 
-Future<AssetSoundHandle?> playAssetSound(String assetPath) async {
+Future<AssetSoundHandle?> playAssetSound(String assetPath, {double volume = 1.0}) async {
+  final clamped = volume.clamp(0.0, 1.0);
+  if (clamped <= 0) return null;
   try {
     await _ensureAudioContext();
     final player = AudioPlayer();
     player.audioCache = _assetSoundCache;
+    await player.setVolume(clamped);
     await player.play(AssetSource(assetPath));
     return _IoAssetSoundHandle(player);
   } catch (e, stack) {

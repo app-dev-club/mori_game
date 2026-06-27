@@ -4,4 +4,4 @@ abstract class AssetSoundHandle {
   Future<void> dispose();
 }
 
-Future<AssetSoundHandle?> playAssetSound(String assetPath) async => null;
+Future<AssetSoundHandle?> playAssetSound(String assetPath, {double volume = 1.0}) async => null;

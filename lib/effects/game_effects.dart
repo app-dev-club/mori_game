@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../features/game/game_board_view.dart';
+import '../services/sound_settings.dart';
 import 'app_sound_effects.dart';
 import 'asset_sound_player.dart';
 
@@ -95,9 +96,11 @@ class GameEffects extends ChangeNotifier {
   }
 
   Future<void> _playSound(String assetPath) async {
+    final volume = SoundSettings.instance.moriVolume;
+    if (volume <= 0) return;
     try {
       await _stopMoriSound();
-      _moriSoundHandle = await playAssetSound(assetPath);
+      _moriSoundHandle = await playAssetSound(assetPath, volume: volume);
     } catch (e) {
       assert(() {
         debugPrint('効果音の再生に失敗: $e');

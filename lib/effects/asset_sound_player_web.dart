@@ -29,8 +29,11 @@ String _assetUrl(String assetPath) {
   return '${base}assets/$assetPath';
 }
 
-Future<AssetSoundHandle?> playAssetSound(String assetPath) async {
+Future<AssetSoundHandle?> playAssetSound(String assetPath, {double volume = 1.0}) async {
+  final clamped = volume.clamp(0.0, 1.0);
+  if (clamped <= 0) return null;
   final audio = web.HTMLAudioElement();
+  audio.volume = clamped;
   audio.src = _assetUrl(assetPath);
   try {
     await audio.play().toDart;

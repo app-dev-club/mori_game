@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../effects/app_sound_effects.dart';
 import '../../services/game_display_settings.dart';
+import '../../services/sound_settings.dart';
 
 /// アプリ設定（表示・ログアウト）
 class SettingsPage extends StatefulWidget {
@@ -17,6 +18,9 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
   bool _hideOpponentNames = false;
+  int _moriLevel = SoundSettings.defaultLevel;
+  int _playLevel = SoundSettings.defaultLevel;
+  int _selectionLevel = SoundSettings.defaultLevel;
   bool _loading = true;
 
   @override
@@ -26,10 +30,14 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadSettings() async {
+    await SoundSettings.instance.load();
     final hide = await _gameDisplaySettings.getHideOpponentNames();
     if (!mounted) return;
     setState(() {
       _hideOpponentNames = hide;
+      _moriLevel = SoundSettings.instance.moriLevel;
+      _playLevel = SoundSettings.instance.playLevel;
+      _selectionLevel = SoundSettings.instance.selectionLevel;
       _loading = false;
     });
   }
@@ -37,6 +45,21 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _setHideOpponentNames(bool hide) async {
     setState(() => _hideOpponentNames = hide);
     await _gameDisplaySettings.setHideOpponentNames(hide);
+  }
+
+  Future<void> _selectVolumeLevel(SoundVolumeCategory category, int level) async {
+    setState(() {
+      switch (category) {
+        case SoundVolumeCategory.mori:
+          _moriLevel = level;
+        case SoundVolumeCategory.play:
+          _playLevel = level;
+        case SoundVolumeCategory.selection:
+          _selectionLevel = level;
+      }
+    });
+    await SoundSettings.instance.setLevel(category, level);
+    AppSoundEffects.instance.preview(category);
   }
 
   Future<void> _confirmLogout() async {
@@ -116,6 +139,36 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 24),
                 _SettingsSection(
+                  title: '音量',
+                  children: [
+                    _VolumeLevelTile(
+                      label: 'もりSE',
+                      subtitle: 'もり・もり返し・単騎もりの宣言音',
+                      icon: Icons.celebration_outlined,
+                      level: _moriLevel,
+                      onLevelSelected: (level) =>
+                          unawaited(_selectVolumeLevel(SoundVolumeCategory.mori, level)),
+                    ),
+                    _VolumeLevelTile(
+                      label: 'プレーSE',
+                      subtitle: 'カードを出す・めくるなどの対局中の効果音',
+                      icon: Icons.style_outlined,
+                      level: _playLevel,
+                      onLevelSelected: (level) =>
+                          unawaited(_selectVolumeLevel(SoundVolumeCategory.play, level)),
+                    ),
+                    _VolumeLevelTile(
+                      label: '選択SE',
+                      subtitle: 'ボタンやメニューを押したときの効果音',
+                      icon: Icons.touch_app_outlined,
+                      level: _selectionLevel,
+                      onLevelSelected: (level) =>
+                          unawaited(_selectVolumeLevel(SoundVolumeCategory.selection, level)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _SettingsSection(
                   title: 'アカウント',
                   children: [
                     ListTile(
@@ -134,6 +187,107 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _VolumeLevelTile extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final int level;
+  final ValueChanged<int> onLevelSelected;
+
+  const _VolumeLevelTile({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.level,
+    required this.onLevelSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.orangeAccent, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '${SoundSettings.levelLabel(level)} ($level/5)',
+                style: const TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: List.generate(SoundSettings.volumeLevelCount, (index) {
+              final step = index + 1;
+              final selected = step == level;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: index == 0 ? 0 : 4,
+                    right: index == SoundSettings.volumeLevelCount - 1 ? 0 : 4,
+                  ),
+                  child: InkWell(
+                    onTap: () => onLevelSelected(step),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      height: 44,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.orangeAccent.withValues(alpha: 0.25)
+                            : Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? Colors.orangeAccent : Colors.white24,
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                      child: Text(
+                        '$step',
+                        style: TextStyle(
+                          color: selected ? Colors.orangeAccent : Colors.white70,
+                          fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 }
