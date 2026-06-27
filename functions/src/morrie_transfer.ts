@@ -11,6 +11,7 @@ import {
 } from "./morrie_rules";
 import {
   asIntMap,
+  asStringList,
   asStringMap,
   botDisplayName,
   DEFAULT_STARTING_BALANCE,
@@ -18,6 +19,7 @@ import {
   resolveMorrieRate,
   resolveNonNegativeInt,
 } from "./shared";
+import { playerIdsFromRoom } from "./room_lifecycle";
 
 function asIntArray(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -87,6 +89,51 @@ async function syncBotRankingEntry(
   });
 }
 
+function participantIdsFromRoom(room: Record<string, unknown>): string[] {
+  const series = asStringList(room.seriesPlayerIds);
+  if (series.length > 0) return series;
+  return playerIdsFromRoom(room);
+}
+
+async function loadParticipantMorrieBalances(
+  db: Database,
+  room: Record<string, unknown>,
+  participantIds: string[],
+): Promise<Record<string, number>> {
+  const balances: Record<string, number> = {};
+  Object.assign(
+    balances,
+    loadBotMorrieBalances(
+      room,
+      participantIds.filter((id) => isBot(id)),
+    ),
+  );
+  for (const id of participantIds) {
+    if (isBot(id)) continue;
+    balances[id] = await ensureHumanBalance(db, id);
+  }
+  return balances;
+}
+
+function buildFullMatchMorrieDisplay(params: {
+  participantIds: string[];
+  moveDeltas: Record<string, number>;
+  afterMoveBalances: Record<string, number>;
+  beforeBalances: Record<string, number>;
+}): { deltas: Record<string, number>; balances: Record<string, number> } {
+  const { participantIds, moveDeltas, afterMoveBalances, beforeBalances } = params;
+  const deltas: Record<string, number> = {};
+  const balances: Record<string, number> = {};
+  for (const id of participantIds) {
+    deltas[id] = moveDeltas[id] ?? 0;
+    balances[id] =
+      afterMoveBalances[id] ??
+      beforeBalances[id] ??
+      resolvePlayerBalance(id, beforeBalances);
+  }
+  return { deltas, balances };
+}
+
 /** もり成立時にモリーを loser → winner へ移動（二重適用防止付き） */
 export async function applyMatchMorrieTransferIfNeeded(
   db: Database,
@@ -109,17 +156,11 @@ export async function applyMatchMorrieTransferIfNeeded(
   if (pointDelta <= 0) return false;
 
   const playerNames = asStringMap(room.playerNames);
-  const playerBalances: Record<string, number> = {};
-  for (const id of [winnerId, loserId]) {
-    if (isBot(id)) continue;
-    playerBalances[id] = await ensureHumanBalance(db, id);
-  }
-  Object.assign(
-    playerBalances,
-    loadBotMorrieBalances(
-      room,
-      [winnerId, loserId].filter((id) => isBot(id)),
-    ),
+  const participantIds = participantIdsFromRoom(room);
+  const playerBalances = await loadParticipantMorrieBalances(
+    db,
+    room,
+    participantIds,
   );
 
   const transfer = computeMoriMorrieTransfer({
@@ -178,17 +219,19 @@ export async function applyMatchMorrieTransferIfNeeded(
     transfer,
   });
 
-  const balanceSnapshot: Record<string, number> = {};
-  for (const id of Object.keys(transfer.deltas)) {
-    balanceSnapshot[id] = newBalances[id] ?? playerBalances[id] ?? 0;
-  }
+  const display = buildFullMatchMorrieDisplay({
+    participantIds,
+    moveDeltas: transfer.deltas,
+    afterMoveBalances: newBalances,
+    beforeBalances: playerBalances,
+  });
 
   const updates: Record<string, unknown> = {
     lastMatchMorrieApplied: true,
-    lastMatchMorrieDeltas: transfer.deltas,
+    lastMatchMorrieDeltas: display.deltas,
     lastMatchMorrieSummary: summary,
     playerMorrieSeriesDeltas: seriesDeltas,
-    lastMatchMorrieBalances: balanceSnapshot,
+    lastMatchMorrieBalances: display.balances,
   };
   if (transfer.morrieBurst) {
     updates.morrieBurstPlayerId = loserId;
@@ -215,15 +258,12 @@ export async function applyBurstMorrieDeductionIfNeeded(
   if (!burstPlayerId) return false;
 
   const playerNames = asStringMap(room.playerNames);
-  const playerBalances: Record<string, number> = {};
-  if (isBot(burstPlayerId)) {
-    Object.assign(
-      playerBalances,
-      loadBotMorrieBalances(room, [burstPlayerId]),
-    );
-  } else {
-    playerBalances[burstPlayerId] = await ensureHumanBalance(db, burstPlayerId);
-  }
+  const participantIds = participantIdsFromRoom(room);
+  const playerBalances = await loadParticipantMorrieBalances(
+    db,
+    room,
+    participantIds,
+  );
 
   const deduction = computeBurstMorrieDeduction({
     rate: morrieRate,
@@ -277,17 +317,19 @@ export async function applyBurstMorrieDeductionIfNeeded(
     deduction,
   });
 
-  const balanceSnapshot: Record<string, number> = {
-    [burstPlayerId]:
-      newBalances[burstPlayerId] ?? playerBalances[burstPlayerId] ?? 0,
-  };
+  const display = buildFullMatchMorrieDisplay({
+    participantIds,
+    moveDeltas: deduction.deltas,
+    afterMoveBalances: newBalances,
+    beforeBalances: playerBalances,
+  });
 
   const updates: Record<string, unknown> = {
     lastMatchMorrieApplied: true,
-    lastMatchMorrieDeltas: deduction.deltas,
+    lastMatchMorrieDeltas: display.deltas,
     lastMatchMorrieSummary: summary,
     playerMorrieSeriesDeltas: seriesDeltas,
-    lastMatchMorrieBalances: balanceSnapshot,
+    lastMatchMorrieBalances: display.balances,
   };
   if (deduction.morrieBurst) {
     updates.morrieBurstPlayerId = burstPlayerId;

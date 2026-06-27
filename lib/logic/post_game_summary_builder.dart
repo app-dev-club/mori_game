@@ -37,8 +37,10 @@ class PostGameSummaryBuilder {
       final morrieDetailDelta = morrieDetail?['morrieDelta'];
       final morrieBalanceDetail = morrieDetail?['morrieBalance'];
       final morrieDeltaValue = seriesComplete
-          ? (morrieDetailDelta is num ? morrieDetailDelta.round() : matchMorrieDelta)
-          : matchMorrieDelta;
+          ? (morrieDetailDelta is num
+              ? morrieDetailDelta.round()
+              : (matchMorrieDelta ?? 0))
+          : (matchMorrieDelta ?? 0);
       final morrieBalanceValue = seriesComplete
           ? (morrieBalanceDetail is num
               ? morrieBalanceDetail.round()

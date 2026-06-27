@@ -2414,7 +2414,7 @@ class PostGameOverlay extends StatelessWidget {
                           _formatDelta(row.matchDelta),
                           '${row.totalPoints}',
                           if (showMorrie)
-                            row.morrieDelta != null ? _formatDelta(row.morrieDelta) : '—',
+                            row.morrieDelta != null ? _formatDelta(row.morrieDelta) : '0',
                           if (showMorrie)
                             row.morrieBalance != null ? '${row.morrieBalance}' : '—',
                           if (showRating)

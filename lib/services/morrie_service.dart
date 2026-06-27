@@ -235,6 +235,40 @@ class MorrieService {
     };
   }
 
+  Future<Map<String, int>> _loadParticipantMorrieBalances(
+    DatabaseReference roomRef,
+    Iterable<String> participantIds,
+  ) async {
+    final ids = participantIds.toList();
+    final balances = await _loadBotMorrieBalances(
+      roomRef,
+      ids.where(BotLogic.isBot),
+    );
+    for (final id in ids) {
+      if (BotLogic.isBot(id)) continue;
+      await ensureBalance(id);
+      balances[id] = await getBalance(id);
+    }
+    return balances;
+  }
+
+  ({Map<String, int> deltas, Map<String, int> balances}) _buildFullMatchMorrieDisplay({
+    required List<String> participantIds,
+    required Map<String, int> moveDeltas,
+    required Map<String, int> afterMoveBalances,
+    required Map<String, int> beforeBalances,
+  }) {
+    final deltas = <String, int>{};
+    final balances = <String, int>{};
+    for (final id in participantIds) {
+      deltas[id] = moveDeltas[id] ?? 0;
+      balances[id] = afterMoveBalances[id] ??
+          beforeBalances[id] ??
+          MorrieRules.resolvePlayerBalance(id, beforeBalances);
+    }
+    return (deltas: deltas, balances: balances);
+  }
+
   /// バースト時にモリーを減算（2点 × レート、二重適用防止付き）
   Future<MoriMorrieTransferResult?> applyBurstMorrieDeduction({
     required String roomId,
@@ -250,15 +284,10 @@ class MorrieService {
       return null;
     }
 
-    final playerBalances = <String, int>{};
-    if (BotLogic.isBot(burstPlayerId)) {
-      playerBalances.addAll(
-        await _loadBotMorrieBalances(roomRef, [burstPlayerId]),
-      );
-    } else {
-      await ensureBalance(burstPlayerId);
-      playerBalances[burstPlayerId] = await getBalance(burstPlayerId);
-    }
+    final playerBalances = await _loadParticipantMorrieBalances(
+      roomRef,
+      participantIds,
+    );
 
     final deduction = MorrieRules.computeBurstMorrieDeduction(
       rate: morrieRate,
@@ -331,18 +360,19 @@ class MorrieService {
       deduction: deduction,
     );
 
-    final balanceSnapshot = <String, int>{
-      burstPlayerId: newBalances[burstPlayerId] ??
-          playerBalances[burstPlayerId] ??
-          0,
-    };
+    final display = _buildFullMatchMorrieDisplay(
+      participantIds: participantIds,
+      moveDeltas: deduction.deltas,
+      afterMoveBalances: newBalances,
+      beforeBalances: playerBalances,
+    );
 
     final roomUpdates = <String, dynamic>{
       'lastMatchMorrieApplied': true,
-      'lastMatchMorrieDeltas': deduction.deltas,
+      'lastMatchMorrieDeltas': display.deltas,
       'lastMatchMorrieSummary': summary,
       'playerMorrieSeriesDeltas': seriesDeltas,
-      'lastMatchMorrieBalances': balanceSnapshot,
+      'lastMatchMorrieBalances': display.balances,
     };
     if (deduction.morrieBurst) {
       roomUpdates['morrieBurstPlayerId'] = burstPlayerId;
@@ -354,8 +384,8 @@ class MorrieService {
 
     return MoriMorrieTransferResult(
       summary: summary,
-      deltas: deduction.deltas,
-      balances: balanceSnapshot,
+      deltas: display.deltas,
+      balances: display.balances,
       morrieBurst: deduction.morrieBurst,
     );
   }
@@ -377,14 +407,10 @@ class MorrieService {
       return null;
     }
 
-    final playerBalances = <String, int>{};
-    for (final id in {winnerId, loserId}) {
-      if (BotLogic.isBot(id)) continue;
-      await ensureBalance(id);
-      playerBalances[id] = await getBalance(id);
-    }
-    final botIds = {winnerId, loserId}.where(BotLogic.isBot);
-    playerBalances.addAll(await _loadBotMorrieBalances(roomRef, botIds));
+    final playerBalances = await _loadParticipantMorrieBalances(
+      roomRef,
+      participantIds,
+    );
 
     final transfer = MorrieRules.computeMoriMorrieTransfer(
       pointDelta: pointDelta,
@@ -461,17 +487,19 @@ class MorrieService {
       transfer: transfer,
     );
 
-    final balanceSnapshot = <String, int>{
-      for (final id in transfer.deltas.keys)
-        id: newBalances[id] ?? playerBalances[id] ?? 0,
-    };
+    final display = _buildFullMatchMorrieDisplay(
+      participantIds: participantIds,
+      moveDeltas: transfer.deltas,
+      afterMoveBalances: newBalances,
+      beforeBalances: playerBalances,
+    );
 
     final roomUpdates = <String, dynamic>{
       'lastMatchMorrieApplied': true,
-      'lastMatchMorrieDeltas': transfer.deltas,
+      'lastMatchMorrieDeltas': display.deltas,
       'lastMatchMorrieSummary': summary,
       'playerMorrieSeriesDeltas': seriesDeltas,
-      'lastMatchMorrieBalances': balanceSnapshot,
+      'lastMatchMorrieBalances': display.balances,
     };
     if (transfer.morrieBurst) {
       roomUpdates['morrieBurstPlayerId'] = loserId;
@@ -483,8 +511,8 @@ class MorrieService {
 
     return MoriMorrieTransferResult(
       summary: summary,
-      deltas: transfer.deltas,
-      balances: balanceSnapshot,
+      deltas: display.deltas,
+      balances: display.balances,
       morrieBurst: transfer.morrieBurst,
     );
   }
