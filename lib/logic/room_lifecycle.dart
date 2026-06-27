@@ -118,6 +118,7 @@ class RoomLifecycle {
 
   /// シリーズ途中の試合後・次戦待ち・次戦開始処理中か
   static bool isSeriesContinuationPending(Map<dynamic, dynamic> data) {
+    if (data['morrieBurstPlayerId'] != null) return false;
     if (data['seriesRestarting'] == true) return true;
     if (data['seriesNextMatchAt'] != null) return true;
     if (data['postGameActive'] != true) return false;

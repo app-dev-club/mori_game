@@ -23,6 +23,7 @@ import {
   moriWinnerDelta,
 } from "./scoring_rules";
 import { settleRoomSeries } from "./settle_room";
+import { applyMatchMorrieTransferIfNeeded } from "./morrie_transfer";
 import {
   asIntMap,
   asStringList,
@@ -147,12 +148,17 @@ function seriesMatchResetFields(): Record<string, unknown> {
     moriRevealedHand: null,
     moriRevealedType: null,
     burstPlayerId: null,
+    morrieBurstPlayerId: null,
     moriGaeshiCount: null,
     moriDeclarationFactors: null,
     moriDeclaredPlayerIds: null,
     openJokerPlayerIds: null,
     lastMatchPointSummary: null,
     lastMatchPointDeltas: null,
+    lastMatchMorrieApplied: null,
+    lastMatchMorrieDeltas: null,
+    lastMatchMorrieSummary: null,
+    lastMatchMorrieBalances: null,
     seriesRatingApplied: null,
     seriesRatingSummary: null,
     seriesRatingDetails: null,
@@ -253,6 +259,18 @@ async function advanceSeriesAfterMatch(
   const totalMatches = resolveMatchCount(room.totalMatches);
   const completedMatches = resolveNonNegativeInt(room.completedMatches);
 
+  if (room.morrieBurstPlayerId != null && completedMatches < totalMatches) {
+    await roomRef.update({
+      completedMatches: totalMatches,
+      seriesNextMatchAt: null,
+      postGameSeriesAdvanced: true,
+      seriesPlayerIds: null,
+      seriesRestarting: false,
+    });
+    await requestSettlement(db, roomId);
+    return { ok: true, action: "morrie_burst_series_end" };
+  }
+
   if (totalMatches <= 1) {
     if (completedMatches < 1) {
       await roomRef.update({ completedMatches: 1 });
@@ -336,7 +354,15 @@ export async function processRoomSteward(
     return { ok: true, action: "skip_not_ended" };
   }
 
-  await applyMatchScoringIfNeeded(db, roomId, room);
+  await applyMatchMorrieTransferIfNeeded(db, roomId, room);
+
+  const afterMorrieSnap = await roomRef.get();
+  if (!afterMorrieSnap.exists()) {
+    return { ok: false, reason: "room_removed" };
+  }
+  const afterMorrie = afterMorrieSnap.val() as Record<string, unknown>;
+
+  await applyMatchScoringIfNeeded(db, roomId, afterMorrie);
 
   const afterScoringSnap = await roomRef.get();
   if (!afterScoringSnap.exists()) {

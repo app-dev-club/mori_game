@@ -18,6 +18,20 @@ class MorrieSettlementResult {
   });
 }
 
+class MoriMorrieTransferResult {
+  final String summary;
+  final Map<String, int> deltas;
+  final Map<String, int> balances;
+  final bool morrieBurst;
+
+  const MoriMorrieTransferResult({
+    required this.summary,
+    required this.deltas,
+    required this.balances,
+    required this.morrieBurst,
+  });
+}
+
 /// ユーザーアカウントに紐づくモリー残高の読み書きと試合精算
 class MorrieService {
   final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
@@ -176,97 +190,48 @@ class MorrieService {
     return next;
   }
 
-  /// シリーズ終了時にモリーを精算（二重適用防止付き）
-  Future<MorrieSettlementResult?> applySeriesMorrie({
+  /// もり成立時にモリーを loser → winner へ移動（二重適用防止付き）
+  Future<MoriMorrieTransferResult?> applyMatchMorrieTransfer({
     required String roomId,
-    required List<String> participantIds,
-    required Map<String, int> finalPoints,
-    required Map<String, String> displayNames,
+    required String winnerId,
+    required String loserId,
+    required int pointDelta,
     required int morrieRate,
+    required Map<String, String> displayNames,
+    required List<String> participantIds,
   }) async {
-    if (participantIds.length < 2 || morrieRate <= 0) return null;
+    if (morrieRate <= 0 || pointDelta <= 0) return null;
 
     final roomRef = FirebaseDatabase.instance.ref('rooms/$roomId');
-    final appliedSnap = await roomRef.child('seriesMorrieSettled').get();
-    if (appliedSnap.value == true) return null;
-
-    for (final id in participantIds) {
-      if (BotLogic.isBot(id)) continue;
-      await ensureBalance(id);
+    if ((await roomRef.child('lastMatchMorrieApplied').get()).value == true) {
+      return null;
     }
 
     final humanBalances = <String, int>{};
-    for (final id in participantIds) {
+    for (final id in {winnerId, loserId}) {
       if (BotLogic.isBot(id)) continue;
+      await ensureBalance(id);
       humanBalances[id] = await getBalance(id);
     }
 
-    final humanUpdates = MorrieRules.humanBalanceUpdates(
-      participantIds: participantIds,
-      finalPoints: finalPoints,
+    final transfer = MorrieRules.computeMoriMorrieTransfer(
+      pointDelta: pointDelta,
       rate: morrieRate,
+      winnerId: winnerId,
+      loserId: loserId,
+      humanBalances: humanBalances,
     );
+    if (transfer.actualMorrie <= 0) {
+      await roomRef.update({'lastMatchMorrieApplied': true});
+      return null;
+    }
 
-    final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);
-    final rawDeltas = MorrieRules.rawMorrieDeltas(finalPoints, morrieRate);
-    final morrieDetails = <String, dynamic>{};
-    final appliedDeltas = <String, int>{};
     final newBalances = <String, int>{};
-
-    for (final entry in ranked) {
-      final id = entry.id;
-      final rawDelta = rawDeltas[id] ?? 0;
-      if (BotLogic.isBot(id)) {
-        morrieDetails[id] = {
-          'rank': entry.rank,
-          'points': entry.points,
-          'morrieDelta': rawDelta,
-          'morrieBalance': MorrieRules.botFixedBalance,
-          'isBot': true,
-        };
-        continue;
-      }
-
-      final delta = humanUpdates[id] ?? 0;
+    for (final entry in transfer.deltas.entries) {
+      final id = entry.key;
       final current = humanBalances[id] ?? await getBalance(id);
-      final next = current + delta;
-      appliedDeltas[id] = delta;
+      final next = current + entry.value;
       newBalances[id] = next;
-
-      morrieDetails[id] = {
-        'rank': entry.rank,
-        'points': entry.points,
-        'morrieDelta': delta,
-        'morrieBalance': next,
-        'isBot': false,
-      };
-    }
-
-    final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);
-
-    final summary = _buildSummary(
-      ranked: ranked,
-      displayNames: displayNames,
-      deltas: appliedDeltas,
-      rawDeltas: rawDeltas,
-      morrieRate: morrieRate,
-    );
-
-    final roomUpdates = <String, dynamic>{
-      'seriesMorrieSettled': true,
-      'seriesMorrieSummary': summary,
-      'seriesMorrieDetails': morrieDetails,
-    };
-    if (botBalances.isNotEmpty) {
-      roomUpdates['botMorrieBalances'] = botBalances;
-    }
-    await roomRef.update(roomUpdates);
-
-    for (final entry in ranked) {
-      final id = entry.id;
-      if (BotLogic.isBot(id)) continue;
-      final next = newBalances[id];
-      if (next == null) continue;
       final name = displayNames[id]?.trim().isNotEmpty == true
           ? displayNames[id]!.trim()
           : 'プレイヤー';
@@ -289,12 +254,146 @@ class MorrieService {
       }
     }
 
-    return MorrieSettlementResult(
+    final seriesSnap = await roomRef.child('playerMorrieSeriesDeltas').get();
+    final seriesDeltas = seriesSnap.value is Map
+        ? Map<String, int>.from(
+            (seriesSnap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+            ),
+          )
+        : <String, int>{};
+    for (final entry in transfer.deltas.entries) {
+      seriesDeltas[entry.key] = (seriesDeltas[entry.key] ?? 0) + entry.value;
+    }
+
+    final summary = MorrieRules.describeMoriMorrieTransfer(
+      winnerName: displayNames[winnerId] ?? winnerId,
+      loserName: displayNames[loserId] ?? loserId,
+      pointDelta: pointDelta,
+      rate: morrieRate,
+      transfer: transfer,
+    );
+
+    final balanceSnapshot = <String, int>{};
+    for (final id in transfer.deltas.keys) {
+      balanceSnapshot[id] = newBalances[id] ?? humanBalances[id] ?? 0;
+    }
+    if (BotLogic.isBot(loserId)) {
+      balanceSnapshot[loserId] = MorrieRules.botFixedBalance;
+    }
+
+    final roomUpdates = <String, dynamic>{
+      'lastMatchMorrieApplied': true,
+      'lastMatchMorrieDeltas': transfer.deltas,
+      'lastMatchMorrieSummary': summary,
+      'playerMorrieSeriesDeltas': seriesDeltas,
+      'lastMatchMorrieBalances': balanceSnapshot,
+    };
+    if (transfer.morrieBurst) {
+      roomUpdates['morrieBurstPlayerId'] = loserId;
+    }
+    final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);
+    if (botBalances.isNotEmpty) {
+      roomUpdates['botMorrieBalances'] = botBalances;
+    }
+    await roomRef.update(roomUpdates);
+
+    return MoriMorrieTransferResult(
       summary: summary,
-      deltas: appliedDeltas,
-      balances: newBalances,
+      deltas: transfer.deltas,
+      balances: balanceSnapshot,
+      morrieBurst: transfer.morrieBurst,
     );
   }
+
+  /// シリーズ終了時: モリー表示用サマリーのみ確定（残高は試合ごとに反映済み）
+  Future<MorrieSettlementResult?> finalizeSeriesMorrieDisplay({
+    required String roomId,
+    required List<String> participantIds,
+    required Map<String, int> finalPoints,
+    required Map<String, String> displayNames,
+  }) async {
+    if (participantIds.length < 2) return null;
+
+    final roomRef = FirebaseDatabase.instance.ref('rooms/$roomId');
+    final appliedSnap = await roomRef.child('seriesMorrieSettled').get();
+    if (appliedSnap.value == true) return null;
+
+    final ranked = RatingLogic.rankByPoints(participantIds, finalPoints);
+    final seriesSnap = await roomRef.child('playerMorrieSeriesDeltas').get();
+    final seriesDeltas = seriesSnap.value is Map
+        ? Map<String, int>.from(
+            (seriesSnap.value as Map).map(
+              (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+            ),
+          )
+        : <String, int>{};
+
+    final morrieDetails = <String, dynamic>{};
+    final summaryLines = <String>['シリーズ合計モリー変動'];
+
+    for (final entry in ranked) {
+      final id = entry.id;
+      final delta = seriesDeltas[id] ?? 0;
+      if (BotLogic.isBot(id)) {
+        morrieDetails[id] = {
+          'rank': entry.rank,
+          'points': entry.points,
+          'morrieDelta': delta,
+          'morrieBalance': MorrieRules.botFixedBalance,
+          'isBot': true,
+        };
+        continue;
+      }
+
+      final balance = await getBalance(id);
+      morrieDetails[id] = {
+        'rank': entry.rank,
+        'points': entry.points,
+        'morrieDelta': delta,
+        'morrieBalance': balance,
+        'isBot': false,
+      };
+      if (delta != 0) {
+        final sign = delta >= 0 ? '+' : '';
+        summaryLines.add('${displayNames[id] ?? id}: $sign$delta モリー');
+      }
+    }
+
+    final botBalances = MorrieRules.botBalancesAfterSettlement(participantIds);
+    final roomUpdates = <String, dynamic>{
+      'seriesMorrieSettled': true,
+      'seriesMorrieSummary': summaryLines.join('\n'),
+      'seriesMorrieDetails': morrieDetails,
+    };
+    if (botBalances.isNotEmpty) {
+      roomUpdates['botMorrieBalances'] = botBalances;
+    }
+    await roomRef.update(roomUpdates);
+
+    return MorrieSettlementResult(
+      summary: summaryLines.join('\n'),
+      deltas: seriesDeltas,
+      balances: {
+        for (final id in participantIds)
+          if (!BotLogic.isBot(id)) id: await getBalance(id),
+      },
+    );
+  }
+
+  Future<MorrieSettlementResult?> applySeriesMorrie({
+    required String roomId,
+    required List<String> participantIds,
+    required Map<String, int> finalPoints,
+    required Map<String, String> displayNames,
+    required int morrieRate,
+  }) =>
+      finalizeSeriesMorrieDisplay(
+        roomId: roomId,
+        participantIds: participantIds,
+        finalPoints: finalPoints,
+        displayNames: displayNames,
+      );
 
   /// ルーム精算の未反映モリーを自分のアカウントへ適用する
   Future<bool> claimPendingMorrieForUser(String userId) async {
@@ -357,29 +456,5 @@ class MorrieService {
     } catch (_) {
       return false;
     }
-  }
-
-  String _buildSummary({
-    required List<({String id, int points, int rank})> ranked,
-    required Map<String, String> displayNames,
-    required Map<String, int> deltas,
-    required Map<String, int> rawDeltas,
-    required int morrieRate,
-  }) {
-    final lines = <String>['レート ×$morrieRate'];
-    for (final entry in ranked) {
-      final name = displayNames[entry.id] ?? entry.id;
-      if (BotLogic.isBot(entry.id)) {
-        final raw = rawDeltas[entry.id] ?? 0;
-        lines.add(
-          '$name: ${entry.points}点 → ${MorrieRules.botFixedBalance}モリー（変動 ${raw >= 0 ? '+' : ''}$raw、リセット）',
-        );
-        continue;
-      }
-      final delta = deltas[entry.id] ?? 0;
-      final sign = delta >= 0 ? '+' : '';
-      lines.add('$name: ${entry.points}点 → $sign$delta モリー');
-    }
-    return lines.join('\n');
   }
 }

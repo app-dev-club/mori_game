@@ -8,6 +8,8 @@ class PostGameSummaryBuilder {
     required Map<String, int> lastMatchPointDeltas,
     required Map<String, Map<String, dynamic>> seriesRatingDetails,
     required Map<String, Map<String, dynamic>> seriesMorrieDetails,
+    required Map<String, int> lastMatchMorrieDeltas,
+    required Map<String, int> lastMatchMorrieBalances,
     required int morrieRate,
     required int totalMatches,
     required int completedMatches,
@@ -19,7 +21,9 @@ class PostGameSummaryBuilder {
     }
 
     final showRating = seriesComplete && seriesRatingDetails.isNotEmpty;
-    final showMorrie = seriesComplete && seriesMorrieDetails.isNotEmpty && morrieRate > 0;
+    final showMorrie = morrieRate > 0 &&
+        (lastMatchMorrieDeltas.isNotEmpty ||
+            (seriesComplete && seriesMorrieDetails.isNotEmpty));
     final rows = <PostGamePlayerRow>[];
 
     for (final id in roster) {
@@ -29,8 +33,17 @@ class PostGameSummaryBuilder {
       final deltaValue = detail?['ratingDelta'];
       final rankValue = detail?['rank'] ?? morrieDetail?['rank'];
       final pointsValue = detail?['points'] ?? morrieDetail?['points'];
-      final morrieDeltaValue = morrieDetail?['morrieDelta'];
-      final morrieBalanceValue = morrieDetail?['morrieBalance'];
+      final matchMorrieDelta = lastMatchMorrieDeltas[id];
+      final morrieDetailDelta = morrieDetail?['morrieDelta'];
+      final morrieBalanceDetail = morrieDetail?['morrieBalance'];
+      final morrieDeltaValue = seriesComplete
+          ? (morrieDetailDelta is num ? morrieDetailDelta.round() : matchMorrieDelta)
+          : matchMorrieDelta;
+      final morrieBalanceValue = seriesComplete
+          ? (morrieBalanceDetail is num
+              ? morrieBalanceDetail.round()
+              : lastMatchMorrieBalances[id])
+          : lastMatchMorrieBalances[id];
 
       rows.add(
         PostGamePlayerRow(
@@ -42,8 +55,8 @@ class PostGameSummaryBuilder {
           rank: rankValue is num ? rankValue.round() : 0,
           rating: ratingValue is num ? ratingValue.round() : null,
           ratingDelta: deltaValue is num ? deltaValue.round() : null,
-          morrieDelta: morrieDeltaValue is num ? morrieDeltaValue.round() : null,
-          morrieBalance: morrieBalanceValue is num ? morrieBalanceValue.round() : null,
+          morrieDelta: morrieDeltaValue,
+          morrieBalance: morrieBalanceValue,
         ),
       );
     }

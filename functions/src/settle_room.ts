@@ -1,8 +1,6 @@
 import { Database } from "firebase-admin/database";
 import {
   botBalancesAfterSettlement,
-  humanBalanceUpdates,
-  rawMorrieDeltas,
   BOT_FIXED_BALANCE,
 } from "./morrie_rules";
 import {
@@ -32,32 +30,6 @@ export interface SettleRoomResult {
 function isMatchEnded(room: Record<string, unknown>): boolean {
   if (room.burstPlayerId != null) return true;
   return room.moriPhase === "finished";
-}
-
-function buildMorrieSummary(params: {
-  ranked: ReturnType<typeof rankByPoints>;
-  displayNames: Record<string, string>;
-  deltas: Record<string, number>;
-  rawDeltas: Record<string, number>;
-  morrieRate: number;
-}): string {
-  const { ranked, displayNames, deltas, rawDeltas, morrieRate } = params;
-  const lines = [`レート ×${morrieRate}`];
-  for (const entry of ranked) {
-    const name = displayNames[entry.id] ?? entry.id;
-    if (isBot(entry.id)) {
-      const raw = rawDeltas[entry.id] ?? 0;
-      const sign = raw >= 0 ? "+" : "";
-      lines.push(
-        `${name}: ${entry.points}点 → ${BOT_FIXED_BALANCE}モリー（変動 ${sign}${raw}、リセット）`,
-      );
-      continue;
-    }
-    const delta = deltas[entry.id] ?? 0;
-    const sign = delta >= 0 ? "+" : "";
-    lines.push(`${name}: ${entry.points}点 → ${sign}${delta} モリー`);
-  }
-  return lines.join("\n");
 }
 
 async function ensureHumanBalance(
@@ -263,82 +235,42 @@ export async function settleRoomSeries(
   }
 
   if (morrieNeeded && !morrieDone) {
-    const humanBalances: Record<string, number> = {};
-    for (const id of roster) {
-      if (isBot(id)) continue;
-      humanBalances[id] = await ensureHumanBalance(db, id);
-    }
-
-    const balanceUpdates = humanBalanceUpdates({
-      participantIds: roster,
-      finalPoints,
-      rate: morrieRate,
-    });
-
+    const seriesDeltas = asIntMap(room.playerMorrieSeriesDeltas);
     const ranked = rankByPoints(roster, finalPoints);
-    const rawDeltas = rawMorrieDeltas(finalPoints, morrieRate);
     const morrieDetails: Record<string, unknown> = {};
-    const appliedDeltas: Record<string, number> = {};
-    const newBalances: Record<string, number> = {};
+    const summaryLines = ["シリーズ合計モリー変動"];
 
     for (const entry of ranked) {
       const id = entry.id;
-      const rawDelta = rawDeltas[id] ?? 0;
+      const delta = seriesDeltas[id] ?? 0;
       if (isBot(id)) {
         morrieDetails[id] = {
           rank: entry.rank,
           points: entry.points,
-          morrieDelta: rawDelta,
+          morrieDelta: delta,
           morrieBalance: BOT_FIXED_BALANCE,
           isBot: true,
         };
         continue;
       }
 
-      const delta = balanceUpdates[id] ?? 0;
-      const current = humanBalances[id] ?? DEFAULT_STARTING_BALANCE;
-      const next = current + delta;
-      appliedDeltas[id] = delta;
-      newBalances[id] = next;
+      const balance = await ensureHumanBalance(db, id);
       morrieDetails[id] = {
         rank: entry.rank,
         points: entry.points,
         morrieDelta: delta,
-        morrieBalance: next,
+        morrieBalance: balance,
         isBot: false,
       };
-    }
-
-    const morrieSummary = buildMorrieSummary({
-      ranked,
-      displayNames,
-      deltas: appliedDeltas,
-      rawDeltas,
-      morrieRate,
-    });
-
-    for (const entry of ranked) {
-      const id = entry.id;
-      if (isBot(id)) continue;
-      const next = newBalances[id];
-      if (next == null) continue;
-      const name = displayNames[id] ?? "プレイヤー";
-      await db.ref(`users/${id}`).update({
-        morrieBalance: next,
-        updatedAt: now,
-      });
-      await db.ref(`morrieRankings/${id}`).set({
-        playerName: name,
-        morrieBalance: next,
-        updatedAt: now,
-      });
-      await roomRef.child(`morrieClaimed/${id}`).set(true);
-      await db.ref(`userMorriePending/${id}/${roomId}`).remove();
+      if (delta !== 0) {
+        const sign = delta >= 0 ? "+" : "";
+        summaryLines.push(`${displayNames[id] ?? id}: ${sign}${delta} モリー`);
+      }
     }
 
     const botBalances = botBalancesAfterSettlement(roster);
     updates["seriesMorrieSettled"] = true;
-    updates["seriesMorrieSummary"] = morrieSummary;
+    updates["seriesMorrieSummary"] = summaryLines.join("\n");
     updates["seriesMorrieDetails"] = morrieDetails;
     if (Object.keys(botBalances).length > 0) {
       updates["botMorrieBalances"] = botBalances;

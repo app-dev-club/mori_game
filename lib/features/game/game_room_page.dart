@@ -94,8 +94,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool _moriFinishRequested = false;
   PostGameSummary? _postGameSummary;
   Map<String, int> _lastMatchPointDeltas = {};
+  Map<String, int> _lastMatchMorrieDeltas = {};
+  Map<String, int> _lastMatchMorrieBalances = {};
   Map<String, Map<String, dynamic>> _seriesRatingDetails = {};
   Map<String, Map<String, dynamic>> _seriesMorrieDetails = {};
+  String? _morrieBurstPlayerId;
+  String? _lastMatchMorrieSummary;
   int morrieRate = RoomConfig.defaultMorrieRate;
   int minMorrieBalance = RoomConfig.defaultMinMorrieBalance;
   int? _myMorrieBalance;
@@ -947,6 +951,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         ),
       );
     }
+    if (data['lastMatchMorrieDeltas'] is Map) {
+      _lastMatchMorrieDeltas = Map<String, int>.from(
+        (data['lastMatchMorrieDeltas'] as Map).map(
+          (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+        ),
+      );
+    }
+    if (data['lastMatchMorrieBalances'] is Map) {
+      _lastMatchMorrieBalances = Map<String, int>.from(
+        (data['lastMatchMorrieBalances'] as Map).map(
+          (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+        ),
+      );
+    }
+    _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
+    _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
     if (data['seriesRatingDetails'] is Map) {
       _seriesRatingDetails = (data['seriesRatingDetails'] as Map).map(
         (k, v) => MapEntry(
@@ -2500,12 +2520,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'rematchHostRequested': false,
       'postGameActive': false,
       'burstPlayerId': null,
+      'morrieBurstPlayerId': null,
       'moriGaeshiCount': null,
       'moriDeclarationFactors': null,
       'moriDeclaredPlayerIds': null,
       'openJokerPlayerIds': null,
       'lastMatchPointSummary': null,
       'lastMatchPointDeltas': null,
+      'lastMatchMorrieApplied': null,
+      'lastMatchMorrieDeltas': null,
+      'lastMatchMorrieSummary': null,
+      'lastMatchMorrieBalances': null,
       'seriesRatingApplied': null,
       'seriesRatingSummary': null,
       'seriesRatingDetails': null,
@@ -2877,13 +2902,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       lastMatchPointDeltas: _lastMatchPointDeltas,
       seriesRatingDetails: _seriesRatingDetails,
       seriesMorrieDetails: _seriesMorrieDetails,
+      lastMatchMorrieDeltas: _lastMatchMorrieDeltas,
+      lastMatchMorrieBalances: _lastMatchMorrieBalances,
       morrieRate: morrieRate,
       totalMatches: totalMatches,
       completedMatches: completedMatches,
       seriesComplete: seriesComplete,
-      resultMessage: burstPlayerId != null
-          ? ScoringRules.describeBurstScoring(burstPlayerName: _displayName(burstPlayerId))
-          : null,
+      resultMessage: _postGameResultMessage(),
     );
 
     if (mounted) setState(() => _postGameSummary = summary);
@@ -2904,6 +2929,65 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (_hasStewardAuthority) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onHostPostGameEntered());
     }
+  }
+
+  String? _postGameResultMessage() {
+    if (burstPlayerId != null) {
+      return ScoringRules.describeBurstScoring(
+        burstPlayerName: _displayName(burstPlayerId),
+      );
+    }
+    final morrieSummary = _lastMatchMorrieSummary?.trim();
+    if (morrieSummary != null && morrieSummary.isNotEmpty) {
+      return morrieSummary;
+    }
+    return null;
+  }
+
+  Future<void> _applyMatchMorrieTransfer() async {
+    if (!_hasStewardAuthority || morrieRate <= 0) return;
+    if (burstPlayerId != null || moriPhase != 'finished') return;
+    if (lastMoriPlayerId == null || loserPlayerId == null) return;
+    if (moriDeclarationFactors.isEmpty) return;
+
+    final snap = await _db.getSnapshot();
+    if (!snap.exists) return;
+    final data = Map<dynamic, dynamic>.from(snap.value as Map);
+    if (data['lastMatchMorrieApplied'] == true) return;
+
+    final pointDelta = ScoringRules.moriWinnerDelta(
+      moriDeclarationFactors,
+      moriGaeshiCount,
+    );
+    if (pointDelta <= 0) return;
+
+    final roster = seriesPlayerIds.isNotEmpty
+        ? List<String>.from(seriesPlayerIds)
+        : List<String>.from(playerIds);
+    final names = {for (final id in roster) id: _displayName(id)};
+
+    final result = await _morrieService.applyMatchMorrieTransfer(
+      roomId: widget.roomId,
+      winnerId: lastMoriPlayerId!,
+      loserId: loserPlayerId!,
+      pointDelta: pointDelta,
+      morrieRate: morrieRate,
+      displayNames: names,
+      participantIds: roster,
+    );
+    if (result == null || !mounted) return;
+
+    _lastMatchMorrieDeltas = result.deltas;
+    _lastMatchMorrieBalances = result.balances;
+    _lastMatchMorrieSummary = result.summary;
+    if (result.morrieBurst) {
+      _morrieBurstPlayerId = loserPlayerId;
+    }
+    final myBalance = result.balances[myId];
+    if (myBalance != null) {
+      _myMorrieBalance = myBalance;
+    }
+    _syncPostGameSummary();
   }
 
   Future<void> _applyMatchScoring() async {
@@ -2963,6 +3047,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (!_shouldClientRunPostGameSteward(data)) return;
 
       if (data['lastMatchPointDeltas'] == null) {
+        await _applyMatchMorrieTransfer();
+        if (!mounted) return;
         await _applyMatchScoring();
         if (!mounted) return;
       } else if (_matchRecordService.isRecording) {
@@ -3004,6 +3090,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
 
       if (dbCompleted >= resolvedTotal) {
+        await _requestAndWaitSeriesSettlement();
+        await _scheduleCloseAfterSettlement();
+        return;
+      }
+
+      if (_morrieBurstPlayerId != null) {
+        await _db.updateGameStatus({
+          'completedMatches': resolvedTotal,
+          'seriesNextMatchAt': null,
+          'postGameSeriesAdvanced': true,
+          'seriesPlayerIds': null,
+          'seriesRestarting': false,
+        });
+        completedMatches = resolvedTotal;
         await _requestAndWaitSeriesSettlement();
         await _scheduleCloseAfterSettlement();
         return;

@@ -3,43 +3,56 @@ import 'package:mori_game/logic/morrie_rules.dart';
 
 void main() {
   group('MorrieRules', () {
-    test('ポイント×レートでモリー変動を計算する', () {
-      expect(MorrieRules.morrieDeltaForPoints(12, 5), 60);
-      expect(MorrieRules.morrieDeltaForPoints(-3, 10), -30);
+    test('もり成立時のモリー移動量はポイント×レート', () {
+      expect(MorrieRules.moriMorrieAmount(12, 5), 60);
+      expect(MorrieRules.moriMorrieAmount(0, 5), 0);
     });
 
-    test('人間プレイヤーは累計得点×レートをそのまま増減する', () {
-      final updates = MorrieRules.humanBalanceUpdates(
-        participantIds: const ['winner', 'loser'],
-        finalPoints: const {'winner': 12, 'loser': -12},
+    test('loser → winner へ指定分モリーが動く', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 6,
         rate: 2,
+        winnerId: 'winner',
+        loserId: 'loser',
+        humanBalances: const {'winner': 100, 'loser': 50},
       );
 
-      expect(updates['winner'], 24);
-      expect(updates['loser'], -24);
+      expect(transfer.requestedMorrie, 12);
+      expect(transfer.actualMorrie, 12);
+      expect(transfer.morrieBurst, isFalse);
+      expect(transfer.deltas['loser'], -12);
+      expect(transfer.deltas['winner'], 12);
     });
 
-    test('複数勝者もそれぞれ累計得点×レート', () {
-      final updates = MorrieRules.humanBalanceUpdates(
-        participantIds: const ['a', 'b', 'loser'],
-        finalPoints: const {'a': 6, 'b': 6, 'loser': -12},
-        rate: 3,
-      );
-
-      expect(updates['a'], 18);
-      expect(updates['b'], 18);
-      expect(updates['loser'], -36);
-    });
-
-    test('BotはhumanBalanceUpdatesに含めない', () {
-      final updates = MorrieRules.humanBalanceUpdates(
-        participantIds: const ['human', 'bot_1'],
-        finalPoints: const {'human': 10, 'bot_1': -10},
+    test('所持モリー不足なら全財産移動して飛び', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 10,
         rate: 5,
+        winnerId: 'winner',
+        loserId: 'loser',
+        humanBalances: const {'winner': 100, 'loser': 3},
       );
 
-      expect(updates['human'], 50);
-      expect(updates.containsKey('bot_1'), isFalse);
+      expect(transfer.requestedMorrie, 50);
+      expect(transfer.actualMorrie, 3);
+      expect(transfer.morrieBurst, isTrue);
+      expect(transfer.deltas['loser'], -3);
+      expect(transfer.deltas['winner'], 3);
+    });
+
+    test('Bot敗北時は5モリーまで', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 10,
+        rate: 5,
+        winnerId: 'human',
+        loserId: 'bot_1',
+        humanBalances: const {'human': 100},
+      );
+
+      expect(transfer.actualMorrie, 5);
+      expect(transfer.morrieBurst, isFalse);
+      expect(transfer.deltas['human'], 5);
+      expect(transfer.deltas.containsKey('bot_1'), isFalse);
     });
 
     test('試合後のBot残高は常に5に戻す', () {
