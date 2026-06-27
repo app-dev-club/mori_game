@@ -519,7 +519,6 @@ class MorrieService {
         : MorrieRules.botFixedBalance;
     final next = current + amount;
     updates['botMorrieBalances/$burstId'] = next;
-    updates['lastMatchMorrieBalances/$burstId'] = next;
     await syncBotRankingEntry(
       burstId,
       morrieBalance: next,

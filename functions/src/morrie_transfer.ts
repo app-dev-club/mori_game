@@ -326,7 +326,6 @@ export async function applyMorrieBurstRecoveryIfNeeded(
   const current = stored[burstId] ?? BOT_FIXED_BALANCE;
   const next = current + amount;
   updates[`botMorrieBalances/${burstId}`] = next;
-  updates[`lastMatchMorrieBalances/${burstId}`] = next;
   await syncBotRankingEntry(db, burstId, next, playerNames, now);
 
   const summary = room.lastMatchMorrieSummary?.toString() ?? "";

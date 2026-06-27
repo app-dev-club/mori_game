@@ -3056,15 +3056,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!snap.exists) return;
     final data = Map<dynamic, dynamic>.from(snap.value as Map);
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
-    if (data['lastMatchMorrieBalances'] is Map) {
-      _lastMatchMorrieBalances = Map<String, int>.from(
-        (data['lastMatchMorrieBalances'] as Map).map(
-          (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
-        ),
-      );
-      final myBalance = _lastMatchMorrieBalances[myId];
-      if (myBalance != null) _myMorrieBalance = myBalance;
-    }
     _syncPostGameSummary();
   }
 
@@ -3132,9 +3123,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       } else if (_matchRecordService.isRecording) {
         await _finalizeMatchRecording();
       }
-
-      await _applyMorrieBurstRecovery();
-      if (!mounted) return;
 
       if (data['postGameEndedAt'] == null) {
         await _db.markPostGameStarted();
@@ -3578,6 +3566,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final morrieDone = rate <= 0 || data['seriesMorrieSettled'] == true;
     if (ratingDone && morrieDone) {
       await _refreshSeriesSettlementDetails();
+      await _applyMorrieBurstRecovery();
+      if (!mounted) return;
+      if (!BotLogic.isBot(myId)) {
+        await _morrieService.claimMorrieFromRoom(widget.roomId, myId);
+      }
       return;
     }
 
@@ -3588,6 +3581,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     await _db.waitForSeriesSettlement();
     if (!mounted) return;
     await _refreshSeriesSettlementDetails();
+
+    await _applyMorrieBurstRecovery();
+    if (!mounted) return;
 
     if (!BotLogic.isBot(myId)) {
       await _morrieService.claimMorrieFromRoom(widget.roomId, myId);

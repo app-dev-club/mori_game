@@ -1,4 +1,5 @@
 import { Database } from "firebase-admin/database";
+import { applyMorrieBurstRecoveryIfNeeded } from "./morrie_transfer";
 import {
   BOT_FIXED_BALANCE,
 } from "./morrie_rules";
@@ -300,5 +301,15 @@ export async function settleRoomSeries(
   updates["settlementCompletedAt"] = now;
 
   await roomRef.update(updates);
+
+  const afterSettleSnap = await roomRef.get();
+  if (afterSettleSnap.exists()) {
+    await applyMorrieBurstRecoveryIfNeeded(
+      db,
+      roomId,
+      afterSettleSnap.val() as Record<string, unknown>,
+    );
+  }
+
   return { ok: true };
 }
