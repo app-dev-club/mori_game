@@ -613,6 +613,7 @@ class MorrieService {
     required List<String> participantIds,
     required Map<String, int> finalPoints,
     required Map<String, String> displayNames,
+    required int morrieRate,
   }) async {
     if (participantIds.length < 2) return null;
 
@@ -625,21 +626,15 @@ class MorrieService {
       roomRef,
       participantIds.where(BotLogic.isBot),
     );
-    final seriesSnap = await roomRef.child('playerMorrieSeriesDeltas').get();
-    final seriesDeltas = seriesSnap.value is Map
-        ? Map<String, int>.from(
-            (seriesSnap.value as Map).map(
-              (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
-            ),
-          )
-        : <String, int>{};
 
     final morrieDetails = <String, dynamic>{};
     final summaryLines = <String>['シリーズ合計モリー変動'];
+    final seriesDeltas = <String, int>{};
 
     for (final entry in ranked) {
       final id = entry.id;
-      final delta = seriesDeltas[id] ?? 0;
+      final delta = MorrieRules.moriMorrieAmount(entry.points, morrieRate);
+      seriesDeltas[id] = delta;
       if (BotLogic.isBot(id)) {
         morrieDetails[id] = {
           'rank': entry.rank,
@@ -694,6 +689,7 @@ class MorrieService {
         participantIds: participantIds,
         finalPoints: finalPoints,
         displayNames: displayNames,
+        morrieRate: morrieRate,
       );
 
   /// ルーム精算の未反映モリーを自分のアカウントへ適用する

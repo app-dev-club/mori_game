@@ -1,4 +1,5 @@
 import '../models/post_game_summary.dart';
+import 'morrie_rules.dart';
 
 class PostGameSummaryBuilder {
   static PostGameSummary build({
@@ -23,9 +24,7 @@ class PostGameSummaryBuilder {
     }
 
     final showRating = seriesComplete && seriesRatingDetails.isNotEmpty;
-    final showMorrie = morrieRate > 0 &&
-        (lastMatchMorrieDeltas.isNotEmpty ||
-            (seriesComplete && seriesMorrieDetails.isNotEmpty));
+    final showMorrie = morrieRate > 0;
     final rows = <PostGamePlayerRow>[];
 
     for (final id in roster) {
@@ -35,14 +34,13 @@ class PostGameSummaryBuilder {
       final deltaValue = detail?['ratingDelta'];
       final rankValue = detail?['rank'] ?? morrieDetail?['rank'];
       final pointsValue = detail?['points'] ?? morrieDetail?['points'];
-      final matchMorrieDelta = lastMatchMorrieDeltas[id];
-      final morrieDetailDelta = morrieDetail?['morrieDelta'];
       final morrieBalanceDetail = morrieDetail?['morrieBalance'];
-      final morrieDeltaValue = seriesComplete
-          ? (morrieDetailDelta is num
-              ? morrieDetailDelta.round()
-              : (matchMorrieDelta ?? 0))
-          : (matchMorrieDelta ?? 0);
+      final totalPoints = pointsValue is num
+          ? pointsValue.round()
+          : (playerPoints[id] ?? 0);
+      final morrieDeltaValue = morrieRate > 0
+          ? MorrieRules.morrieDeltaForPoints(totalPoints, morrieRate)
+          : null;
       final morrieBalanceValue = seriesComplete
           ? (morrieBalanceDetail is num
               ? morrieBalanceDetail.round()

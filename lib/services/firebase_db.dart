@@ -376,6 +376,7 @@ class FirebaseDB {
       updates['seriesRestarting'] = false;
       updates['seriesPlayerIds'] = null;
       updates['playerPoints'] = {for (final p in players) p: 0};
+      updates['playerMorrieSeriesDeltas'] = null;
     }
 
     await _roomRef.update(updates);

@@ -1,8 +1,6 @@
 import { Database } from "firebase-admin/database";
 import { applyMorrieBurstRecoveryIfNeeded, getBotRankingBalance } from "./morrie_transfer";
-import {
-  BOT_FIXED_BALANCE,
-} from "./morrie_rules";
+import { BOT_FIXED_BALANCE, moriMorrieAmount } from "./morrie_rules";
 import {
   buildSeriesSummary,
   computeSkillUpdates,
@@ -253,7 +251,6 @@ export async function settleRoomSeries(
 
   if (morrieNeeded && !morrieDone) {
     await ensureAllBotMorrieRankings(db);
-    const seriesDeltas = asIntMap(room.playerMorrieSeriesDeltas);
     const storedBotBalances = asIntMap(room.botMorrieBalances);
     const ranked = rankByPoints(roster, finalPoints);
     const morrieDetails: Record<string, unknown> = {};
@@ -261,7 +258,7 @@ export async function settleRoomSeries(
 
     for (const entry of ranked) {
       const id = entry.id;
-      const delta = seriesDeltas[id] ?? 0;
+      const delta = moriMorrieAmount(entry.points, morrieRate);
       if (isBot(id)) {
         const balance =
           storedBotBalances[id] ?? (await getBotRankingBalance(db, id));

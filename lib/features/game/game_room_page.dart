@@ -2621,6 +2621,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (isFirstMatchStart) ...{
         'players': playOrder,
         'currentTurnIndex': 0,
+        'playerMorrieSeriesDeltas': null,
       },
       if (totalMatches > 1 && completedMatches == 0)
         'seriesPlayerIds': List<String>.from(playOrder),
@@ -2938,6 +2939,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         completedMatches = 0;
         seriesPlayerIds = [];
         _lastMatchPointDeltas = {};
+        _lastMatchMorrieDeltas = {};
+        _lastMatchMorrieBalances = {};
         _seriesRatingDetails = {};
         _seriesMorrieDetails = {};
         playerPoints = {for (final p in players) p: 0};
