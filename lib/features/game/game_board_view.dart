@@ -2243,18 +2243,6 @@ class PostGameOverlay extends StatelessWidget {
                             headerSize: headerSize,
                           ),
                         ],
-                        if (summary?.morrieResultMessage != null) ...[
-                          const SizedBox(height: 10),
-                          _buildResultBanner(
-                            label: 'モリー',
-                            message: summary!.morrieResultMessage!,
-                            accent: Colors.lightGreenAccent,
-                            background: Colors.green.withValues(alpha: 0.18),
-                            icon: Icons.paid,
-                            bodySize: bodySize,
-                            headerSize: headerSize,
-                          ),
-                        ],
                         const SizedBox(height: 12),
                         _buildResultsTable(
                           bodySize,
