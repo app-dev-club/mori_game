@@ -3082,86 +3082,43 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final snap = await _db.getSnapshot();
     if (!snap.exists) return;
     final data = Map<dynamic, dynamic>.from(snap.value as Map);
-    if (data['lastMatchMorrieApplied'] == true) return;
-
-    final roster = seriesPlayerIds.isNotEmpty
-        ? List<String>.from(seriesPlayerIds)
-        : List<String>.from(playerIds);
-    final names = {for (final id in roster) id: _registeredName(id)};
-
-    if (burstPlayerId != null) {
-      final result = await _morrieService.applyBurstMorrieDeduction(
-        roomId: widget.roomId,
-        burstPlayerId: burstPlayerId!,
-        morrieRate: morrieRate,
-        displayNames: names,
-        participantIds: roster,
-      );
-      if (result == null || !mounted) return;
-
-      _lastMatchMorrieDeltas = result.deltas;
-      _lastMatchMorrieBalances = result.balances;
-      _playerMorrieBalances = {..._playerMorrieBalances, ...result.balances};
-      _lastMatchMorrieSummary = result.summary;
-      if (result.morrieBurst) {
-        _morrieBurstPlayerId = burstPlayerId;
-      }
-      final myBalance = result.balances[myId];
-      if (myBalance != null) {
-        _myMorrieBalance = myBalance;
-      }
-      _syncPostGameSummary();
+    if (data['lastMatchMorrieApplied'] == true) {
+      _syncMatchMorrieFromRoomData(data);
       return;
     }
 
-    if (moriPhase != 'finished') return;
-    if (lastMoriPlayerId == null || loserPlayerId == null) return;
-    if (moriDeclarationFactors.isEmpty) return;
+    final applied = await _db.waitForMatchMorrieApplied();
+    if (!mounted) return;
+    if (!applied) return;
 
-    final pointDelta = ScoringRules.moriWinnerDelta(
-      moriDeclarationFactors,
-      moriGaeshiCount,
+    final refreshed = await _db.getSnapshot();
+    if (!refreshed.exists || !mounted) return;
+    _syncMatchMorrieFromRoomData(
+      Map<dynamic, dynamic>.from(refreshed.value as Map),
     );
-    if (pointDelta <= 0) return;
+  }
 
-    final result = await _morrieService.applyMatchMorrieTransfer(
-      roomId: widget.roomId,
-      winnerId: lastMoriPlayerId!,
-      loserId: loserPlayerId!,
-      pointDelta: pointDelta,
-      morrieRate: morrieRate,
-      displayNames: names,
-      participantIds: roster,
-    );
-    if (result == null || !mounted) return;
-
-    _lastMatchMorrieDeltas = result.deltas;
-    _lastMatchMorrieBalances = result.balances;
-    _playerMorrieBalances = {..._playerMorrieBalances, ...result.balances};
-    _lastMatchMorrieSummary = result.summary;
-    if (result.morrieBurst) {
-      _morrieBurstPlayerId = loserPlayerId;
+  void _syncMatchMorrieFromRoomData(Map<dynamic, dynamic> data) {
+    if (data['lastMatchMorrieDeltas'] is Map) {
+      _lastMatchMorrieDeltas = Map<String, int>.from(
+        (data['lastMatchMorrieDeltas'] as Map).map(
+          (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
+        ),
+      );
     }
-    final myBalance = result.balances[myId];
-    if (myBalance != null) {
-      _myMorrieBalance = myBalance;
+    _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
+    _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
+    _applyPlayerMorrieBalancesFromData(data);
+    if (!BotLogic.isBot(myId)) {
+      unawaited(_loadMorrieBalance());
     }
     _syncPostGameSummary();
   }
 
   Future<void> _applyMorrieBurstRecovery() async {
     if (!_hasStewardAuthority || morrieRate <= 0) return;
-    final roster = seriesPlayerIds.isNotEmpty
-        ? List<String>.from(seriesPlayerIds)
-        : List<String>.from(playerIds);
-    final names = {for (final id in roster) id: _registeredName(id)};
-    final recovered = await _morrieService.applyMorrieBurstRecoveryIfNeeded(
-      roomId: widget.roomId,
-      displayNames: names,
-    );
-    if (!recovered || !mounted) return;
     final snap = await _db.getSnapshot();
-    if (!snap.exists) return;
+    if (!snap.exists || !mounted) return;
     final data = Map<dynamic, dynamic>.from(snap.value as Map);
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
     _syncPostGameSummary();

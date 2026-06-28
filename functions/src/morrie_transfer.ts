@@ -152,6 +152,46 @@ function buildFullMatchMorrieDisplay(params: {
   return { deltas, balances };
 }
 
+/** 試合モリー適用の二重実行を防ぐ（トランザクションで先取り） */
+export async function claimLastMatchMorrieApply(
+  db: Database,
+  roomId: string,
+): Promise<boolean> {
+  const ref = db.ref(`rooms/${roomId}/lastMatchMorrieApplied`);
+  const result = await ref.transaction((current) => {
+    if (current === true) return undefined;
+    return true;
+  });
+  return result.committed === true && result.snapshot.val() === true;
+}
+
+async function releaseLastMatchMorrieApplyClaim(
+  db: Database,
+  roomId: string,
+): Promise<void> {
+  await db.ref(`rooms/${roomId}/lastMatchMorrieApplied`).set(null);
+}
+
+/** 試合終了時のモリー適用（在室人数に関係なく CF が実行） */
+export async function applyMatchMorrieOnEnd(
+  db: Database,
+  roomId: string,
+): Promise<boolean> {
+  const roomRef = db.ref(`rooms/${roomId}`);
+  const snap = await roomRef.get();
+  if (!snap.exists()) return false;
+  const room = snap.val() as Record<string, unknown>;
+  if (room.lastMatchMorrieApplied === true) return false;
+
+  if (room.burstPlayerId != null) {
+    return applyBurstMorrieDeductionIfNeeded(db, roomId, room);
+  }
+  if (room.moriPhase === "finished") {
+    return applyMatchMorrieTransferIfNeeded(db, roomId, room);
+  }
+  return false;
+}
+
 /** もり成立時にモリーを loser → winner へ移動（二重適用防止付き） */
 export async function applyMatchMorrieTransferIfNeeded(
   db: Database,
@@ -189,9 +229,11 @@ export async function applyMatchMorrieTransferIfNeeded(
     playerBalances,
   });
   if (transfer.actualMorrie <= 0) {
-    await db.ref(`rooms/${roomId}`).update({ lastMatchMorrieApplied: true });
+    if (!(await claimLastMatchMorrieApply(db, roomId))) return false;
     return false;
   }
+
+  if (!(await claimLastMatchMorrieApply(db, roomId))) return false;
 
   const now = Date.now();
   const newBalances: Record<string, number> = {};
@@ -245,7 +287,6 @@ export async function applyMatchMorrieTransferIfNeeded(
   });
 
   const updates: Record<string, unknown> = {
-    lastMatchMorrieApplied: true,
     lastMatchMorrieDeltas: display.deltas,
     lastMatchMorrieSummary: summary,
     playerMorrieSeriesDeltas: seriesDeltas,
@@ -258,8 +299,13 @@ export async function applyMatchMorrieTransferIfNeeded(
     updates[`botMorrieBalances/${id}`] = balance;
   }
 
-  await db.ref(`rooms/${roomId}`).update(updates);
-  return true;
+  try {
+    await db.ref(`rooms/${roomId}`).update(updates);
+    return true;
+  } catch (error) {
+    await releaseLastMatchMorrieApplyClaim(db, roomId);
+    throw error;
+  }
 }
 
 /** バースト時にモリーを減算（2点 × レート、二重適用防止付き） */
@@ -289,9 +335,11 @@ export async function applyBurstMorrieDeductionIfNeeded(
     playerBalances,
   });
   if (deduction.actualMorrie <= 0 && !deduction.morrieBurst) {
-    await db.ref(`rooms/${roomId}`).update({ lastMatchMorrieApplied: true });
+    if (!(await claimLastMatchMorrieApply(db, roomId))) return false;
     return false;
   }
+
+  if (!(await claimLastMatchMorrieApply(db, roomId))) return false;
 
   const now = Date.now();
   const newBalances: Record<string, number> = {};
@@ -343,7 +391,6 @@ export async function applyBurstMorrieDeductionIfNeeded(
   });
 
   const updates: Record<string, unknown> = {
-    lastMatchMorrieApplied: true,
     lastMatchMorrieDeltas: display.deltas,
     lastMatchMorrieSummary: summary,
     playerMorrieSeriesDeltas: seriesDeltas,
@@ -356,8 +403,13 @@ export async function applyBurstMorrieDeductionIfNeeded(
     updates[`botMorrieBalances/${id}`] = balance;
   }
 
-  await db.ref(`rooms/${roomId}`).update(updates);
-  return true;
+  try {
+    await db.ref(`rooms/${roomId}`).update(updates);
+    return true;
+  } catch (error) {
+    await releaseLastMatchMorrieApplyClaim(db, roomId);
+    throw error;
+  }
 }
 
 /** 飛び発生ボットへ試合終了後に回復モリーを付与（人間には付与しない） */

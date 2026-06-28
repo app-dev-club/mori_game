@@ -5,6 +5,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import { processRoomSteward, sweepRoomStewards } from "./room_steward";
 import { settleRoomSeries } from "./settle_room";
+import { applyMatchMorrieOnEnd } from "./morrie_transfer";
 import { sweepRoomCleanup, tryDeleteRoomIfNeeded } from "./room_cleanup";
 
 initializeApp();
@@ -31,6 +32,17 @@ async function runRoomCleanup(roomId: string, source: string): Promise<void> {
     }
   } catch (error) {
     logger.error("roomCleanup error", { roomId, source, error });
+  }
+}
+
+async function runMatchMorrieApply(roomId: string, source: string): Promise<void> {
+  try {
+    const applied = await applyMatchMorrieOnEnd(db, roomId);
+    if (applied) {
+      logger.info("matchMorrieApply", { roomId, source });
+    }
+  } catch (error) {
+    logger.error("matchMorrieApply error", { roomId, source, error });
   }
 }
 
@@ -99,7 +111,9 @@ export const onRoomMatchEndedPhase = onValueWritten(
   },
   async (event) => {
     if (event.data.after.val() !== "finished") return;
-    await runRoomSteward(event.params.roomId, "mori_finished");
+    const roomId = event.params.roomId;
+    await runMatchMorrieApply(roomId, "mori_finished");
+    await runRoomSteward(roomId, "mori_finished");
   },
 );
 
@@ -110,7 +124,9 @@ export const onRoomBurstPlayer = onValueWritten(
   },
   async (event) => {
     if (event.data.after.val() == null) return;
-    await runRoomSteward(event.params.roomId, "burst");
+    const roomId = event.params.roomId;
+    await runMatchMorrieApply(roomId, "burst");
+    await runRoomSteward(roomId, "burst");
   },
 );
 

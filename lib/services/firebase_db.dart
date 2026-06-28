@@ -227,6 +227,21 @@ class FirebaseDB {
     });
   }
 
+  /// Cloud Functions の試合モリー適用完了を待つ（タイムアウト時は false）
+  Future<bool> waitForMatchMorrieApplied({
+    Duration timeout = const Duration(seconds: 30),
+    Duration pollInterval = const Duration(milliseconds: 400),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final snap = await _roomRef.get();
+      if (!snap.exists) return false;
+      if (snap.child('lastMatchMorrieApplied').value == true) return true;
+      await Future<void>.delayed(pollInterval);
+    }
+    return false;
+  }
+
   /// Cloud Functions の精算完了を待つ（タイムアウト時は false）
   Future<bool> waitForSeriesSettlement({
     Duration timeout = const Duration(seconds: 45),
