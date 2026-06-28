@@ -52,7 +52,8 @@ export function computeBurstMorrieDeduction(params: {
 
   const available = resolvePlayerBalance(burstPlayerId, playerBalances);
   const actual = Math.min(requested, available);
-  const morrieBurst = requested > available;
+  // 全額支払いで残高0（払い切り含む）でも飛び。所持0の場合も飛び。
+  const morrieBurst = requested > 0 && actual === available;
 
   return {
     requestedMorrie: requested,
@@ -105,7 +106,9 @@ export function computeMoriMorrieTransfer(params: {
 
   const loserAvailable = resolvePlayerBalance(loserId, playerBalances);
   const actual = Math.min(requested, loserAvailable);
-  const morrieBurst = requested > loserAvailable;
+  // モリーを払い切って0になる場合は飛び。もともと0で移動なしの場合は続行。
+  const morrieBurst =
+    requested > 0 && loserAvailable > 0 && actual === loserAvailable;
 
   return {
     requestedMorrie: requested,

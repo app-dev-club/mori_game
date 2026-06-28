@@ -67,6 +67,37 @@ void main() {
       expect(transfer.morrieBurst, isTrue);
     });
 
+    test('もり成立時に払い切って0でも飛び', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 6,
+        rate: 2,
+        winnerId: 'winner',
+        loserId: 'loser',
+        playerBalances: const {'winner': 100, 'loser': 12},
+      );
+
+      expect(transfer.requestedMorrie, 12);
+      expect(transfer.actualMorrie, 12);
+      expect(transfer.morrieBurst, isTrue);
+      expect(transfer.deltas['loser'], -12);
+      expect(transfer.deltas['winner'], 12);
+    });
+
+    test('もともと0でモリー移動なしの場合は飛びにならない', () {
+      final transfer = MorrieRules.computeMoriMorrieTransfer(
+        pointDelta: 6,
+        rate: 2,
+        winnerId: 'winner',
+        loserId: 'loser',
+        playerBalances: const {'winner': 100, 'loser': 0},
+      );
+
+      expect(transfer.actualMorrie, 0);
+      expect(transfer.morrieBurst, isFalse);
+      expect(transfer.deltas['loser'], 0);
+      expect(transfer.deltas['winner'], 0);
+    });
+
     test('Bot勝利時もBot側にdeltaが入る', () {
       final transfer = MorrieRules.computeMoriMorrieTransfer(
         pointDelta: 4,
@@ -112,6 +143,19 @@ void main() {
       expect(deduction.actualMorrie, 4);
       expect(deduction.morrieBurst, isFalse);
       expect(deduction.deltas['bot_1'], -4);
+    });
+
+    test('バースト時に払い切って0でも飛び', () {
+      final deduction = MorrieRules.computeBurstMorrieDeduction(
+        rate: 2,
+        burstPlayerId: 'player',
+        playerBalances: const {'player': 4},
+      );
+
+      expect(deduction.requestedMorrie, 4);
+      expect(deduction.actualMorrie, 4);
+      expect(deduction.morrieBurst, isTrue);
+      expect(deduction.deltas['player'], -4);
     });
 
     test('バースト時所持不足なら全財産を失い飛び', () {

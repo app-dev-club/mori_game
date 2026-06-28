@@ -50,7 +50,8 @@ class MorrieRules {
 
     final available = resolvePlayerBalance(burstPlayerId, playerBalances);
     final actual = requested < available ? requested : available;
-    final morrieBurst = requested > available;
+    // 全額支払いで残高0（払い切り含む）でも飛び。所持0の場合も飛び。
+    final morrieBurst = requested > 0 && actual == available;
 
     return BurstMorrieDeduction(
       requestedMorrie: requested,
@@ -113,7 +114,9 @@ class MorrieRules {
 
     final loserAvailable = resolvePlayerBalance(loserId, playerBalances);
     final actual = requested < loserAvailable ? requested : loserAvailable;
-    final morrieBurst = requested > loserAvailable;
+    // モリーを払い切って0になる場合は飛び。もともと0で移動なしの場合は続行。
+    final morrieBurst =
+        requested > 0 && loserAvailable > 0 && actual == loserAvailable;
 
     return MoriMorrieTransfer(
       requestedMorrie: requested,
