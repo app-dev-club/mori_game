@@ -216,8 +216,8 @@ class _MatchReplayPageState extends State<MatchReplayPage> {
       appBar: AppBar(
         title: Text(
           _record != null
-              ? 'リプレイ ${_record!.meta.roomId} (${_record!.meta.matchIndex}/${_record!.meta.seriesTotal})'
-              : 'リプレイ',
+              ? '試合ログ ${_record!.meta.roomId} (${_record!.meta.matchIndex}/${_record!.meta.seriesTotal})'
+              : '試合ログ',
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         backgroundColor: Colors.transparent,

@@ -127,7 +127,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                       ),
                       subtitle: const Text(
-                        'オフにすると対戦・ランキング・リプレイで相手名が「---」になります',
+                        'オフにすると対戦・ランキング・試合ログで相手名が「---」になります',
                         style: TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                       secondary: Icon(

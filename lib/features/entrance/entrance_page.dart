@@ -973,8 +973,8 @@ class _EntrancePageState extends State<EntrancePage> {
           onTap: _openRanking,
         ),
         AppSideBarItem(
-          label: 'リプレイ',
-          icon: Icons.replay,
+          label: '試合ログ',
+          icon: Icons.history,
           accent: Colors.lightBlueAccent,
           onTap: _openReplayList,
         ),

@@ -107,7 +107,7 @@ class _MatchReplayListPageState extends State<MatchReplayListPage> {
       backgroundColor: const Color(0xFF1B5E20),
       appBar: AppBar(
         title: const Text(
-          '試合リプレイ',
+          '試合ログ',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
