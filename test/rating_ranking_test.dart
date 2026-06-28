@@ -84,5 +84,22 @@ void main() {
         'Bot 2',
       );
     });
+
+    test('保存名に UI ラベルが混入していても正規化する', () {
+      expect(
+        RatingService.resolvePlayerName('user_a', {
+          'playerName': 'あなた（Alice）',
+          'rating': 1500,
+        }),
+        'Alice',
+      );
+      expect(
+        RatingService.resolvePlayerName('bot_1', {
+          'playerName': 'Bot一号（Bot）',
+          'isBot': true,
+        }),
+        'Bot 1',
+      );
+    });
   });
 }

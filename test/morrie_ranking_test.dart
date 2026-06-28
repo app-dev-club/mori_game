@@ -36,12 +36,14 @@ void main() {
         },
         'bot_1': {
           'morrieBalance': 999,
-          'playerName': 'Bot 1',
+          'playerName': 'Bot一号（Bot）',
         },
       });
 
       expect(entries.length, 2);
       expect(entries[0].id, 'bot_1');
+      expect(entries[0].playerName, 'Bot 1');
+      expect(entries[0].isBot, isTrue);
       expect(entries[0].morrieBalance, 999);
       expect(entries[1].id, 'user_a');
     });

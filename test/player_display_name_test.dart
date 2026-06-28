@@ -91,5 +91,51 @@ void main() {
         'ホスト太郎',
       );
     });
+
+    test('保存名にあなたラベルが混入していても正規化する', () {
+      expect(
+        PlayerDisplayName.normalizeStoredPlayerName(
+          id: 'user_a',
+          rawName: 'あなた（もり太郎）',
+        ),
+        'もり太郎',
+      );
+      expect(
+        PlayerDisplayName.resolveForRanking(
+          entry: const RankingEntry(
+            id: 'user_a',
+            playerName: 'あなた（もり太郎）',
+            rating: 1500,
+            sigma: 8.33,
+            mu: 25,
+            gamesPlayed: 1,
+            isBot: false,
+            rank: 1,
+          ),
+          myId: 'user_b',
+          hideOpponentNames: false,
+        ),
+        'もり太郎',
+      );
+    });
+
+    test('Bot名は slot 表記に統一する', () {
+      expect(
+        PlayerDisplayName.normalizeStoredPlayerName(
+          id: 'bot_1',
+          rawName: 'Bot一号（Bot）',
+        ),
+        'Bot 1',
+      );
+      expect(
+        PlayerDisplayName.resolveForMorrieRanking(
+          playerName: 'Bot一号（Bot）',
+          id: 'bot_2',
+          myId: 'user_a',
+          hideOpponentNames: false,
+        ),
+        'Bot 2',
+      );
+    });
   });
 }

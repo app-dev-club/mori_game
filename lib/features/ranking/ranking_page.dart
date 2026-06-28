@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../logic/bot_logic.dart';
 import '../../logic/player_display_name.dart';
 import '../../models/morrie_ranking_entry.dart';
 import '../../models/ranking_entry.dart';
@@ -256,7 +255,7 @@ class _RankingPageState extends State<RankingPage> {
                             fontSize: 16,
                           ),
                         ),
-                        if (BotLogic.isBot(entry.id))
+                        if (entry.isBot)
                           const Text(
                             'Bot',
                             style: TextStyle(color: Colors.white38, fontSize: 11),

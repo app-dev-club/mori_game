@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../logic/bot_logic.dart';
 import '../logic/rating_logic.dart';
+import '../logic/player_display_name.dart';
 import '../models/ranking_entry.dart';
 
 class RatingUpdateResult {
@@ -189,22 +190,21 @@ class RatingService {
 
   static String resolvePlayerName(String id, Map<dynamic, dynamic> data) {
     final playerName = data['playerName'];
-    if (playerName is String && playerName.trim().isNotEmpty) {
-      return playerName.trim();
-    }
-    if (BotLogic.isBot(id) || data['isBot'] == true) {
-      return BotLogic.botDisplayName(id);
-    }
     final displayName = data['displayName'];
-    if (displayName is String && displayName.trim().isNotEmpty) {
-      return displayName.trim();
-    }
-    return 'プレイヤー';
+    final raw = playerName is String && playerName.trim().isNotEmpty
+        ? playerName.trim()
+        : (displayName is String && displayName.trim().isNotEmpty
+            ? displayName.trim()
+            : null);
+    return PlayerDisplayName.normalizeStoredPlayerName(id: id, rawName: raw);
   }
 
+  static String _normalizeRatingPlayerName(String id, String? rawName) =>
+      PlayerDisplayName.normalizeStoredPlayerName(id: id, rawName: rawName);
+
   Future<void> syncPlayerName(String userId, String playerName) async {
-    final trimmed = playerName.trim();
-    if (trimmed.isEmpty) return;
+    final trimmed = _normalizeRatingPlayerName(userId, playerName);
+    if (trimmed.isEmpty || trimmed == 'プレイヤー') return;
     try {
       await ensureUserRating(userId);
       await _ratingsRef.child(userId).update({'playerName': trimmed});
@@ -298,8 +298,8 @@ class RatingService {
         ratingPayload['playerName'] = botName;
       } else {
         ratingPayload['isBot'] = false;
-        final name = displayNames[id];
-        if (name != null && name.isNotEmpty) {
+        final name = _normalizeRatingPlayerName(id, displayNames[id]);
+        if (name != 'プレイヤー') {
           ratingPayload['displayName'] = name;
           ratingPayload['playerName'] = name;
         }

@@ -2,6 +2,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../logic/bot_logic.dart';
 import '../logic/morrie_rules.dart';
+import '../logic/player_display_name.dart';
 import '../logic/rating_logic.dart';
 
 import '../models/morrie_ranking_entry.dart';
@@ -69,10 +70,11 @@ class MorrieService {
     String? playerName,
   }) async {
     if (!BotLogic.isBot(botId)) return;
-    final name = playerName?.trim().isNotEmpty == true
-        ? playerName!.trim()
-        : BotLogic.botDisplayName(botId);
-    await syncRankingEntry(botId, morrieBalance: morrieBalance, playerName: name);
+    await syncRankingEntry(
+      botId,
+      morrieBalance: morrieBalance,
+      playerName: BotLogic.botDisplayName(botId),
+    );
   }
 
   Future<void> syncRankingEntry(
@@ -80,9 +82,14 @@ class MorrieService {
     required int morrieBalance,
     String? playerName,
   }) async {
-    final name = playerName?.trim().isNotEmpty == true
-        ? playerName!.trim()
-        : (await _getStoredPlayerName(userId)) ?? 'プレイヤー';
+    final name = BotLogic.isBot(userId)
+        ? BotLogic.botDisplayName(userId)
+        : PlayerDisplayName.normalizeStoredPlayerName(
+            id: userId,
+            rawName: playerName?.trim().isNotEmpty == true
+                ? playerName!.trim()
+                : await _getStoredPlayerName(userId),
+          );
     try {
       await _morrieRankingsRef.child(userId).set({
         'playerName': name,
@@ -149,11 +156,13 @@ class MorrieService {
       entries.add(
         MorrieRankingEntry(
           id: id,
-          playerName: playerName is String && playerName.trim().isNotEmpty
-              ? playerName.trim()
-              : 'プレイヤー',
+          playerName: PlayerDisplayName.normalizeStoredPlayerName(
+            id: id,
+            rawName: playerName is String ? playerName : null,
+          ),
           morrieBalance: balanceValue.round(),
           rank: 0,
+          isBot: BotLogic.isBot(id),
         ),
       );
     });
@@ -171,6 +180,7 @@ class MorrieService {
           playerName: entries[i].playerName,
           morrieBalance: entries[i].morrieBalance,
           rank: i + 1,
+          isBot: entries[i].isBot,
         ),
     ];
   }

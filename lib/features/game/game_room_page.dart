@@ -3002,7 +3002,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final roster = seriesPlayerIds.isNotEmpty
         ? List<String>.from(seriesPlayerIds)
         : List<String>.from(playerIds);
-    final names = {for (final id in roster) id: _displayName(id)};
+    final names = {for (final id in roster) id: _registeredName(id)};
     final seriesComplete = totalMatches <= 1 || completedMatches >= totalMatches;
 
     final summary = PostGameSummaryBuilder.build(
@@ -3087,7 +3087,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final roster = seriesPlayerIds.isNotEmpty
         ? List<String>.from(seriesPlayerIds)
         : List<String>.from(playerIds);
-    final names = {for (final id in roster) id: _displayName(id)};
+    final names = {for (final id in roster) id: _registeredName(id)};
 
     if (burstPlayerId != null) {
       final result = await _morrieService.applyBurstMorrieDeduction(
@@ -3154,7 +3154,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final roster = seriesPlayerIds.isNotEmpty
         ? List<String>.from(seriesPlayerIds)
         : List<String>.from(playerIds);
-    final names = {for (final id in roster) id: _displayName(id)};
+    final names = {for (final id in roster) id: _registeredName(id)};
     final recovered = await _morrieService.applyMorrieBurstRecoveryIfNeeded(
       roomId: widget.roomId,
       displayNames: names,
@@ -3739,6 +3739,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       hostId: hostId,
       hideOpponentNames: _hideOpponentNames,
       afkPlayerIds: _afkPlayerIds,
+    );
+  }
+
+  /// ランキング同期・精算用（あなた/Bot接尾辞を付けない実名）
+  String _registeredName(String? playerId) {
+    if (playerId == null) return '不明';
+    return PlayerDisplayName.resolveForRating(
+      playerId: playerId,
+      playerIds: playerIds,
+      playerNames: playerNames,
     );
   }
 
