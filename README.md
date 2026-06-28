@@ -97,7 +97,9 @@
 ## 更新後のビルド手順
 - ビルドは基本hirotakasuzuki1219が実行する
   - Web
-    - `flutter build web`
+    - `flutter clean`
+    - `flutter pub get`
+    - `flutter build web --release`
     - `firebase deploy --only hosting`
   - Android
     - `flutter pub get`
