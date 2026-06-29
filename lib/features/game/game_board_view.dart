@@ -2442,7 +2442,7 @@ class PostGameOverlay extends StatelessWidget {
       '名前',
       '今回',
       '累計',
-      if (showMorrie) 'モリー',
+      if (showMorrie) '移動',
       if (showMorrie) showsRecoveredMorrieBalance ? '残高(回復後)' : '残高',
       if (showRating) 'レート',
     ];

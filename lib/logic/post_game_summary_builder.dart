@@ -1,6 +1,5 @@
 import '../models/post_game_summary.dart';
 import 'bot_logic.dart';
-import 'morrie_rules.dart';
 
 class PostGameSummaryBuilder {
   static PostGameSummary build({
@@ -39,12 +38,8 @@ class PostGameSummaryBuilder {
       final rankValue = detail?['rank'] ?? morrieDetail?['rank'];
       final pointsValue = detail?['points'] ?? morrieDetail?['points'];
       final morrieBalanceDetail = morrieDetail?['morrieBalance'];
-      final totalPoints = pointsValue is num
-          ? pointsValue.round()
-          : (playerPoints[id] ?? 0);
-      final morrieDeltaValue = morrieRate > 0
-          ? MorrieRules.morrieDeltaForPoints(totalPoints, morrieRate)
-          : null;
+      final morrieDeltaValue =
+          morrieRate > 0 ? lastMatchMorrieDeltas[id] ?? 0 : null;
       final morrieBalanceValue = currentMorrieBalances[id] ??
           (seriesComplete
               ? (morrieBalanceDetail is num
