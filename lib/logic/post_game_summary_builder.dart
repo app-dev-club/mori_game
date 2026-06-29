@@ -11,6 +11,7 @@ class PostGameSummaryBuilder {
     required Map<String, Map<String, dynamic>> seriesMorrieDetails,
     required Map<String, int> lastMatchMorrieDeltas,
     required Map<String, int> lastMatchMorrieBalances,
+    Map<String, int> currentMorrieBalances = const {},
     required int morrieRate,
     required int totalMatches,
     required int completedMatches,
@@ -41,11 +42,12 @@ class PostGameSummaryBuilder {
       final morrieDeltaValue = morrieRate > 0
           ? MorrieRules.morrieDeltaForPoints(totalPoints, morrieRate)
           : null;
-      final morrieBalanceValue = seriesComplete
-          ? (morrieBalanceDetail is num
-              ? morrieBalanceDetail.round()
-              : lastMatchMorrieBalances[id])
-          : lastMatchMorrieBalances[id];
+      final morrieBalanceValue = currentMorrieBalances[id] ??
+          (seriesComplete
+              ? (morrieBalanceDetail is num
+                  ? morrieBalanceDetail.round()
+                  : lastMatchMorrieBalances[id])
+              : lastMatchMorrieBalances[id]);
 
       rows.add(
         PostGamePlayerRow(

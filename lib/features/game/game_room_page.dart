@@ -61,6 +61,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   final GameDisplaySettings _gameDisplaySettings = GameDisplaySettings();
   final GameEffects _gameEffects = GameEffects();
   StreamSubscription? _sub;
+  StreamSubscription? _morrieBalanceSub;
   String myId = '';
 
   List<CardWidget> myHand = [];
@@ -359,8 +360,23 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final baseId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
     myId = widget.automationOnly ? 'automation_$baseId' : baseId;
     _loadDisplaySettings();
-    _loadMorrieBalance();
+    _startMorrieBalanceWatch();
     _init();
+  }
+
+  void _startMorrieBalanceWatch() {
+    if (BotLogic.isBot(myId)) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    _morrieBalanceSub?.cancel();
+    _morrieBalanceSub = _morrieService.watchBalance(uid).listen((balance) {
+      if (!mounted) return;
+      setState(() {
+        _myMorrieBalance = balance;
+        _playerMorrieBalances = {..._playerMorrieBalances, uid: balance};
+      });
+      if (_postGameEntered) _syncPostGameSummary();
+    });
   }
 
   Future<void> _loadMorrieBalance() async {
@@ -398,6 +414,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
+    _morrieBalanceSub?.cancel();
     _moriCountdownTimer?.cancel();
     _statusMessageTimer?.cancel();
     _hostDecisionTimer?.cancel();
@@ -975,12 +992,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           (k, v) => MapEntry(k.toString(), v is int ? v : (v as num).round()),
         ),
       );
-      final syncedBalance = _lastMatchMorrieBalances[myId];
-      if (syncedBalance != null &&
-          morrieRate > 0 &&
-          !BotLogic.isBot(myId)) {
-        _myMorrieBalance = syncedBalance;
-      }
     }
     _applyPlayerMorrieBalancesFromData(data);
     _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
@@ -1000,11 +1011,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{},
         ),
       );
-      final myDetail = _seriesMorrieDetails[myId];
-      final balance = myDetail?['morrieBalance'];
-      if (balance is num) {
-        _myMorrieBalance = balance.round();
-      }
     }
     if (_postGameEntered) {
       _syncPostGameSummary();
@@ -1092,16 +1098,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       for (final entry in (data['lastMatchMorrieBalances'] as Map).entries) {
         final value = entry.value;
         if (value is num) {
-          next[entry.key.toString()] = value.round();
+          final id = entry.key.toString();
+          if (!BotLogic.isBot(id)) continue;
+          next[id] = value.round();
         }
       }
     }
 
-    if (!BotLogic.isBot(myId)) {
-      final synced = next[myId];
-      if (synced != null) {
-        _myMorrieBalance = synced;
-      }
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && _myMorrieBalance != null) {
+      next[uid] = _myMorrieBalance!;
     }
 
     _playerMorrieBalances = next;
@@ -1137,12 +1143,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (fetched.isEmpty) return;
         setState(() {
           _playerMorrieBalances = {..._playerMorrieBalances, ...fetched};
-          if (!BotLogic.isBot(myId)) {
-            final myBalance = _playerMorrieBalances[myId];
-            if (myBalance != null) {
-              _myMorrieBalance = myBalance;
-            }
-          }
         });
       }).whenComplete(() {
         _morrieBalanceFetchKey = null;
@@ -2969,11 +2969,6 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{},
         ),
       );
-      final myDetail = _seriesMorrieDetails[myId];
-      final balance = myDetail?['morrieBalance'];
-      if (balance is num) {
-        _myMorrieBalance = balance.round();
-      }
     }
     completedMatches =
         RoomConfig.resolveNonNegativeInt(data['completedMatches']);
@@ -3004,6 +2999,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         : List<String>.from(playerIds);
     final names = {for (final id in roster) id: _registeredName(id)};
     final seriesComplete = totalMatches <= 1 || completedMatches >= totalMatches;
+    final currentMorrieBalances = Map<String, int>.from(_playerMorrieBalances);
+    if (_myMorrieBalance != null && !BotLogic.isBot(myId)) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) currentMorrieBalances[uid] = _myMorrieBalance!;
+    }
 
     final summary = PostGameSummaryBuilder.build(
       roster: roster,
@@ -3014,6 +3014,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       seriesMorrieDetails: _seriesMorrieDetails,
       lastMatchMorrieDeltas: _lastMatchMorrieDeltas,
       lastMatchMorrieBalances: _lastMatchMorrieBalances,
+      currentMorrieBalances: currentMorrieBalances,
       morrieRate: morrieRate,
       totalMatches: totalMatches,
       completedMatches: completedMatches,

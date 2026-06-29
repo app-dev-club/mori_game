@@ -196,6 +196,28 @@ class MorrieService {
     return MorrieRules.defaultStartingBalance;
   }
 
+  /// users/ の残高をリアルタイム監視（手動補填や CF 反映をそのまま表示）
+  Stream<int> watchBalance(String userId) {
+    return _usersRef.child(userId).child('morrieBalance').onValue.map((event) {
+      final value = event.snapshot.value;
+      if (value is num) return value.round();
+      return MorrieRules.defaultStartingBalance;
+    });
+  }
+
+  /// 公開ランキングを users/ の正残高に合わせる（users は上書きしない）
+  Future<void> syncRankingFromUserBalance(
+    String userId, {
+    String? playerName,
+  }) async {
+    final balance = await getBalance(userId);
+    await syncRankingEntry(
+      userId,
+      morrieBalance: balance,
+      playerName: playerName,
+    );
+  }
+
   /// ボットのグローバル所持モリー（初回のみ botFixedBalance）
   Future<int> getBotBalance(String botId) async {
     if (!BotLogic.isBot(botId)) {
@@ -403,41 +425,24 @@ class MorrieService {
         morrieRate: morrieRate,
       );
 
-  /// ルーム精算の未反映モリーを自分のアカウントへ適用する
-  Future<bool> claimPendingMorrieForUser(String userId) async {
+  /// 旧 pending キューを削除する（残高は users/ が正。上書きしない）
+  Future<bool> clearStaleMorriePending(String userId) async {
     final pendingRef = FirebaseDatabase.instance.ref('userMorriePending/$userId');
     final snap = await pendingRef.get();
     if (!snap.exists || snap.value is! Map) return false;
 
-    var claimed = false;
+    var cleared = false;
     final entries = Map<dynamic, dynamic>.from(snap.value as Map);
     for (final entry in entries.entries) {
-      final roomId = entry.key.toString();
-      if (entry.value is! Map) continue;
-      final data = Map<dynamic, dynamic>.from(entry.value as Map);
-      final balance = data['morrieBalance'];
-      if (balance is! num) continue;
-      final next = balance.round();
-      final name = data['playerName']?.toString();
       try {
-        await _usersRef.child(userId).update({
-          'morrieBalance': next,
-          'updatedAt': ServerValue.timestamp,
-        });
-        await syncRankingEntry(
-          userId,
-          morrieBalance: next,
-          playerName: name,
-        );
-        await FirebaseDatabase.instance.ref('rooms/$roomId/morrieClaimed/$userId').set(true);
-        await pendingRef.child(roomId).remove();
-        claimed = true;
+        await pendingRef.child(entry.key.toString()).remove();
+        cleared = true;
       } catch (_) {}
     }
-    return claimed;
+    return cleared;
   }
 
-  /// 特定ルームの精算フラグを同期（残高は CF が users/ に反映済み）
+  /// ルーム精算済みフラグのみ同期（残高は CF / 手動補填の users/ を正とする）
   Future<bool> claimMorrieFromRoom(String roomId, String userId) async {
     final roomRef = FirebaseDatabase.instance.ref('rooms/$roomId');
     if (roomRef.path.isEmpty) return false;
@@ -447,9 +452,12 @@ class MorrieService {
     final settled = (await roomRef.child('seriesMorrieSettled').get()).value == true;
     if (!settled) return false;
 
-    await claimPendingMorrieForUser(userId);
-    await roomRef.child('morrieClaimed/$userId').set(true);
-    await FirebaseDatabase.instance.ref('userMorriePending/$userId/$roomId').remove();
-    return true;
+    try {
+      await roomRef.child('morrieClaimed/$userId').set(true);
+      await FirebaseDatabase.instance.ref('userMorriePending/$userId/$roomId').remove();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

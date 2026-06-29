@@ -61,6 +61,7 @@ class _EntrancePageState extends State<EntrancePage> {
   bool _namePrefilled = false;
   bool _hideOpponentNames = false;
   String? _spectatingRoomId;
+  StreamSubscription? _morrieBalanceSub;
 
   @override
   void initState() {
@@ -93,11 +94,10 @@ class _EntrancePageState extends State<EntrancePage> {
     final skill = await _ratingService.getSkillRating(uid);
     final rating = RatingLogic.displayRating(skill);
     await _morrieService.ensureBalance(uid);
-    await _morrieService.claimPendingMorrieForUser(uid);
+    await _morrieService.clearStaleMorriePending(uid);
     final morrieBalance = await _morrieService.getBalance(uid);
-    await _morrieService.syncRankingEntry(
+    await _morrieService.syncRankingFromUserBalance(
       uid,
-      morrieBalance: morrieBalance,
       playerName: playerName,
     );
     if (!mounted) return;
@@ -111,6 +111,11 @@ class _EntrancePageState extends State<EntrancePage> {
       _myMu = skill.mu;
       _mySigma = skill.sigma;
       _myMorrieBalance = morrieBalance;
+    });
+    _morrieBalanceSub?.cancel();
+    _morrieBalanceSub = _morrieService.watchBalance(uid).listen((balance) {
+      if (!mounted) return;
+      setState(() => _myMorrieBalance = balance);
     });
   }
 
@@ -137,6 +142,7 @@ class _EntrancePageState extends State<EntrancePage> {
 
   @override
   void dispose() {
+    _morrieBalanceSub?.cancel();
     _roomIdController.dispose();
     _nameController.dispose();
     super.dispose();
