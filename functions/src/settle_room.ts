@@ -139,6 +139,7 @@ export async function settleRoomSeries(
   const morrieNeeded = morrieRate > 0;
 
   if (ratingDone && (!morrieNeeded || morrieDone)) {
+    await applyMorrieBurstRecoveryIfNeeded(db, roomId, room);
     await roomRef.update({
       settlementRequested: null,
       settlementError: null,

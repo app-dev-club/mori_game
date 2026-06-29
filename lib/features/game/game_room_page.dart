@@ -102,6 +102,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   Map<String, Map<String, dynamic>> _seriesRatingDetails = {};
   Map<String, Map<String, dynamic>> _seriesMorrieDetails = {};
   String? _morrieBurstPlayerId;
+  bool _morrieBurstRecoveryApplied = false;
   String? _lastMatchMorrieSummary;
   int morrieRate = RoomConfig.defaultMorrieRate;
   int minMorrieBalance = RoomConfig.defaultMinMorrieBalance;
@@ -995,6 +996,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     _applyPlayerMorrieBalancesFromData(data);
     _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
+    _morrieBurstRecoveryApplied = data['morrieBurstRecoveryApplied'] == true;
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
     if (data['seriesRatingDetails'] is Map) {
       _seriesRatingDetails = (data['seriesRatingDetails'] as Map).map(
@@ -3015,6 +3017,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       lastMatchMorrieDeltas: _lastMatchMorrieDeltas,
       lastMatchMorrieBalances: _lastMatchMorrieBalances,
       currentMorrieBalances: currentMorrieBalances,
+      morrieBurstPlayerId: _morrieBurstPlayerId,
+      morrieBurstRecoveryApplied: _morrieBurstRecoveryApplied,
       morrieRate: morrieRate,
       totalMatches: totalMatches,
       completedMatches: completedMatches,
@@ -3109,20 +3113,35 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
     _morrieBurstPlayerId = data['morrieBurstPlayerId'] as String?;
+    _morrieBurstRecoveryApplied = data['morrieBurstRecoveryApplied'] == true;
     _applyPlayerMorrieBalancesFromData(data);
     if (!BotLogic.isBot(myId)) {
       unawaited(_loadMorrieBalance());
+    }
+    final burstId = _morrieBurstPlayerId;
+    if (burstId != null && BotLogic.isBot(burstId)) {
+      unawaited(_applyMorrieBurstRecovery());
     }
     _syncPostGameSummary();
   }
 
   Future<void> _applyMorrieBurstRecovery() async {
-    if (!_hasStewardAuthority || morrieRate <= 0) return;
+    if (morrieRate <= 0) return;
+    final burstId = _morrieBurstPlayerId;
+    if (burstId == null || !BotLogic.isBot(burstId)) return;
+
+    await _db.waitForMorrieBurstRecovery();
+    if (!mounted) return;
     final snap = await _db.getSnapshot();
-    if (!snap.exists || !mounted) return;
+    if (!snap.exists) return;
     final data = Map<dynamic, dynamic>.from(snap.value as Map);
     _lastMatchMorrieSummary = data['lastMatchMorrieSummary'] as String?;
-    _syncPostGameSummary();
+    _morrieBurstRecoveryApplied = data['morrieBurstRecoveryApplied'] == true;
+    _applyPlayerMorrieBalancesFromData(data);
+    if (mounted) {
+      setState(() {});
+      _syncPostGameSummary();
+    }
   }
 
   Future<void> _applyMatchScoring() async {

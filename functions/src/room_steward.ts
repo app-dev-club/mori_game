@@ -22,7 +22,7 @@ import {
   moriWinnerDelta,
 } from "./scoring_rules";
 import { settleRoomSeries } from "./settle_room";
-import { applyBurstMorrieDeductionIfNeeded, applyMatchMorrieTransferIfNeeded } from "./morrie_transfer";
+import { applyBurstMorrieDeductionIfNeeded, applyMatchMorrieTransferIfNeeded, applyMorrieBurstRecoveryIfNeeded } from "./morrie_transfer";
 import {
   asIntMap,
   asStringList,
@@ -360,6 +360,7 @@ export async function processRoomSteward(
     return { ok: false, reason: "room_removed" };
   }
   const afterMorrie = afterMorrieSnap.val() as Record<string, unknown>;
+  await applyMorrieBurstRecoveryIfNeeded(db, roomId, afterMorrie);
 
   await applyMatchScoringIfNeeded(db, roomId, afterMorrie);
 

@@ -181,15 +181,25 @@ export async function applyMatchMorrieOnEnd(
   const snap = await roomRef.get();
   if (!snap.exists()) return false;
   const room = snap.val() as Record<string, unknown>;
-  if (room.lastMatchMorrieApplied === true) return false;
 
-  if (room.burstPlayerId != null) {
-    return applyBurstMorrieDeductionIfNeeded(db, roomId, room);
+  let applied = false;
+  if (room.lastMatchMorrieApplied !== true) {
+    if (room.burstPlayerId != null) {
+      applied = await applyBurstMorrieDeductionIfNeeded(db, roomId, room);
+    } else if (room.moriPhase === "finished") {
+      applied = await applyMatchMorrieTransferIfNeeded(db, roomId, room);
+    }
   }
-  if (room.moriPhase === "finished") {
-    return applyMatchMorrieTransferIfNeeded(db, roomId, room);
+
+  const afterSnap = await roomRef.get();
+  if (afterSnap.exists()) {
+    await applyMorrieBurstRecoveryIfNeeded(
+      db,
+      roomId,
+      afterSnap.val() as Record<string, unknown>,
+    );
   }
-  return false;
+  return applied;
 }
 
 /** もり成立時にモリーを loser → winner へ移動（二重適用防止付き） */
@@ -428,17 +438,26 @@ export async function applyMorrieBurstRecoveryIfNeeded(
   }
 
   const playerNames = asStringMap(room.playerNames);
-  const amount = BURST_RECOVERY_AMOUNT;
-  const now = Date.now();
-  const updates: Record<string, unknown> = {
-    morrieBurstRecoveryApplied: true,
-  };
-
   const stored = asIntMap(room.botMorrieBalances);
   const current =
     stored[burstId] ?? (await getBotRankingBalance(db, burstId));
+  if (current > 0) {
+    await db.ref(`rooms/${roomId}`).update({ morrieBurstRecoveryApplied: true });
+    return false;
+  }
+
+  const amount = BURST_RECOVERY_AMOUNT;
+  const now = Date.now();
   const next = current + amount;
-  updates[`botMorrieBalances/${burstId}`] = next;
+  const updates: Record<string, unknown> = {
+    morrieBurstRecoveryApplied: true,
+    [`botMorrieBalances/${burstId}`]: next,
+  };
+
+  const lastBalances = asIntMap(room.lastMatchMorrieBalances);
+  lastBalances[burstId] = next;
+  updates.lastMatchMorrieBalances = lastBalances;
+
   await syncBotRankingEntry(db, burstId, next, playerNames, now);
 
   const summary = room.lastMatchMorrieSummary?.toString() ?? "";

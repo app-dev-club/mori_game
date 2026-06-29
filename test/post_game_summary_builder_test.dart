@@ -42,5 +42,29 @@ void main() {
 
       expect(summary.showMorrie, isFalse);
     });
+    test('Bot飛び回復後の残高は回復済みとしてマークする', () {
+      final summary = PostGameSummaryBuilder.build(
+        roster: const ['human', 'bot_1'],
+        names: const {'human': 'Alice', 'bot_1': 'Bot'},
+        playerPoints: const {'human': 6, 'bot_1': -6},
+        lastMatchPointDeltas: const {'human': 6, 'bot_1': -6},
+        seriesRatingDetails: const {},
+        seriesMorrieDetails: const {},
+        lastMatchMorrieDeltas: const {'human': 6, 'bot_1': -6},
+        lastMatchMorrieBalances: const {'human': 16, 'bot_1': 5},
+        currentMorrieBalances: const {'human': 16, 'bot_1': 5},
+        morrieBurstPlayerId: 'bot_1',
+        morrieBurstRecoveryApplied: true,
+        morrieRate: 1,
+        totalMatches: 1,
+        completedMatches: 1,
+        seriesComplete: true,
+      );
+
+      expect(summary.showsRecoveredMorrieBalance, isTrue);
+      final botRow = summary.players.firstWhere((r) => r.name == 'Bot');
+      expect(botRow.morrieBalance, 5);
+      expect(botRow.morrieBalanceIsRecovered, isTrue);
+    });
   });
 }

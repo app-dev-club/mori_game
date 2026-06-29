@@ -265,6 +265,25 @@ class FirebaseDB {
     }
     return false;
   }
+
+  /// Bot 飛び後のモリー回復完了を待つ（タイムアウト時は false）
+  Future<bool> waitForMorrieBurstRecovery({
+    Duration timeout = const Duration(seconds: 30),
+    Duration pollInterval = const Duration(milliseconds: 400),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final snap = await _roomRef.get();
+      if (!snap.exists) return false;
+      final burstId = snap.child('morrieBurstPlayerId').value;
+      if (burstId == null) return true;
+      final burstIdStr = burstId.toString();
+      if (!burstIdStr.startsWith('bot_')) return true;
+      if (snap.child('morrieBurstRecoveryApplied').value == true) return true;
+      await Future<void>.delayed(pollInterval);
+    }
+    return false;
+  }
   Future<void> joinAsSpectator(String spectatorId, String spectatorName) async {
     await _roomRef.child('spectators/$spectatorId').set(spectatorName);
   }

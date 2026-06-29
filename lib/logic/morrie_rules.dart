@@ -74,6 +74,15 @@ class MorrieRules {
     return lines.join('\n');
   }
 
+  /// Bot 飛び後にモリー回復が完了したときのメッセージ
+  static String describeMorrieBurstEventAfterRecovery({
+    required String playerName,
+    required int recoveredBalance,
+  }) {
+    return '$playerName は所持モリー不足のため全財産を失い、飛びとなりました\n'
+        '（試合終了後に$burstRecoveryAmountモリーを付与しました。表示残高 $recoveredBalance は回復後）';
+  }
+
   static String describeBurstMorrieDeduction({
     required String burstPlayerName,
     required String burstPlayerId,

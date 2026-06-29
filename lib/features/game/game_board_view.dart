@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../../logic/game_rules.dart';
+import '../../logic/morrie_rules.dart';
 import '../../logic/player_display_name.dart';
 import '../../logic/room_config.dart';
 import '../../models/post_game_summary.dart';
@@ -2249,6 +2250,17 @@ class PostGameOverlay extends StatelessWidget {
                           headerSize,
                           maxHeight: maxTableHeight,
                         ),
+                        if (summary?.showsRecoveredMorrieBalance == true) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '※ Botの残高は飛び後の回復モリー（+${MorrieRules.burstRecoveryAmount}）を含みます',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: headerSize * 0.9,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Text(
                           _subtitle(),
@@ -2405,6 +2417,8 @@ class PostGameOverlay extends StatelessWidget {
     final players = summary?.players ?? [];
     final showRating = summary?.showRating ?? false;
     final showMorrie = summary?.showMorrie ?? false;
+    final showsRecoveredMorrieBalance =
+        summary?.showsRecoveredMorrieBalance ?? false;
 
     if (players.isEmpty) {
       return Text(
@@ -2419,7 +2433,7 @@ class PostGameOverlay extends StatelessWidget {
     const colMatch = 52.0;
     const colTotal = 52.0;
     const colMorrieDelta = 60.0;
-    const colMorrieBalance = 68.0;
+    const colMorrieBalance = 80.0;
     const colRating = 96.0;
     const rowHeight = 34.0;
 
@@ -2429,7 +2443,7 @@ class PostGameOverlay extends StatelessWidget {
       '今回',
       '累計',
       if (showMorrie) 'モリー',
-      if (showMorrie) '残高',
+      if (showMorrie) showsRecoveredMorrieBalance ? '残高(回復後)' : '残高',
       if (showRating) 'レート',
     ];
     final widths = <double>[
@@ -2482,7 +2496,11 @@ class PostGameOverlay extends StatelessWidget {
                           if (showMorrie)
                             row.morrieDelta != null ? _formatDelta(row.morrieDelta) : '0',
                           if (showMorrie)
-                            row.morrieBalance != null ? '${row.morrieBalance}' : '—',
+                            row.morrieBalance != null
+                                ? (row.morrieBalanceIsRecovered
+                                    ? '${row.morrieBalance}※'
+                                    : '${row.morrieBalance}')
+                                : '—',
                           if (showRating)
                             row.rating != null
                                 ? '${row.rating} (${_formatDelta(row.ratingDelta)})'

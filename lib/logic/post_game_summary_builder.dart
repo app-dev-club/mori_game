@@ -1,4 +1,5 @@
 import '../models/post_game_summary.dart';
+import 'bot_logic.dart';
 import 'morrie_rules.dart';
 
 class PostGameSummaryBuilder {
@@ -12,6 +13,8 @@ class PostGameSummaryBuilder {
     required Map<String, int> lastMatchMorrieDeltas,
     required Map<String, int> lastMatchMorrieBalances,
     Map<String, int> currentMorrieBalances = const {},
+    String? morrieBurstPlayerId,
+    bool morrieBurstRecoveryApplied = false,
     required int morrieRate,
     required int totalMatches,
     required int completedMatches,
@@ -48,6 +51,9 @@ class PostGameSummaryBuilder {
                   ? morrieBalanceDetail.round()
                   : lastMatchMorrieBalances[id])
               : lastMatchMorrieBalances[id]);
+      final morrieBalanceIsRecovered = morrieBurstRecoveryApplied &&
+          morrieBurstPlayerId == id &&
+          BotLogic.isBot(id);
 
       rows.add(
         PostGamePlayerRow(
@@ -61,6 +67,7 @@ class PostGameSummaryBuilder {
           ratingDelta: deltaValue is num ? deltaValue.round() : null,
           morrieDelta: morrieDeltaValue,
           morrieBalance: morrieBalanceValue,
+          morrieBalanceIsRecovered: morrieBalanceIsRecovered,
         ),
       );
     }
@@ -84,6 +91,7 @@ class PostGameSummaryBuilder {
           ratingDelta: row.ratingDelta,
           morrieDelta: row.morrieDelta,
           morrieBalance: row.morrieBalance,
+          morrieBalanceIsRecovered: row.morrieBalanceIsRecovered,
         );
       }
     }
