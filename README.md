@@ -117,7 +117,7 @@
     - `flutter build ipa`
       - 上記実行の前に`open /Users/hirotaka_suzuki/workspace/mori_game/ios/Runner.xcworkspace`からアップルアカウントを結びつける必要あり
     - デバイスがない時はこれの方がいいかも
-      - `flutter build ipa --export-method app-store`
+      - `flutter build ipa --release --export-method app-store`
     - Functionの更新
       - `deploy --only functions`
     - Databaseルールの更新
