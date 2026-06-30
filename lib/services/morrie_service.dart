@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../logic/bot_logic.dart';
@@ -35,18 +36,12 @@ class MoriMorrieTransferResult {
 
 /// ユーザーアカウントに紐づくモリー残高の読み書きと試合精算
 class MorrieService {
+  static final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+
   final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
   final DatabaseReference _morrieRankingsRef =
       FirebaseDatabase.instance.ref('morrieRankings');
-
-  Future<String?> _getStoredPlayerName(String userId) async {
-    try {
-      final snap = await _usersRef.child(userId).child('playerName').get();
-      final value = snap.value;
-      if (value is String && value.trim().isNotEmpty) return value.trim();
-    } catch (_) {}
-    return null;
-  }
 
   Future<void> ensureBotMorrieRankings() async {
     for (var slot = 1; slot <= BotLogic.maxBotSlot; slot++) {
@@ -69,12 +64,7 @@ class MorrieService {
     required int morrieBalance,
     String? playerName,
   }) async {
-    if (!BotLogic.isBot(botId)) return;
-    await syncRankingEntry(
-      botId,
-      morrieBalance: morrieBalance,
-      playerName: BotLogic.botDisplayName(botId),
-    );
+    // Bot ランキングは Cloud Functions が更新する
   }
 
   Future<void> syncRankingEntry(
@@ -82,20 +72,9 @@ class MorrieService {
     required int morrieBalance,
     String? playerName,
   }) async {
-    final name = BotLogic.isBot(userId)
-        ? BotLogic.botDisplayName(userId)
-        : PlayerDisplayName.normalizeStoredPlayerName(
-            id: userId,
-            rawName: playerName?.trim().isNotEmpty == true
-                ? playerName!.trim()
-                : await _getStoredPlayerName(userId),
-          );
+    if (BotLogic.isBot(userId)) return;
     try {
-      await _morrieRankingsRef.child(userId).set({
-        'playerName': name,
-        'morrieBalance': morrieBalance,
-        'updatedAt': ServerValue.timestamp,
-      });
+      await _functions.httpsCallable('refreshMorrieRanking').call();
     } catch (_) {
       // ランキング同期失敗は本体残高を妨げない
     }
@@ -256,33 +235,25 @@ class MorrieService {
 
   Future<void> ensureBalance(String userId) async {
     try {
-      final ref = _usersRef.child(userId).child('morrieBalance');
-      final snap = await ref.get();
-      if (snap.exists) return;
-      await _usersRef.child(userId).update({
-        'morrieBalance': MorrieRules.defaultStartingBalance,
-        'updatedAt': ServerValue.timestamp,
-      });
-      await syncRankingEntry(
-        userId,
-        morrieBalance: MorrieRules.defaultStartingBalance,
-      );
+      await _functions.httpsCallable('ensureMorrieAccountCallable').call();
     } catch (_) {
       // 初期化失敗は精算側でフォールバック
     }
   }
 
-  /// 広告視聴報酬でモリーを加算する
+  /// 広告視聴報酬でモリーを加算する（Cloud Functions 経由）
   Future<int> grantAdReward(String userId) async {
-    await ensureBalance(userId);
-    final current = await getBalance(userId);
-    final next = current + MorrieRules.adRewardAmount;
-    await _usersRef.child(userId).update({
-      'morrieBalance': next,
-      'updatedAt': ServerValue.timestamp,
-    });
-    await syncRankingEntry(userId, morrieBalance: next);
-    return next;
+    try {
+      final result = await _functions.httpsCallable('grantMorrieAdReward').call();
+      final data = result.data;
+      if (data is Map) {
+        final balance = data['balance'];
+        if (balance is num) return balance.round();
+      }
+    } catch (_) {
+      rethrow;
+    }
+    return getBalance(userId);
   }
 
   Future<Map<String, int>> _loadBotMorrieBalances(

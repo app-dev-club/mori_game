@@ -9,12 +9,12 @@ import {
   describeMoriMorrieTransfer,
   resolvePlayerBalance,
 } from "./morrie_rules";
+import { loadHumanMorrieBalanceForTransfer } from "./morrie_account";
 import {
   asIntMap,
   asStringList,
   asStringMap,
   botDisplayName,
-  DEFAULT_STARTING_BALANCE,
   isBot,
   resolveMorrieRate,
   resolveNonNegativeInt,
@@ -30,27 +30,6 @@ function asIntArray(raw: unknown): number[] {
     }
   }
   return out;
-}
-
-async function ensureHumanBalance(db: Database, userId: string): Promise<number> {
-  const ref = db.ref(`users/${userId}`);
-  const snap = await ref.get();
-  if (!snap.exists()) {
-    await ref.update({
-      morrieBalance: DEFAULT_STARTING_BALANCE,
-      updatedAt: Date.now(),
-    });
-    return DEFAULT_STARTING_BALANCE;
-  }
-  const balance = snap.child("morrieBalance").val();
-  if (typeof balance !== "number") {
-    await ref.update({
-      morrieBalance: DEFAULT_STARTING_BALANCE,
-      updatedAt: Date.now(),
-    });
-    return DEFAULT_STARTING_BALANCE;
-  }
-  return Math.max(0, Math.round(balance));
 }
 
 export async function getBotRankingBalance(
@@ -128,7 +107,7 @@ async function loadParticipantMorrieBalances(
   );
   for (const id of participantIds) {
     if (isBot(id)) continue;
-    balances[id] = await ensureHumanBalance(db, id);
+    balances[id] = await loadHumanMorrieBalanceForTransfer(db, id);
   }
   return balances;
 }
@@ -258,7 +237,7 @@ export async function applyMatchMorrieTransferIfNeeded(
       continue;
     }
 
-    const current = playerBalances[id] ?? (await ensureHumanBalance(db, id));
+    const current = playerBalances[id] ?? 0;
     const next = Math.max(0, current + delta);
     newBalances[id] = next;
     const name = resolveDisplayName(id, playerNames);
@@ -364,7 +343,7 @@ export async function applyBurstMorrieDeductionIfNeeded(
       continue;
     }
 
-    const current = playerBalances[id] ?? (await ensureHumanBalance(db, id));
+    const current = playerBalances[id] ?? 0;
     const next = Math.max(0, current + delta);
     newBalances[id] = next;
     const name = resolveDisplayName(id, playerNames);

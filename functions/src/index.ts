@@ -2,7 +2,13 @@ import { initializeApp } from "firebase-admin/app";
 import { getDatabase } from "firebase-admin/database";
 import { onValueWritten } from "firebase-functions/v2/database";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions";
+import {
+  ensureMorrieAccount,
+  grantAdRewardMorrie,
+  refreshMorrieRankingForUser,
+} from "./morrie_account";
 import { processRoomSteward, sweepRoomStewards } from "./room_steward";
 import { settleRoomSeries } from "./settle_room";
 import { applyMatchMorrieOnEnd } from "./morrie_transfer";
@@ -168,3 +174,35 @@ export const scheduledRoomCleanupSweep = onSchedule(
     }
   },
 );
+
+export const ensureMorrieAccountCallable = onCall({ region }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "ログインが必要です");
+  }
+  const result = await ensureMorrieAccount(db, uid);
+  return { balance: result.balance, created: result.created };
+});
+
+export const grantMorrieAdReward = onCall({ region }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "ログインが必要です");
+  }
+  try {
+    const balance = await grantAdRewardMorrie(db, uid);
+    return { balance };
+  } catch (error) {
+    logger.warn("grantMorrieAdReward failed", { uid, error });
+    throw new HttpsError("failed-precondition", "モリー残高を更新できませんでした");
+  }
+});
+
+export const refreshMorrieRanking = onCall({ region }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "ログインが必要です");
+  }
+  await refreshMorrieRankingForUser(db, uid);
+  return { ok: true };
+});

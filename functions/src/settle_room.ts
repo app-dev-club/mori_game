@@ -1,4 +1,5 @@
 import { Database } from "firebase-admin/database";
+import { readHumanMorrieBalance } from "./morrie_account";
 import { applyMorrieBurstRecoveryIfNeeded, getBotRankingBalance } from "./morrie_transfer";
 import { BOT_FIXED_BALANCE, moriMorrieAmount } from "./morrie_rules";
 import {
@@ -13,7 +14,6 @@ import {
   asStringList,
   asStringMap,
   botDisplayName,
-  DEFAULT_STARTING_BALANCE,
   isBot,
   resolveMatchCount,
   resolveMorrieRate,
@@ -28,30 +28,6 @@ export interface SettleRoomResult {
 function isMatchEnded(room: Record<string, unknown>): boolean {
   if (room.burstPlayerId != null) return true;
   return room.moriPhase === "finished";
-}
-
-async function ensureHumanBalance(
-  db: Database,
-  userId: string,
-): Promise<number> {
-  const ref = db.ref(`users/${userId}`);
-  const snap = await ref.get();
-  if (!snap.exists()) {
-    await ref.update({
-      morrieBalance: DEFAULT_STARTING_BALANCE,
-      updatedAt: Date.now(),
-    });
-    return DEFAULT_STARTING_BALANCE;
-  }
-  const balance = snap.child("morrieBalance").val();
-  if (typeof balance !== "number") {
-    await ref.update({
-      morrieBalance: DEFAULT_STARTING_BALANCE,
-      updatedAt: Date.now(),
-    });
-    return DEFAULT_STARTING_BALANCE;
-  }
-  return Math.max(0, Math.round(balance));
 }
 
 async function ensureBotMorrieRanking(db: Database, botId: string): Promise<void> {
@@ -273,7 +249,7 @@ export async function settleRoomSeries(
         continue;
       }
 
-      const balance = await ensureHumanBalance(db, id);
+      const balance = (await readHumanMorrieBalance(db, id)) ?? 0;
       morrieDetails[id] = {
         rank: entry.rank,
         points: entry.points,

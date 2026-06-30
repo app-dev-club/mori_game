@@ -1,85 +1,85 @@
-{
-  "rules": {
-    "rooms": {
-      ".read": true,
-      "$roomId": {
-        ".read": true,
-        ".write": "auth != null && newData.exists()",
-        "seriesRatingApplied": { ".write": false },
-        "seriesRatingSummary": { ".write": false },
-        "seriesRatingDetails": { ".write": false },
-        "seriesMorrieSettled": { ".write": false },
-        "seriesMorrieSummary": { ".write": false },
-        "seriesMorrieDetails": { ".write": false },
-        "settlementCompletedAt": { ".write": false },
-        "settlementError": { ".write": false },
-        "botMorrieBalances": { ".write": false },
-        "morrieClaimed": {
-          "$userId": {
-            ".write": "auth != null && auth.uid == $userId"
-          }
-        }
-      }
-    },
-    "ratings": {
-      ".read": "auth != null",
-      "$playerId": {
-        ".write": false,
-        "playerName": {
-          ".write": "auth != null && auth.uid == $playerId"
-        },
-        "displayName": {
-          ".write": "auth != null && auth.uid == $playerId"
-        }
-      }
-    },
-    "users": {
-      "$userId": {
-        ".read": "auth != null && auth.uid == $userId",
-        ".write": "auth != null && auth.uid == $userId",
-        "morrieBalance": {
-          ".write": "auth != null && newData.isNumber() && newData.val() >= 0"
-        },
-        "updatedAt": {
-          ".write": "auth != null"
-        },
-        "playerName": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
-        }
-      }
-    },
-    "morrieRankings": {
-      ".read": "auth != null",
-      "$userId": {
-        ".write": "auth != null && (auth.uid == $userId || $userId.matches(/^bot_[0-9]+$/))",
-        ".validate": "newData.hasChildren(['morrieBalance', 'playerName']) && newData.child('morrieBalance').isNumber() && newData.child('morrieBalance').val() >= 0 && newData.child('playerName').isString() && newData.child('playerName').val().length > 0 && newData.child('playerName').val().length <= 12"
-      }
-    },
-    "userMorriePending": {
-      "$userId": {
-        ".read": "auth != null && auth.uid == $userId",
-        "$roomId": {
-          ".write": "auth != null && auth.uid == $userId"
-        }
-      }
-    },
-    "matchRecords": {
-      ".read": "auth != null",
-      "$recordId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "matchRecordSummaries": {
-      ".read": "auth != null",
-      "$recordId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "appMeta": {
-      ".read": true,
-      ".write": false
-    }
-  }
-}
+{
+  "rules": {
+    "rooms": {
+      ".read": true,
+      "$roomId": {
+        ".read": true,
+        ".write": "auth != null && newData.exists()",
+        "seriesRatingApplied": { ".write": false },
+        "seriesRatingSummary": { ".write": false },
+        "seriesRatingDetails": { ".write": false },
+        "seriesMorrieSettled": { ".write": false },
+        "seriesMorrieSummary": { ".write": false },
+        "seriesMorrieDetails": { ".write": false },
+        "settlementCompletedAt": { ".write": false },
+        "settlementError": { ".write": false },
+        "botMorrieBalances": { ".write": false },
+        "morrieClaimed": {
+          "$userId": {
+            ".write": "auth != null && auth.uid == $userId"
+          }
+        }
+      }
+    },
+    "ratings": {
+      ".read": "auth != null",
+      "$playerId": {
+        ".write": false,
+        "playerName": {
+          ".write": "auth != null && auth.uid == $playerId"
+        },
+        "displayName": {
+          ".write": "auth != null && auth.uid == $playerId"
+        }
+      }
+    },
+    "users": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        ".write": false,
+        "morrieBalance": {
+          ".write": false
+        },
+        "playerName": {
+          ".write": "auth != null && auth.uid == $userId",
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
+        },
+        "updatedAt": {
+          ".write": "auth != null && auth.uid == $userId"
+        }
+      }
+    },
+    "morrieRankings": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": false
+      }
+    },
+    "userMorriePending": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        "$roomId": {
+          ".write": "auth != null && auth.uid == $userId"
+        }
+      }
+    },
+    "matchRecords": {
+      ".read": "auth != null",
+      "$recordId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "matchRecordSummaries": {
+      ".read": "auth != null",
+      "$recordId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "appMeta": {
+      ".read": true,
+      ".write": false
+    }
+  }
+}
