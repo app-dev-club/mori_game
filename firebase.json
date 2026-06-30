@@ -12,6 +12,9 @@
   "hosting": {
     "public": "build/web",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "predeploy": [
+      "node scripts/update_app_meta.mjs"
+    ],
     "rewrites": [
       {
         "source": "**",
