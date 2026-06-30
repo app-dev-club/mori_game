@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:mori_game/features/auth/app_gate.dart';
+import 'package:mori_game/widgets/app_update_gate.dart';
 import 'package:mori_game/services/rewarded_ad_service.dart';
 import 'package:mori_game/services/sound_settings.dart';
 import 'firebase_options.dart';
@@ -55,7 +56,7 @@ class MoriGameApp extends StatelessWidget {
         primarySwatch: Colors.green,
         useMaterial3: true,
       ),
-      home: const AppGate(),
+      home: const AppUpdateGate(child: AppGate()),
     );
   }
 }

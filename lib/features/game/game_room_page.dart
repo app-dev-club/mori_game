@@ -54,7 +54,8 @@ class GameRoomPage extends StatefulWidget {
   State<GameRoomPage> createState() => _GameRoomPageState();
 }
 
-class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver {
+class _GameRoomPageState extends State<GameRoomPage>
+    with WidgetsBindingObserver {
   late final FirebaseDB _db;
   final MorrieService _morrieService = MorrieService();
   final MatchRecordService _matchRecordService = MatchRecordService();
@@ -78,7 +79,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   List<CardWidget> deck = [];
   List<CardWidget> fieldHistory = [];
 
-  String moriPhase = 'none'; 
+  String moriPhase = 'none';
   String? lastMoriPlayerId, loserPlayerId;
   String? burstPlayerId;
   int moriGaeshiCount = 0;
@@ -107,7 +108,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   int morrieRate = RoomConfig.defaultMorrieRate;
   int minMorrieBalance = RoomConfig.defaultMinMorrieBalance;
   int? _myMorrieBalance;
-  String roomStatus = 'open'; 
+  String roomStatus = 'open';
   bool _isClosedDialogShown = false;
   bool _gameOverDialogShown = false;
   bool _isIntentionalLeave = false;
@@ -174,31 +175,32 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   bool get isHost => !isSpectator && myId == hostId;
 
   String? get _roomAuthorityId => RoomAuthority.resolveAuthorityId(
-        playerIds: playerIds,
-        hostId: hostId,
-        presentPlayerIds: _presentPlayerIds,
-        afkPlayerIds: _afkPlayerIds,
-      );
+    playerIds: playerIds,
+    hostId: hostId,
+    presentPlayerIds: _presentPlayerIds,
+    afkPlayerIds: _afkPlayerIds,
+  );
 
   bool get _needsSubstituteRunnerNow => RoomAuthority.needsSubstituteRunner(
-        gameStarted: gameStarted,
-        playerIds: playerIds,
-        afkPlayerIds: _afkPlayerIds,
-        roomAuthorityId: _roomAuthorityId,
-        hasAutomatedPlayers: playerIds.any(_isAutomatedPlayer),
-      );
+    gameStarted: gameStarted,
+    playerIds: playerIds,
+    afkPlayerIds: _afkPlayerIds,
+    roomAuthorityId: _roomAuthorityId,
+    hasAutomatedPlayers: playerIds.any(_isAutomatedPlayer),
+  );
 
   /// 試合後の精算・シリーズ継続など、接続プレイヤー不在時のルーム管理
   bool get _needsSubstituteSteward => RoomAuthority.needsSubstituteRunner(
-        gameStarted: gameStarted ||
-            postGameActive ||
-            _postGameEntered ||
-            _hasRemainingSeriesMatches,
-        playerIds: playerIds,
-        afkPlayerIds: _afkPlayerIds,
-        roomAuthorityId: _roomAuthorityId,
-        hasAutomatedPlayers: playerIds.any(_isAutomatedPlayer),
-      );
+    gameStarted:
+        gameStarted ||
+        postGameActive ||
+        _postGameEntered ||
+        _hasRemainingSeriesMatches,
+    playerIds: playerIds,
+    afkPlayerIds: _afkPlayerIds,
+    roomAuthorityId: _roomAuthorityId,
+    hasAutomatedPlayers: playerIds.any(_isAutomatedPlayer),
+  );
 
   /// 対局中の Bot / 離脱代走（ポストゲームの steward とは別）
   bool get _needsBackgroundBotRunner =>
@@ -260,7 +262,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
     if (isSpectator) {
       _spectatorBotLeaseHeld = true;
-      _spectatorBotLeaseTimer ??= Timer.periodic(const Duration(seconds: 8), (_) {
+      _spectatorBotLeaseTimer ??= Timer.periodic(const Duration(seconds: 8), (
+        _,
+      ) {
         unawaited(_db.tryClaimAutomationLease(_spectatorBotLeaseId));
       });
     }
@@ -294,9 +298,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return _automationLeaseHeld && _needsSubstituteSteward;
     }
     if (!isSpectator && _roomAuthorityId == myId) return true;
-    if (isSpectator &&
-        _needsSubstituteSteward &&
-        _roomAuthorityId == null) {
+    if (isSpectator && _needsSubstituteSteward && _roomAuthorityId == null) {
       return true;
     }
     return false;
@@ -317,7 +319,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   bool _isHumanAfkOffline(String playerId) {
     if (BotLogic.isBot(playerId)) return false;
-    return _afkPlayerIds.contains(playerId) && !_presentPlayerIds.contains(playerId);
+    return _afkPlayerIds.contains(playerId) &&
+        !_presentPlayerIds.contains(playerId);
   }
 
   bool _isAutomatedPlayer(String playerId) =>
@@ -356,9 +359,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); 
+    WidgetsBinding.instance.addObserver(this);
     _db = FirebaseDB(widget.roomId);
-    final baseId = widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
+    final baseId =
+        widget.userId ?? DateTime.now().millisecondsSinceEpoch.toString();
     myId = widget.automationOnly ? 'automation_$baseId' : baseId;
     _loadDisplaySettings();
     _startMorrieBalanceWatch();
@@ -450,7 +454,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return;
     }
 
-    final players = List<String>.from(snap.child('players').value as List? ?? []);
+    final players = List<String>.from(
+      snap.child('players').value as List? ?? [],
+    );
     if (players.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _showErrorDialog('プレイヤーがいないため観戦できません。'),
@@ -489,12 +495,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!snap.exists) {
       await _morrieService.ensureBalance(myId);
       final balance = await _morrieService.getBalance(myId);
-      final requiredMin = widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance;
+      final requiredMin =
+          widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance;
       if (!RoomConfig.meetsMinMorrieRequirement(balance, requiredMin)) {
         WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _showErrorDialog(
-            '最低入室モリー $requiredMin が必要です（所持: $balance）',
-          ),
+          (_) => _showErrorDialog('最低入室モリー $requiredMin が必要です（所持: $balance）'),
         );
         return;
       }
@@ -513,7 +518,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         turnTimeoutSeconds:
             widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds,
         morrieRate: widget.morrieRate ?? RoomConfig.defaultMorrieRate,
-        minMorrieBalance: widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance,
+        minMorrieBalance:
+            widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance,
         deckIndex: _serializeHand(fullDeck),
         initialHand: _serializeHand(hand),
       );
@@ -528,7 +534,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       turnTimeoutSeconds =
           widget.turnTimeoutSeconds ?? RoomConfig.defaultTurnTimeoutSeconds;
       morrieRate = widget.morrieRate ?? RoomConfig.defaultMorrieRate;
-      minMorrieBalance = widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance;
+      minMorrieBalance =
+          widget.minMorrieBalance ?? RoomConfig.defaultMinMorrieBalance;
       await _db.registerPlayerPresence(myId);
       setState(() => myHand = hand);
     } else {
@@ -541,16 +548,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       minMorrieBalance = RoomConfig.resolveMinMorrieBalance(
         snap.child('minMorrieBalance').value,
       );
-      totalMatches = RoomConfig.resolveMatchCount(snap.child('totalMatches').value);
-      turnTimeoutSeconds =
-          RoomConfig.resolveTurnTimeoutSeconds(snap.child('turnTimeoutSeconds').value);
+      totalMatches = RoomConfig.resolveMatchCount(
+        snap.child('totalMatches').value,
+      );
+      turnTimeoutSeconds = RoomConfig.resolveTurnTimeoutSeconds(
+        snap.child('turnTimeoutSeconds').value,
+      );
       morrieRate = RoomConfig.resolveMorrieRate(snap.child('morrieRate').value);
 
       if (isRejoin && isStarted) {
         if (minMorrieBalance > 0) {
           await _morrieService.ensureBalance(myId);
           final balance = await _morrieService.getBalance(myId);
-          if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrieBalance)) {
+          if (!RoomConfig.meetsMinMorrieRequirement(
+            balance,
+            minMorrieBalance,
+          )) {
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => _showErrorDialog(
                 '最低入室モリー $minMorrieBalance が必要です（所持: $balance）',
@@ -580,7 +593,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
 
-      String currentStatus = snap.child('roomStatus').value as String? ?? 'open';
+      String currentStatus =
+          snap.child('roomStatus').value as String? ?? 'open';
       if (currentStatus == 'closed' || isStarted) {
         WidgetsBinding.instance.addPostFrameCallback(
           (_) => _showErrorDialog('このゲームは既に開始されているか、閉鎖されているため入室できません。'),
@@ -598,7 +612,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         if (minMorrieBalance > 0) {
           await _morrieService.ensureBalance(myId);
           final balance = await _morrieService.getBalance(myId);
-          if (!RoomConfig.meetsMinMorrieRequirement(balance, minMorrieBalance)) {
+          if (!RoomConfig.meetsMinMorrieRequirement(
+            balance,
+            minMorrieBalance,
+          )) {
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => _showErrorDialog(
                 '最低入室モリー $minMorrieBalance が必要です（所持: $balance）',
@@ -614,17 +631,30 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         p.add(myId);
       }
       List<dynamic> rawDeck = snap.child('deck').value as List<dynamic>? ?? [];
-      List<CardWidget> cDeck = rawDeck.map((i) => CardWidget(number: i['number'], suit: Suit.values.firstWhere((e) => e.name == i['suit']))).toList();
+      List<CardWidget> cDeck = rawDeck
+          .map(
+            (i) => CardWidget(
+              number: i['number'],
+              suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+            ),
+          )
+          .toList();
       List<CardWidget> iHand = [];
-      for (int i = 0; i < 5; i++) { if (cDeck.isNotEmpty) iHand.add(cDeck.removeLast()); }
+      for (int i = 0; i < 5; i++) {
+        if (cDeck.isNotEmpty) iHand.add(cDeck.removeLast());
+      }
       await _db.updateGameStatus({
         'players': p,
         'playerHands/$myId': iHand.length,
         'playerCards/$myId': _serializeHand(iHand),
         'playerNames/$myId': widget.playerName,
         'playerPoints/$myId': 0,
-        'deck': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-        'deckIndex': cDeck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+        'deck': cDeck
+            .map((c) => {'number': c.number, 'suit': c.suit.name})
+            .toList(),
+        'deckIndex': cDeck
+            .map((c) => {'number': c.number, 'suit': c.suit.name})
+            .toList(),
       });
       await _db.registerPlayerPresence(myId);
       setState(() => myHand = iHand);
@@ -649,7 +679,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final prevMoriGaeshiCount = moriGaeshiCount;
     final bool dataPostGameActive = data['postGameActive'] == true;
     final bool dataSeriesRestarting = data['seriesRestarting'] == true;
-    final int? seriesNextMatchAt = _parseFirebaseTimestamp(data['seriesNextMatchAt']);
+    final int? seriesNextMatchAt = _parseFirebaseTimestamp(
+      data['seriesNextMatchAt'],
+    );
     final bool shouldNotifyDeckReset =
         deckResetAt != null && deckResetAt != _lastDeckResetAt;
     setState(() {
@@ -658,10 +690,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       playerIds = List<String>.from(data['players'] ?? []);
       maxPlayers = RoomConfig.resolveMaxPlayers(data['maxPlayers']);
       totalMatches = RoomConfig.resolveMatchCount(data['totalMatches']);
-      turnTimeoutSeconds = RoomConfig.resolveTurnTimeoutSeconds(data['turnTimeoutSeconds']);
+      turnTimeoutSeconds = RoomConfig.resolveTurnTimeoutSeconds(
+        data['turnTimeoutSeconds'],
+      );
       morrieRate = RoomConfig.resolveMorrieRate(data['morrieRate']);
-      minMorrieBalance = RoomConfig.resolveMinMorrieBalance(data['minMorrieBalance']);
-      completedMatches = RoomConfig.resolveNonNegativeInt(data['completedMatches']);
+      minMorrieBalance = RoomConfig.resolveMinMorrieBalance(
+        data['minMorrieBalance'],
+      );
+      completedMatches = RoomConfig.resolveNonNegativeInt(
+        data['completedMatches'],
+      );
       if (data['seriesPlayerIds'] is List) {
         seriesPlayerIds = List<String>.from(
           (data['seriesPlayerIds'] as List).map((e) => e.toString()),
@@ -674,12 +712,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _afkPlayerIds = RoomAuthority.parseAfkPlayerIds(data['afkPlayerIds']);
       if (data['playerNames'] != null) {
         playerNames = Map<String, String>.from(
-          (data['playerNames'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
+          (data['playerNames'] as Map).map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          ),
         );
       }
       if (data['spectators'] is Map) {
         spectatorNames = Map<String, String>.from(
-          (data['spectators'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())),
+          (data['spectators'] as Map).map(
+            (k, v) => MapEntry(k.toString(), v.toString()),
+          ),
         );
       } else {
         spectatorNames = {};
@@ -694,14 +736,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       currentTurn = data['currentTurnIndex'] ?? 0;
       lastPlayerId = data['lastPlayerId'];
       roomStatus = data['roomStatus'] ?? 'open';
-      
+
       lastDrawerId = data['lastDrawerId'];
       isDrawCompetitive = data['isDrawCompetitive'] == true;
       if (shouldNotifyDeckReset) _lastDeckResetAt = deckResetAt;
 
       if (!isSpectator) {
         final int myIdx = playerIds.indexOf(myId);
-        final bool isMyTurn = playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
+        final bool isMyTurn =
+            playerIds.isNotEmpty && (currentTurn % playerIds.length == myIdx);
         final bool inDrawCompetition = GameRules.canPlayInDrawCompetition(
           isDrawCompetitive: isDrawCompetitive,
           lastDrawerId: lastDrawerId,
@@ -717,9 +760,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         }
       }
 
-      if (data['playerHands'] != null) handCounts = Map<String, int>.from(data['playerHands']);
+      if (data['playerHands'] != null)
+        handCounts = Map<String, int>.from(data['playerHands']);
       if (data['playerCards'] != null) {
-        final playerCards = Map<String, dynamic>.from(data['playerCards'] as Map);
+        final playerCards = Map<String, dynamic>.from(
+          data['playerCards'] as Map,
+        );
         final countsFromCards = <String, int>{};
         final parsedAll = <String, List<CardWidget>>{};
         playerCards.forEach((pid, cards) {
@@ -745,7 +791,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         for (final automatedId in playerIds.where(_isAutomatedPlayer)) {
           final playerIdx = playerIds.indexOf(automatedId);
           final playerMyTurn =
-              playerIds.isNotEmpty && (currentTurn % playerIds.length == playerIdx);
+              playerIds.isNotEmpty &&
+              (currentTurn % playerIds.length == playerIdx);
           final playerInDrawCompetition = GameRules.canPlayInDrawCompetition(
             isDrawCompetitive: isDrawCompetitive,
             lastDrawerId: lastDrawerId,
@@ -761,16 +808,29 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
       if (data['field'] != null) {
         fieldNumber = data['field']['number'];
-        fieldSuit = Suit.values.firstWhere((e) => e.name == data['field']['suit'], orElse: () => Suit.joker);
+        fieldSuit = Suit.values.firstWhere(
+          (e) => e.name == data['field']['suit'],
+          orElse: () => Suit.joker,
+        );
       }
-      if (data['deck'] != null) deck = (data['deck'] as List).map((i) => CardWidget(number: i['number'], suit: Suit.values.firstWhere((e) => e.name == i['suit']))).toList();
+      if (data['deck'] != null)
+        deck = (data['deck'] as List)
+            .map(
+              (i) => CardWidget(
+                number: i['number'],
+                suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+              ),
+            )
+            .toList();
 
       if (data['fieldHistory'] != null) {
         fieldHistory = (data['fieldHistory'] as List)
-            .map((i) => CardWidget(
-                  number: i['number'],
-                  suit: Suit.values.firstWhere((e) => e.name == i['suit']),
-                ))
+            .map(
+              (i) => CardWidget(
+                number: i['number'],
+                suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+              ),
+            )
             .toList();
       } else if (fieldNumber != -1) {
         fieldHistory = [CardWidget(number: fieldNumber, suit: fieldSuit)];
@@ -779,11 +839,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
 
       // 既存ルーム互換: fieldHistory が無い場合、ホストが最小限の履歴をFirebaseへ作る
-      if (_hasStewardAuthority && data['fieldHistory'] == null && fieldNumber != -1) {
+      if (_hasStewardAuthority &&
+          data['fieldHistory'] == null &&
+          fieldNumber != -1) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _db.updateGameStatus({
             'fieldHistory': [
-              {'number': fieldNumber, 'suit': fieldSuit.name}
+              {'number': fieldNumber, 'suit': fieldSuit.name},
             ],
           });
         });
@@ -791,7 +853,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (_hasStewardAuthority && data['deckIndex'] == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _db.updateGameStatus({
-            'deckIndex': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+            'deckIndex': deck
+                .map((c) => {'number': c.number, 'suit': c.suit.name})
+                .toList(),
           });
         });
       }
@@ -812,8 +876,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         moriDeclaredPlayerIds = [];
       }
       if (data['openJokerPlayerIds'] is Map) {
-        openJokerPlayerIds = (data['openJokerPlayerIds'] as Map)
-            .entries
+        openJokerPlayerIds = (data['openJokerPlayerIds'] as Map).entries
             .where((e) => e.value == true)
             .map((e) => e.key.toString())
             .toSet();
@@ -847,7 +910,7 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           _forceReturnToLobby();
         });
       }
-      
+
       // 山札めくりやゲーム終了後の閉鎖では弾かない（ホスト切断時のロビー閉鎖のみ）
       if (roomStatus == 'closed' &&
           !gameStarted &&
@@ -868,11 +931,15 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       postGameActive = data['postGameActive'] == true;
       rematchHostRequested = data['rematchHostRequested'] == true;
       awaitingGuestStayResponses = data['awaitingGuestStayResponses'] == true;
-      rematchEligiblePlayers = List<String>.from(data['rematchEligiblePlayers'] ?? []);
+      rematchEligiblePlayers = List<String>.from(
+        data['rematchEligiblePlayers'] ?? [],
+      );
       rematchStartedAt = data['rematchStartedAt'] as int?;
       if (data['rematchReady'] != null) {
         rematchReadyMap = Map<String, bool>.from(
-          (data['rematchReady'] as Map).map((k, v) => MapEntry(k.toString(), v == true)),
+          (data['rematchReady'] as Map).map(
+            (k, v) => MapEntry(k.toString(), v == true),
+          ),
         );
       } else {
         rematchReadyMap = {};
@@ -894,14 +961,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
 
       if (postGameActive && _hasStewardAuthority && postGameEndedAt == null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _db.markPostGameStarted());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _db.markPostGameStarted(),
+        );
       }
 
       if (rematchHostRequested && awaitingGuestStayResponses) {
         _cancelPostGameTimers();
         _syncGuestStayTimers();
         if (isHost) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFinalizeRematchLobby());
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _maybeFinalizeRematchLobby(),
+          );
         }
       } else if (_postGameEntered && !rematchHostRequested) {
         if (!_hasRemainingSeriesMatches) {
@@ -940,7 +1011,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       final fieldNum = (data['field'] is Map)
           ? ((data['field'] as Map)['number'] as num?)?.round() ?? fieldNumber
           : fieldNumber;
-      final seriesAwaitingHostFlip = gameStarted == false &&
+      final seriesAwaitingHostFlip =
+          gameStarted == false &&
           !dataPostGameActive &&
           seriesNextMatchAt == null &&
           completedMatches > 0 &&
@@ -963,7 +1035,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       }
     });
 
-    if (!_postGameEntered && moriPhase == 'finished' && lastMoriPlayerId != null) {
+    if (!_postGameEntered &&
+        moriPhase == 'finished' &&
+        lastMoriPlayerId != null) {
       _cancelMoriResolutionTimers();
       _enterPostGame();
     }
@@ -1020,7 +1094,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     _syncMoriResolution();
 
-    if (_postGameEntered && _hasRemainingSeriesMatches && seriesNextMatchAt != null) {
+    if (_postGameEntered &&
+        _hasRemainingSeriesMatches &&
+        seriesNextMatchAt != null) {
       _syncSeriesContinueUi(seriesNextMatchAt);
       if (_hasStewardAuthority) {
         _ensureSeriesAutoContinueScheduled(
@@ -1028,7 +1104,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           dataSeriesRestarting: dataSeriesRestarting,
         );
       }
-    } else if (_postGameEntered && totalMatches > 1 && completedMatches >= totalMatches) {
+    } else if (_postGameEntered &&
+        totalMatches > 1 &&
+        completedMatches >= totalMatches) {
       _syncPostGameSummary();
       _syncPostGameTimers();
     }
@@ -1117,10 +1195,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   void _ensureOpponentMorrieBalancesLoaded() {
     final missingHumans = playerIds
-        .where((id) => !BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id))
+        .where(
+          (id) => !BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id),
+        )
         .toList();
     final missingBots = playerIds
-        .where((id) => BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id))
+        .where(
+          (id) => BotLogic.isBot(id) && !_playerMorrieBalances.containsKey(id),
+        )
         .toList();
     if (missingHumans.isEmpty && missingBots.isEmpty) return;
 
@@ -1130,25 +1212,27 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     unawaited(
       Future.wait([
-        if (missingHumans.isNotEmpty)
-          _morrieService.getRankingBalances(missingHumans),
-        if (missingBots.isNotEmpty)
-          Future.wait(missingBots.map(_morrieService.getBotBalance)).then(
-            (values) => Map<String, int>.fromIterables(missingBots, values),
-          ),
-      ]).then((results) {
-        if (!mounted) return;
-        final fetched = <String, int>{};
-        for (final map in results) {
-          fetched.addAll(map);
-        }
-        if (fetched.isEmpty) return;
-        setState(() {
-          _playerMorrieBalances = {..._playerMorrieBalances, ...fetched};
-        });
-      }).whenComplete(() {
-        _morrieBalanceFetchKey = null;
-      }),
+            if (missingHumans.isNotEmpty)
+              _morrieService.getRankingBalances(missingHumans),
+            if (missingBots.isNotEmpty)
+              Future.wait(missingBots.map(_morrieService.getBotBalance)).then(
+                (values) => Map<String, int>.fromIterables(missingBots, values),
+              ),
+          ])
+          .then((results) {
+            if (!mounted) return;
+            final fetched = <String, int>{};
+            for (final map in results) {
+              fetched.addAll(map);
+            }
+            if (fetched.isEmpty) return;
+            setState(() {
+              _playerMorrieBalances = {..._playerMorrieBalances, ...fetched};
+            });
+          })
+          .whenComplete(() {
+            _morrieBalanceFetchKey = null;
+          }),
     );
   }
 
@@ -1263,14 +1347,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final actor = lastPlayerId;
     final fieldChanged =
         fieldNumber != prevFieldNumber || fieldSuit != prevFieldSuit;
-    final skipPlay = !isInitialPhase &&
+    final skipPlay =
+        !isInitialPhase &&
         prevFieldNumber != -1 &&
         fieldNumber == prevFieldNumber &&
         actor != null &&
         actor != prevLastPlayerId;
-    if (actor != null &&
-        actor != 'system' &&
-        (fieldChanged || skipPlay)) {
+    if (actor != null && actor != 'system' && (fieldChanged || skipPlay)) {
       _emitCardPlayEffect(
         actorId: actor,
         previousFieldNumber: prevFieldNumber,
@@ -1317,9 +1400,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (seriesRaw is List && seriesRaw.isNotEmpty) {
       return seriesRaw.map((id) => id.toString()).toList();
     }
-    return List<String>.from(snap.child('players').value as List? ?? [])
-        .map((id) => id.toString())
-        .toList();
+    return List<String>.from(
+      snap.child('players').value as List? ?? [],
+    ).map((id) => id.toString()).toList();
   }
 
   int? _parseFirebaseTimestamp(dynamic value) {
@@ -1346,7 +1429,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     required int? seriesNextMatchAt,
     required bool dataSeriesRestarting,
   }) {
-    if (!_hasStewardAuthority || !mounted || _seriesRestartInProgress || dataSeriesRestarting) return;
+    if (!_hasStewardAuthority ||
+        !mounted ||
+        _seriesRestartInProgress ||
+        dataSeriesRestarting)
+      return;
     if (!_hasRemainingSeriesMatches || seriesNextMatchAt == null) return;
     if (DateTime.now().millisecondsSinceEpoch < seriesNextMatchAt) return;
     _autoContinueSeries();
@@ -1379,7 +1466,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _tickMoriResolution() {
-    if (!mounted || moriPhase != 'mori_declared' || _moriResolutionDeadlineMs == null) {
+    if (!mounted ||
+        moriPhase != 'mori_declared' ||
+        _moriResolutionDeadlineMs == null) {
       _cancelMoriResolutionTimers();
       return;
     }
@@ -1390,7 +1479,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       setState(() => _moriCountdownSeconds = remainingSeconds);
     }
 
-    if (_hasBotRunnerAuthority && now >= _moriResolutionDeadlineMs! && !_moriFinishRequested) {
+    if (_hasBotRunnerAuthority &&
+        now >= _moriResolutionDeadlineMs! &&
+        !_moriFinishRequested) {
       _moriFinishRequested = true;
       _db.updateGameStatus({'moriPhase': 'finished'});
     }
@@ -1430,7 +1521,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   bool _shouldStartInitialPhaseAutoFlip() {
-    if (!_hasBotRunnerAuthority || !mounted || _postGameClosing || _showPostGameOverlay) return false;
+    if (!_hasBotRunnerAuthority ||
+        !mounted ||
+        _postGameClosing ||
+        _showPostGameOverlay)
+      return false;
     if (!RoomConfig.hasMinPlayers(playerIds.length)) return false;
     return GameRules.shouldStartInitialPhaseAutoFlip(
       isInitialPhase: isInitialPhase,
@@ -1456,7 +1551,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     final key = _initialPhaseAutoFlipContextKey();
-    if (key == _initialPhaseAutoFlipKey && _initialPhaseAutoFlipTimer != null) return;
+    if (key == _initialPhaseAutoFlipKey && _initialPhaseAutoFlipTimer != null)
+      return;
 
     _initialPhaseAutoFlipKey = key;
     _initialPhaseAutoFlipTimer?.cancel();
@@ -1514,7 +1610,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       return;
     }
     final remaining =
-        ((_autoPlayDeadlineMs! - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
+        ((_autoPlayDeadlineMs! - DateTime.now().millisecondsSinceEpoch) / 1000)
+            .ceil();
     final clamped = remaining < 0 ? 0 : remaining;
     if (clamped != _autoPlayCountdownSeconds && mounted) {
       setState(() => _autoPlayCountdownSeconds = clamped);
@@ -1533,9 +1630,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _autoPlayTimerKey = key;
     _autoPlayTimer?.cancel();
     _autoPlayCountdownTimer?.cancel();
-    _autoPlayDeadlineMs = DateTime.now().millisecondsSinceEpoch + _turnTimeoutMs;
+    _autoPlayDeadlineMs =
+        DateTime.now().millisecondsSinceEpoch + _turnTimeoutMs;
     _autoPlayCountdownSeconds = turnTimeoutSeconds;
-    _autoPlayTimer = Timer(Duration(milliseconds: _turnTimeoutMs), _performAutoPlay);
+    _autoPlayTimer = Timer(
+      Duration(milliseconds: _turnTimeoutMs),
+      _performAutoPlay,
+    );
     _autoPlayCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       _updateAutoPlayCountdown();
@@ -1614,7 +1715,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   bool _shouldRunBotLogic() =>
-      _hasBotRunnerAuthority && mounted && !_postGameClosing && !_showPostGameOverlay && gameStarted;
+      _hasBotRunnerAuthority &&
+      mounted &&
+      !_postGameClosing &&
+      !_showPostGameOverlay &&
+      gameStarted;
 
   List<CardWidget> _botHand(String botId) =>
       List<CardWidget>.from(_allPlayerCards[botId] ?? []);
@@ -1762,7 +1867,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         case BotActionType.mori:
           _executeBotMori(playerId);
         case BotActionType.play:
-          if (decision.cardIndex != null) _executeBotPlay(playerId, decision.cardIndex!);
+          if (decision.cardIndex != null)
+            _executeBotPlay(playerId, decision.cardIndex!);
         case BotActionType.draw:
           _executeBotDraw(playerId);
         case BotActionType.burst:
@@ -1834,8 +1940,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'playerPoints/$botId': 0,
       'bots/$botId': true,
       'botMorrieBalances/$botId': botBalance,
-      'deck': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-      'deckIndex': deckCopy.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deck': deckCopy
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
+      'deckIndex': deckCopy
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
     });
     await _morrieService.syncBotRankingEntry(
       botId,
@@ -1854,7 +1964,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final card = hand[index];
     final previousFieldNumber = fieldNumber;
     if (isInitialPhase) {
-      if (!GameRules.canPlayNormal(fieldNumber, fieldSuit, card, isInitialPhase: true)) return;
+      if (!GameRules.canPlayNormal(
+        fieldNumber,
+        fieldSuit,
+        card,
+        isInitialPhase: true,
+      ))
+        return;
     } else {
       final botIdx = playerIds.indexOf(botId);
       final isServerTurn = currentTurn % playerIds.length == botIdx;
@@ -1865,11 +1981,13 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         players: playerIds,
         myId: botId,
       );
-      final isInterrupt = card.number == fieldNumber;
+      final isInterrupt = card.suit != Suit.joker && card.number == fieldNumber;
       final isJokerField = GameRules.isJokerOnField(fieldNumber, fieldSuit);
-      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+      final usesTurnPlayLimit =
+          isServerTurn || isLastDrawer || isCompetitiveParticipant;
       final hasPlayed = _botHasPlayedThisTurn[botId] ?? false;
-      if (usesTurnPlayLimit && hasPlayed && !isInterrupt && !isJokerField) return;
+      if (usesTurnPlayLimit && hasPlayed && !isInterrupt && !isJokerField)
+        return;
       if (!(isServerTurn ||
           isLastDrawer ||
           isCompetitiveParticipant ||
@@ -1877,7 +1995,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
           isJokerField)) {
         return;
       }
-      if (!(GameRules.canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField)) {
+      if (!(GameRules.canPlayNormal(fieldNumber, fieldSuit, card) ||
+          isInterrupt)) {
         return;
       }
     }
@@ -1902,17 +2021,21 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'isDrawCompetitive': false,
       'isInitialPhase': false,
       'gameStarted': true,
-      'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'fieldHistory': updatedHistory
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
     });
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.playCard,
-      actorId: botId,
-      payload: {
-        'card': _serializeHand([card]).first,
-        'isInitialPhase': isInitialPhase,
-      },
-      actorHand: hand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.playCard,
+        actorId: botId,
+        payload: {
+          'card': _serializeHand([card]).first,
+          'isInitialPhase': isInitialPhase,
+        },
+        actorHand: hand,
+      ),
+    );
     _emitCardPlayEffect(
       actorId: botId,
       previousFieldNumber: previousFieldNumber,
@@ -1942,7 +2065,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     final drawn = deck.last;
     final tempHand = List<CardWidget>.from(hand)..add(drawn);
-    final hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
+    final hasPlayableCard = tempHand.any(
+      (c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c),
+    );
 
     var deckAfterDrawCards = deck.sublist(0, deck.length - 1);
     final resetMetaUpdates = <String, dynamic>{};
@@ -1952,28 +2077,33 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         deckAfterDrawCards = replenished;
         resetMetaUpdates.addAll({
           'field': {'number': fieldNumber, 'suit': fieldSuit.name},
-          'fieldHistory': fieldHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+          'fieldHistory': fieldHistory
+              .map((c) => {'number': c.number, 'suit': c.suit.name})
+              .toList(),
           'deckResetAt': ServerValue.timestamp,
         });
       }
     }
-    final deckAfterDraw =
-        deckAfterDrawCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    final deckAfterDraw = deckAfterDrawCards
+        .map((c) => {'number': c.number, 'suit': c.suit.name})
+        .toList();
     final isSeventhDraw = tempHand.length >= 7;
 
     if (GameRules.isBurst(tempHand.length, hasPlayableCard)) {
       _allPlayerCards[botId] = tempHand;
-      unawaited(_recordMatchEvent(
-        type: MatchEventType.draw,
-        actorId: botId,
-        payload: {
-          'card': _serializeHand([drawn]).first,
-          'isSeventhDraw': true,
-          'burst': true,
-          if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
-        },
-        actorHand: tempHand,
-      ));
+      unawaited(
+        _recordMatchEvent(
+          type: MatchEventType.draw,
+          actorId: botId,
+          payload: {
+            'card': _serializeHand([drawn]).first,
+            'isSeventhDraw': true,
+            'burst': true,
+            if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+          },
+          actorHand: tempHand,
+        ),
+      );
       _db.updateGameStatus({
         'burstPlayerId': botId,
         'deck': deckAfterDraw,
@@ -1990,17 +2120,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     _allPlayerCards[botId] = tempHand;
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.draw,
-      actorId: botId,
-      payload: {
-        'card': _serializeHand([drawn]).first,
-        'isSeventhDraw': isSeventhDraw,
-        'isDrawCompetitive': !isSeventhDraw,
-        if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
-      },
-      actorHand: tempHand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.draw,
+        actorId: botId,
+        payload: {
+          'card': _serializeHand([drawn]).first,
+          'isSeventhDraw': isSeventhDraw,
+          'isDrawCompetitive': !isSeventhDraw,
+          if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+        },
+        actorHand: tempHand,
+      ),
+    );
     _db.updateGameStatus({
       'deck': deckAfterDraw,
       'deckIndex': deckAfterDraw,
@@ -2041,19 +2173,26 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriRevealedHand': _serializeHand(hand),
       'moriRevealedType': 'mori',
       'moriGaeshiCount': 0,
-      'moriDeclarationFactors': [ScoringRules.handFactor(hand, openJoker: openJokerPlayerIds.contains(botId))],
+      'moriDeclarationFactors': [
+        ScoringRules.handFactor(
+          hand,
+          openJoker: openJokerPlayerIds.contains(botId),
+        ),
+      ],
       'moriDeclaredPlayerIds': [botId],
     });
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.mori,
-      actorId: botId,
-      payload: {
-        'hand': _serializeHand(hand),
-        'loserId': lastPlayerId,
-        'handFactor': _handFactorFor(botId, hand),
-      },
-      actorHand: hand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.mori,
+        actorId: botId,
+        payload: {
+          'hand': _serializeHand(hand),
+          'loserId': lastPlayerId,
+          'handFactor': _handFactorFor(botId, hand),
+        },
+        actorHand: hand,
+      ),
+    );
     _emitMoriEffect(actorId: botId, isGaeshi: false, hand: hand);
   }
 
@@ -2086,17 +2225,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'moriDeclarationFactors': nextFactors,
       'moriDeclaredPlayerIds': nextDeclaredIds,
     });
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.moriGaeshi,
-      actorId: botId,
-      payload: {
-        'hand': _serializeHand(hand),
-        'loserId': previousMoriPlayerId,
-        'handFactor': handFactor,
-        'moriGaeshiCount': nextGaeshiCount,
-      },
-      actorHand: hand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.moriGaeshi,
+        actorId: botId,
+        payload: {
+          'hand': _serializeHand(hand),
+          'loserId': previousMoriPlayerId,
+          'handFactor': handFactor,
+          'moriGaeshiCount': nextGaeshiCount,
+        },
+        actorHand: hand,
+      ),
+    );
     _emitMoriEffect(actorId: botId, isGaeshi: true, hand: hand);
   }
 
@@ -2120,7 +2261,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     final bool isJokerField = GameRules.isJokerOnField(fieldNumber, fieldSuit);
 
     if (isInitialPhase) {
-      if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card, isInitialPhase: true)) {
+      if (GameRules.canPlayNormal(
+        fieldNumber,
+        fieldSuit,
+        card,
+        isInitialPhase: true,
+      )) {
         _executePlay([card]);
       }
       return;
@@ -2134,13 +2280,23 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       players: playerIds,
       myId: myId,
     );
-    bool isInterrupt = (card.number == fieldNumber);
-    final bool usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+    bool isInterrupt = card.suit != Suit.joker && card.number == fieldNumber;
+    final bool usesTurnPlayLimit =
+        isServerTurn || isLastDrawer || isCompetitiveParticipant;
 
-    if (usesTurnPlayLimit && _hasPlayedThisTurn && !isInterrupt && !isJokerField) return;
+    if (usesTurnPlayLimit &&
+        _hasPlayedThisTurn &&
+        !isInterrupt &&
+        !isJokerField)
+      return;
 
-    if (isServerTurn || isLastDrawer || isCompetitiveParticipant || isInterrupt || isJokerField) {
-      if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField) {
+    if (isServerTurn ||
+        isLastDrawer ||
+        isCompetitiveParticipant ||
+        isInterrupt ||
+        isJokerField) {
+      if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) ||
+          isInterrupt) {
         _executePlay([card]);
       }
     }
@@ -2168,9 +2324,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     }
 
     final drawn = deck.last;
-    
+
     List<CardWidget> tempHand = List.from(myHand)..add(drawn);
-    bool hasPlayableCard = tempHand.any((c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c));
+    bool hasPlayableCard = tempHand.any(
+      (c) => GameRules.canPlayNormal(fieldNumber, fieldSuit, c),
+    );
 
     List<CardWidget> deckAfterDrawCards = deck.sublist(0, deck.length - 1);
     final resetMetaUpdates = <String, dynamic>{};
@@ -2180,29 +2338,34 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         deckAfterDrawCards = replenished;
         resetMetaUpdates.addAll({
           'field': {'number': fieldNumber, 'suit': fieldSuit.name},
-          'fieldHistory': fieldHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+          'fieldHistory': fieldHistory
+              .map((c) => {'number': c.number, 'suit': c.suit.name})
+              .toList(),
           'deckResetAt': ServerValue.timestamp,
         });
       }
     }
-    final deckAfterDraw =
-        deckAfterDrawCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    final deckAfterDraw = deckAfterDrawCards
+        .map((c) => {'number': c.number, 'suit': c.suit.name})
+        .toList();
     final bool isSeventhDraw = tempHand.length >= 7;
 
     // 7枚目で出せるカードがなければバースト
     if (GameRules.isBurst(tempHand.length, hasPlayableCard)) {
       setState(() => myHand.add(drawn));
-      unawaited(_recordMatchEvent(
-        type: MatchEventType.draw,
-        actorId: myId,
-        payload: {
-          'card': _serializeHand([drawn]).first,
-          'isSeventhDraw': true,
-          'burst': true,
-          if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
-        },
-        actorHand: tempHand,
-      ));
+      unawaited(
+        _recordMatchEvent(
+          type: MatchEventType.draw,
+          actorId: myId,
+          payload: {
+            'card': _serializeHand([drawn]).first,
+            'isSeventhDraw': true,
+            'burst': true,
+            if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+          },
+          actorHand: tempHand,
+        ),
+      );
       _db.updateGameStatus({
         'burstPlayerId': myId,
         'deck': deckAfterDraw,
@@ -2222,17 +2385,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     // 手札6枚以下: 次のプレイヤーも出す/引く権利（早い者勝ち）。7枚目は競合なし。
     final bool enableDrawCompetition = !isSeventhDraw;
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.draw,
-      actorId: myId,
-      payload: {
-        'card': _serializeHand([drawn]).first,
-        'isSeventhDraw': isSeventhDraw,
-        'isDrawCompetitive': enableDrawCompetition,
-        if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
-      },
-      actorHand: tempHand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.draw,
+        actorId: myId,
+        payload: {
+          'card': _serializeHand([drawn]).first,
+          'isSeventhDraw': isSeventhDraw,
+          'isDrawCompetitive': enableDrawCompetition,
+          if (resetMetaUpdates.containsKey('deckResetAt')) 'deckReset': true,
+        },
+        actorHand: tempHand,
+      ),
+    );
     _db.updateGameStatus({
       'deck': deckAfterDraw,
       'deckIndex': deckAfterDraw,
@@ -2269,7 +2434,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (isInitialPhase) _cancelInitialPhaseAutoFlipTimer();
     int myIdx = playerIds.indexOf(myId);
     _hasPlayedThisTurn = true;
-    setState(() { for (var c in cards) { myHand.removeWhere((h) => h.number == c.number && h.suit == c.suit); } });
+    setState(() {
+      for (var c in cards) {
+        myHand.removeWhere((h) => h.number == c.number && h.suit == c.suit);
+      }
+    });
 
     final CardWidget playedCard = cards.last;
     final previousFieldNumber = fieldNumber;
@@ -2288,17 +2457,21 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       'isDrawCompetitive': false,
       'isInitialPhase': false,
       'gameStarted': true,
-      'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'fieldHistory': updatedHistory
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
     });
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.playCard,
-      actorId: myId,
-      payload: {
-        'card': _serializeHand([playedCard]).first,
-        'isInitialPhase': isInitialPhase,
-      },
-      actorHand: myHand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.playCard,
+        actorId: myId,
+        payload: {
+          'card': _serializeHand([playedCard]).first,
+          'isInitialPhase': isInitialPhase,
+        },
+        actorHand: myHand,
+      ),
+    );
     _emitCardPlayEffect(
       actorId: myId,
       previousFieldNumber: previousFieldNumber,
@@ -2368,16 +2541,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'moriDeclarationFactors': [handFactor],
         'moriDeclaredPlayerIds': [myId],
       });
-      unawaited(_recordMatchEvent(
-        type: MatchEventType.mori,
-        actorId: myId,
-        payload: {
-          'hand': revealedHand,
-          'loserId': lastPlayerId,
-          'handFactor': handFactor,
-        },
-        actorHand: myHand,
-      ));
+      unawaited(
+        _recordMatchEvent(
+          type: MatchEventType.mori,
+          actorId: myId,
+          payload: {
+            'hand': revealedHand,
+            'loserId': lastPlayerId,
+            'handFactor': handFactor,
+          },
+          actorHand: myHand,
+        ),
+      );
       _emitMoriEffect(actorId: myId, isGaeshi: false, hand: myHand);
     } else {
       final previousMoriPlayerId = lastMoriPlayerId;
@@ -2405,17 +2580,19 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         'moriDeclarationFactors': nextFactors,
         'moriDeclaredPlayerIds': nextDeclaredIds,
       });
-      unawaited(_recordMatchEvent(
-        type: MatchEventType.moriGaeshi,
-        actorId: myId,
-        payload: {
-          'hand': revealedHand,
-          'loserId': previousMoriPlayerId,
-          'handFactor': handFactor,
-          'moriGaeshiCount': nextGaeshiCount,
-        },
-        actorHand: myHand,
-      ));
+      unawaited(
+        _recordMatchEvent(
+          type: MatchEventType.moriGaeshi,
+          actorId: myId,
+          payload: {
+            'hand': revealedHand,
+            'loserId': previousMoriPlayerId,
+            'handFactor': handFactor,
+            'moriGaeshiCount': nextGaeshiCount,
+          },
+          actorHand: myHand,
+        ),
+      );
       _emitMoriEffect(actorId: myId, isGaeshi: true, hand: myHand);
     }
   }
@@ -2441,7 +2618,10 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   int _handFactorFor(String playerId, List<CardWidget> hand) =>
-      ScoringRules.handFactor(hand, openJoker: openJokerPlayerIds.contains(playerId));
+      ScoringRules.handFactor(
+        hand,
+        openJoker: openJokerPlayerIds.contains(playerId),
+      );
 
   void _onOpenJoker() {
     if (!GameRules.canOpenJoker(
@@ -2464,14 +2644,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     setState(() => openJokerPlayerIds = {...openJokerPlayerIds, myId});
     _showGameMessage('ジョーカーを公開しました');
     _db.updateGameStatus({'openJokerPlayerIds/$myId': true});
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.openJoker,
-      actorId: myId,
-      payload: {
-        'jokerPlusOne': GameRules.isJokerPlusOneHand(myHand),
-      },
-      actorHand: myHand,
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.openJoker,
+        actorId: myId,
+        payload: {'jokerPlusOne': GameRules.isJokerPlusOneHand(myHand)},
+        actorHand: myHand,
+      ),
+    );
   }
 
   Future<void> _startMatchRecording({
@@ -2481,7 +2661,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!_hasMatchRecordingAuthority) return;
     if (_matchRecordService.isRecording) return;
     try {
-      final field = fieldCard ?? CardWidget(number: fieldNumber, suit: fieldSuit);
+      final field =
+          fieldCard ?? CardWidget(number: fieldNumber, suit: fieldSuit);
       final deckCards = deckOverride ?? deck;
       await _matchRecordService.startMatch(
         roomId: widget.roomId,
@@ -2574,10 +2755,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   List<CardWidget> _parseHandFromFirebase(dynamic raw) {
     if (raw == null) return [];
     return (raw as List)
-        .map((i) => CardWidget(
-              number: i['number'] as int,
-              suit: Suit.values.firstWhere((e) => e.name == i['suit']),
-            ))
+        .map(
+          (i) => CardWidget(
+            number: i['number'] as int,
+            suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+          ),
+        )
         .toList();
   }
 
@@ -2613,9 +2796,17 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         : playerIds;
     _db.updateGameStatus({
       'field': {'number': card.number, 'suit': card.suit.name},
-      'deck': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-      'deckIndex': deck.sublist(0, deck.length - 1).map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-      'fieldHistory': updatedHistory.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deck': deck
+          .sublist(0, deck.length - 1)
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
+      'deckIndex': deck
+          .sublist(0, deck.length - 1)
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
+      'fieldHistory': updatedHistory
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
       'isInitialPhase': true,
       'lastPlayerId': 'system',
       'roomStatus': 'closed',
@@ -2671,13 +2862,18 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         }
         _showGameMessage('${_displayName(playOrder.first)} から開始（手番順をシャッフル）');
       } else if (isNewGame) {
-        _showGameMessage('第$_currentMatchNumber戦を開始（${_displayName(playerIds.first)} から）');
+        _showGameMessage(
+          '第$_currentMatchNumber戦を開始（${_displayName(playerIds.first)} から）',
+        );
       }
     });
     unawaited(_onFlipRecorded(card, deck.sublist(0, deck.length - 1)));
   }
 
-  Future<void> _onFlipRecorded(CardWidget card, List<CardWidget> deckAfter) async {
+  Future<void> _onFlipRecorded(
+    CardWidget card,
+    List<CardWidget> deckAfter,
+  ) async {
     if (!_hasStewardAuthority) return;
     if (!_matchRecordService.isRecording) {
       await _startMatchRecording(deckOverride: deckAfter, fieldCard: card);
@@ -2686,7 +2882,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     await _recordMatchEvent(
       type: MatchEventType.fieldFlip,
       actorId: 'system',
-      payload: {'card': _serializeHand([card]).first},
+      payload: {
+        'card': _serializeHand([card]).first,
+      },
     );
   }
 
@@ -2715,21 +2913,27 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     fieldHistory = [latest];
 
     _db.updateGameStatus({
-      'deck': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
-      'deckIndex': deck.map((c) => {'number': c.number, 'suit': c.suit.name}).toList(),
+      'deck': deck
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
+      'deckIndex': deck
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList(),
       'field': {'number': latest.number, 'suit': latest.suit.name},
       'fieldHistory': [
         {'number': latest.number, 'suit': latest.suit.name},
       ],
       'deckResetAt': ServerValue.timestamp,
     });
-    unawaited(_recordMatchEvent(
-      type: MatchEventType.deckReset,
-      payload: {
-        'deck': _serializeHand(deck),
-        'field': MatchRecordCodec.field(fieldNumber, fieldSuit),
-      },
-    ));
+    unawaited(
+      _recordMatchEvent(
+        type: MatchEventType.deckReset,
+        payload: {
+          'deck': _serializeHand(deck),
+          'field': MatchRecordCodec.field(fieldNumber, fieldSuit),
+        },
+      ),
+    );
   }
 
   void _cleanupRoomOnLeave() {
@@ -2783,7 +2987,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   /// 各スート(♠♥♦♣)で1-13が各1枚ずつ(52枚) + ジョーカー2枚 = 54枚
   List<CardWidget> _generateDeck() {
-    const nonJokerSuits = <Suit>[Suit.spade, Suit.heart, Suit.diamond, Suit.club];
+    const nonJokerSuits = <Suit>[
+      Suit.spade,
+      Suit.heart,
+      Suit.diamond,
+      Suit.club,
+    ];
     return [
       for (final s in nonJokerSuits)
         for (var i = 1; i <= 13; i++) CardWidget(number: i, suit: s),
@@ -2811,7 +3020,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   void _syncGuestStayTimers() {
-    _guestStayCountdownTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+    _guestStayCountdownTimer ??= Timer.periodic(const Duration(seconds: 1), (
+      _,
+    ) {
       if (!mounted) return;
       _updateGuestCountdown();
       if (isHost) _maybeFinalizeRematchLobby();
@@ -2823,9 +3034,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (rematchStartedAt == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final next =
-        ((rematchStartedAt! + RoomConfig.guestRematchResponseMs - now) / 1000).ceil();
+        ((rematchStartedAt! + RoomConfig.guestRematchResponseMs - now) / 1000)
+            .ceil();
     final clamped = next < 0 ? 0 : next;
-    if (clamped != _guestCountdownSeconds) setState(() => _guestCountdownSeconds = clamped);
+    if (clamped != _guestCountdownSeconds)
+      setState(() => _guestCountdownSeconds = clamped);
   }
 
   int _guestStayReadyCount() =>
@@ -2846,7 +3059,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     if (!isHost || !awaitingGuestStayResponses || _rematchFinalizing) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final timedOut = rematchStartedAt != null &&
+    final timedOut =
+        rematchStartedAt != null &&
         now >= rematchStartedAt! + RoomConfig.guestRematchResponseMs;
 
     if (!_allGuestStayResponsesResolved(timedOut: timedOut)) return;
@@ -2854,10 +3068,20 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     _rematchFinalizing = true;
     try {
       final stayingGuests = rematchEligiblePlayers
-          .where((id) => !BotLogic.isBot(id) && playerIds.contains(id) && rematchReadyMap[id] == true)
+          .where(
+            (id) =>
+                !BotLogic.isBot(id) &&
+                playerIds.contains(id) &&
+                rematchReadyMap[id] == true,
+          )
           .toList();
       final toRemove = rematchEligiblePlayers
-          .where((id) => !BotLogic.isBot(id) && playerIds.contains(id) && rematchReadyMap[id] != true)
+          .where(
+            (id) =>
+                !BotLogic.isBot(id) &&
+                playerIds.contains(id) &&
+                rematchReadyMap[id] != true,
+          )
           .toList();
 
       if (toRemove.isNotEmpty) {
@@ -2901,11 +3125,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       for (int i = 0; i < 5; i++) {
         if (deckCards.isNotEmpty) hand.add(deckCards.removeLast());
       }
-      playerCards[pid] = hand.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+      playerCards[pid] = hand
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList();
       playerHandCounts[pid] = hand.length;
     }
-    final remainingDeck =
-        deckCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+    final remainingDeck = deckCards
+        .map((c) => {'number': c.number, 'suit': c.suit.name})
+        .toList();
 
     await _db.prepareRematchLobby(
       players: humanPlayers,
@@ -2931,10 +3158,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       fieldSuit = Suit.joker;
       fieldHistory = [];
       myHand = (playerCards[myId] ?? [])
-          .map((i) => CardWidget(
-                number: i['number'] as int,
-                suit: Suit.values.firstWhere((e) => e.name == i['suit']),
-              ))
+          .map(
+            (i) => CardWidget(
+              number: i['number'] as int,
+              suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+            ),
+          )
           .toList();
       _hasPlayedThisTurn = false;
       if (!forSeriesContinue) {
@@ -2972,8 +3201,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         ),
       );
     }
-    completedMatches =
-        RoomConfig.resolveNonNegativeInt(data['completedMatches']);
+    completedMatches = RoomConfig.resolveNonNegativeInt(
+      data['completedMatches'],
+    );
   }
 
   Future<void> _refreshSeriesSettlementDetails() async {
@@ -3000,7 +3230,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         ? List<String>.from(seriesPlayerIds)
         : List<String>.from(playerIds);
     final names = {for (final id in roster) id: _registeredName(id)};
-    final seriesComplete = totalMatches <= 1 || completedMatches >= totalMatches;
+    final seriesComplete =
+        totalMatches <= 1 || completedMatches >= totalMatches;
     final currentMorrieBalances = Map<String, int>.from(_playerMorrieBalances);
     if (_myMorrieBalance != null && !BotLogic.isBot(myId)) {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -3044,7 +3275,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       _syncPostGameTimers();
     }
     if (_hasStewardAuthority) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onHostPostGameEntered());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onHostPostGameEntered(),
+      );
     }
   }
 
@@ -3156,7 +3389,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     String? summary;
     if (burstPlayerId != null) {
       final penalty = ScoringRules.burstPenalty();
-      updatedPoints[burstPlayerId!] = (updatedPoints[burstPlayerId!] ?? 0) - penalty;
+      updatedPoints[burstPlayerId!] =
+          (updatedPoints[burstPlayerId!] ?? 0) - penalty;
       matchDeltas[burstPlayerId!] = -penalty;
       summary = ScoringRules.describeBurstScoring(
         burstPlayerName: _displayName(burstPlayerId),
@@ -3164,9 +3398,14 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     } else if (lastMoriPlayerId != null &&
         loserPlayerId != null &&
         moriDeclarationFactors.isNotEmpty) {
-      final delta = ScoringRules.moriWinnerDelta(moriDeclarationFactors, moriGaeshiCount);
-      updatedPoints[lastMoriPlayerId!] = (updatedPoints[lastMoriPlayerId!] ?? 0) + delta;
-      updatedPoints[loserPlayerId!] = (updatedPoints[loserPlayerId!] ?? 0) - delta;
+      final delta = ScoringRules.moriWinnerDelta(
+        moriDeclarationFactors,
+        moriGaeshiCount,
+      );
+      updatedPoints[lastMoriPlayerId!] =
+          (updatedPoints[lastMoriPlayerId!] ?? 0) + delta;
+      updatedPoints[loserPlayerId!] =
+          (updatedPoints[loserPlayerId!] ?? 0) - delta;
       matchDeltas[lastMoriPlayerId!] = delta;
       matchDeltas[loserPlayerId!] = -delta;
       summary = ScoringRules.describeMoriScoring(
@@ -3217,9 +3456,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       if (!refreshed.exists || !mounted) return;
       final roomData = Map<dynamic, dynamic>.from(refreshed.value as Map);
 
-      final resolvedTotal = RoomConfig.resolveMatchCount(roomData['totalMatches']);
-      final dbCompleted =
-          RoomConfig.resolveNonNegativeInt(roomData['completedMatches']);
+      final resolvedTotal = RoomConfig.resolveMatchCount(
+        roomData['totalMatches'],
+      );
+      final dbCompleted = RoomConfig.resolveNonNegativeInt(
+        roomData['completedMatches'],
+      );
 
       if (resolvedTotal <= 1) {
         if (dbCompleted < resolvedTotal) {
@@ -3231,7 +3473,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
 
-      final seriesNextAt = _parseFirebaseTimestamp(roomData['seriesNextMatchAt']);
+      final seriesNextAt = _parseFirebaseTimestamp(
+        roomData['seriesNextMatchAt'],
+      );
       if (seriesNextAt != null) {
         completedMatches = dbCompleted;
         if (dbCompleted < resolvedTotal) {
@@ -3275,7 +3519,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         final roster = roomData['seriesPlayerIds'];
         if (roster is! List || roster.isEmpty) {
           updates['seriesPlayerIds'] = List<String>.from(
-            (roomData['players'] as List?)?.map((e) => e.toString()) ?? playerIds,
+            (roomData['players'] as List?)?.map((e) => e.toString()) ??
+                playerIds,
           );
         }
       } else {
@@ -3291,8 +3536,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
 
-        await _requestAndWaitSeriesSettlement();
-        await _scheduleCloseAfterSettlement();
+      await _requestAndWaitSeriesSettlement();
+      await _scheduleCloseAfterSettlement();
     } finally {
       _postGameStewardInProgress = false;
     }
@@ -3391,8 +3636,9 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         return;
       }
 
-      final remainingDeck =
-          deckCards.map((c) => {'number': c.number, 'suit': c.suit.name}).toList();
+      final remainingDeck = deckCards
+          .map((c) => {'number': c.number, 'suit': c.suit.name})
+          .toList();
 
       await _db.startSeriesNextMatch(
         players: roster,
@@ -3421,10 +3667,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
         lastPlayerId = null;
         deck = List<CardWidget>.from(deckCards);
         myHand = (playerCards[myId] ?? [])
-            .map((i) => CardWidget(
-                  number: i['number'] as int,
-                  suit: Suit.values.firstWhere((e) => e.name == i['suit']),
-                ))
+            .map(
+              (i) => CardWidget(
+                number: i['number'] as int,
+                suit: Suit.values.firstWhere((e) => e.name == i['suit']),
+              ),
+            )
             .toList();
         _hasPlayedThisTurn = false;
         _seriesNextMatchAtMs = null;
@@ -3468,9 +3716,12 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   void _updateCountdown() {
     if (postGameEndedAt == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
-    final next = ((postGameEndedAt! + RoomConfig.hostRematchDecisionMs - now) / 1000).ceil();
+    final next =
+        ((postGameEndedAt! + RoomConfig.hostRematchDecisionMs - now) / 1000)
+            .ceil();
     final clamped = next < 0 ? 0 : next;
-    if (clamped != _countdownSeconds) setState(() => _countdownSeconds = clamped);
+    if (clamped != _countdownSeconds)
+      setState(() => _countdownSeconds = clamped);
   }
 
   void _checkPostGameTimeouts() {
@@ -3513,16 +3764,16 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
   Future<void> _onHostRematchRequest() async {
     if (!_meetsMinMorrieForPlay) {
-      _showGameMessage(
-        '最低入室モリー $minMorrieBalance 未満のため再戦できません',
-      );
+      _showGameMessage('最低入室モリー $minMorrieBalance 未満のため再戦できません');
       return;
     }
     _cancelPostGameTimers();
     await _removeAllBotsFromRoom();
     if (!mounted) return;
 
-    final guests = playerIds.where((p) => p != hostId && !BotLogic.isBot(p)).toList();
+    final guests = playerIds
+        .where((p) => p != hostId && !BotLogic.isBot(p))
+        .toList();
     if (guests.isEmpty) {
       await _finalizeRematchWithPlayers([hostId!]);
       if (mounted) {
@@ -3545,12 +3796,11 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
   }
 
   Future<void> _onGuestStayInRoom() async {
-    if (isHost || !awaitingGuestStayResponses || myStayResponseSubmitted) return;
+    if (isHost || !awaitingGuestStayResponses || myStayResponseSubmitted)
+      return;
     if (!rematchEligiblePlayers.contains(myId)) return;
     if (!_meetsMinMorrieForPlay) {
-      _showGameMessage(
-        '最低入室モリー $minMorrieBalance 未満のためルームに残れません',
-      );
+      _showGameMessage('最低入室モリー $minMorrieBalance 未満のためルームに残れません');
       return;
     }
     await _db.setStayInRoom(myId);
@@ -3604,7 +3854,8 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
 
     if (isSpectator) {
       await _db.leaveAsSpectator(myId);
-    } else if (awaitingGuestStayResponses && rematchEligiblePlayers.contains(myId)) {
+    } else if (awaitingGuestStayResponses &&
+        rematchEligiblePlayers.contains(myId)) {
       await _db.declineRematch(myId);
       await _db.removePlayerPresence(myId);
       final p = List<String>.from(playerIds)..remove(myId);
@@ -3729,7 +3980,22 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
     );
   }
 
-  void _showErrorDialog(String msg) { showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(title: const Text("入室エラー"), content: Text(msg), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("戻る"))])); }
+  void _showErrorDialog(String msg) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text("入室エラー"),
+        content: Text(msg),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("戻る"),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3739,61 +4005,91 @@ class _GameRoomPageState extends State<GameRoomPage> with WidgetsBindingObserver
       fit: StackFit.expand,
       children: [
         GameBoardView(
-      roomId: widget.roomId, fieldNumber: fieldNumber, fieldSuit: fieldSuit, myHand: myHand, playerIds: playerIds, myId: myId,
-      playerNames: playerNames,
-      playerPoints: playerPoints,
-      handCounts: handCounts, currentTurnIndex: currentTurn, isHost: isHost, hostId: hostId, lastPlayerId: lastPlayerId, isInitialPhase: isInitialPhase,
-      moriPhase: moriPhase, moriDeclaredPlayerIds: moriDeclaredPlayerIds, lastDrawerId: lastDrawerId, isDrawCompetitive: isDrawCompetitive,
-      lastMoriPlayerId: lastMoriPlayerId, moriRevealedHand: moriRevealedHand, moriRevealedType: moriRevealedType,
-      playerCount: playerIds.length,
-      maxPlayers: maxPlayers,
-      gameStarted: gameStarted,
-      isSpectator: isSpectator,
-      spectatorNames: spectatorNames,
-      allPlayerHands: isSpectator ? _spectatorPlayerCards : const {},
-      matchProgressLabel: _matchProgressLabel,
-      morrieRate: morrieRate,
-      minMorrieBalance: minMorrieBalance,
-      myMorrieBalance: _myMorrieBalance,
-      playerMorrieBalances: _playerMorrieBalances,
-      seriesAutoContinuing: _showPostGameOverlay && _hasRemainingSeriesMatches,
-      statusMessage: _statusMessage,
-      autoPlayCountdownSeconds: _autoPlayCountdownSeconds,
-      moriCountdownSeconds: _moriCountdownSeconds,
-      postGameVisible: _showPostGameOverlay,
-      postGameSummary: _postGameSummary,
-      postGameCountdownSeconds: _countdownSeconds,
-      awaitingGuestStayResponses: awaitingGuestStayResponses,
-      guestStayReadyCount: _guestStayReadyCount(),
-      guestStayTotalCount: rematchEligiblePlayers.length,
-      guestCountdownSeconds: _guestCountdownSeconds,
-      mustRespondToStay: !isSpectator &&
-          !isHost &&
-          awaitingGuestStayResponses &&
-          rematchEligiblePlayers.contains(myId) &&
-          !myStayResponseSubmitted &&
-          _meetsMinMorrieForPlay,
-      canPlayAgain: _meetsMinMorrieForPlay,
-      myStayResponseSubmitted: myStayResponseSubmitted,
-      onHostRematch: isSpectator ? _noop : () => _onUiButtonPress(() { unawaited(_onHostRematchRequest()); }),
-      onHostReturnToLobby: isSpectator ? _noop : () => _onUiButtonPress(_onHostReturnToLobby),
-      onGuestStayInRoom: isSpectator ? _noop : () => _onUiButtonPress(_onGuestStayInRoom),
-      onLeaveToLobby: () => _onUiButtonPress(_leaveRoomToLobby),
-      canAddBot: !isSpectator &&
-          isHost &&
-          !gameStarted &&
-          !RoomConfig.isRoomFull(playerIds.length, maxPlayers) &&
-          BotLogic.hasAvailableBotSlot(playerIds),
-      onAddBot: isSpectator ? null : () => _onUiButtonPress(_addBot),
-      hideOpponentNames: _hideOpponentNames,
-      onToggleHideOpponentNames: _toggleHideOpponentNames,
-      onMorrieBalanceChanged: BotLogic.isBot(myId) ? null : _loadMorrieBalance,
-      onCardTap: isSpectator ? _noopCardTap : _onCardTap,
-      onMori: isSpectator ? _noop : () => _onUiButtonPress(_onMori),
-      onOpenJoker: isSpectator ? _noop : () => _onUiButtonPress(_onOpenJoker),
-      openJokerPlayerIds: openJokerPlayerIds,
-      onDraw: isSpectator ? _noop : () => _onUiButtonPress(_onDraw),
-      onFlip: isSpectator ? _noop : () => _onUiButtonPress(_onFlip),
+          roomId: widget.roomId,
+          fieldNumber: fieldNumber,
+          fieldSuit: fieldSuit,
+          myHand: myHand,
+          playerIds: playerIds,
+          myId: myId,
+          playerNames: playerNames,
+          playerPoints: playerPoints,
+          handCounts: handCounts,
+          currentTurnIndex: currentTurn,
+          isHost: isHost,
+          hostId: hostId,
+          lastPlayerId: lastPlayerId,
+          isInitialPhase: isInitialPhase,
+          moriPhase: moriPhase,
+          moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+          lastDrawerId: lastDrawerId,
+          isDrawCompetitive: isDrawCompetitive,
+          lastMoriPlayerId: lastMoriPlayerId,
+          moriRevealedHand: moriRevealedHand,
+          moriRevealedType: moriRevealedType,
+          playerCount: playerIds.length,
+          maxPlayers: maxPlayers,
+          gameStarted: gameStarted,
+          isSpectator: isSpectator,
+          spectatorNames: spectatorNames,
+          allPlayerHands: isSpectator ? _spectatorPlayerCards : const {},
+          matchProgressLabel: _matchProgressLabel,
+          morrieRate: morrieRate,
+          minMorrieBalance: minMorrieBalance,
+          myMorrieBalance: _myMorrieBalance,
+          playerMorrieBalances: _playerMorrieBalances,
+          seriesAutoContinuing:
+              _showPostGameOverlay && _hasRemainingSeriesMatches,
+          statusMessage: _statusMessage,
+          autoPlayCountdownSeconds: _autoPlayCountdownSeconds,
+          moriCountdownSeconds: _moriCountdownSeconds,
+          postGameVisible: _showPostGameOverlay,
+          postGameSummary: _postGameSummary,
+          postGameCountdownSeconds: _countdownSeconds,
+          awaitingGuestStayResponses: awaitingGuestStayResponses,
+          guestStayReadyCount: _guestStayReadyCount(),
+          guestStayTotalCount: rematchEligiblePlayers.length,
+          guestCountdownSeconds: _guestCountdownSeconds,
+          mustRespondToStay:
+              !isSpectator &&
+              !isHost &&
+              awaitingGuestStayResponses &&
+              rematchEligiblePlayers.contains(myId) &&
+              !myStayResponseSubmitted &&
+              _meetsMinMorrieForPlay,
+          canPlayAgain: _meetsMinMorrieForPlay,
+          myStayResponseSubmitted: myStayResponseSubmitted,
+          onHostRematch: isSpectator
+              ? _noop
+              : () => _onUiButtonPress(() {
+                  unawaited(_onHostRematchRequest());
+                }),
+          onHostReturnToLobby: isSpectator
+              ? _noop
+              : () => _onUiButtonPress(_onHostReturnToLobby),
+          onGuestStayInRoom: isSpectator
+              ? _noop
+              : () => _onUiButtonPress(_onGuestStayInRoom),
+          onLeaveToLobby: () => _onUiButtonPress(_leaveRoomToLobby),
+          canAddBot:
+              !isSpectator &&
+              isHost &&
+              !gameStarted &&
+              !RoomConfig.isRoomFull(playerIds.length, maxPlayers) &&
+              BotLogic.hasAvailableBotSlot(playerIds),
+          onAddBot: isSpectator ? null : () => _onUiButtonPress(_addBot),
+          hideOpponentNames: _hideOpponentNames,
+          onToggleHideOpponentNames: _toggleHideOpponentNames,
+          onMorrieBalanceChanged: BotLogic.isBot(myId)
+              ? null
+              : _loadMorrieBalance,
+          onCardTap: isSpectator ? _noopCardTap : _onCardTap,
+          onMori: isSpectator ? _noop : () => _onUiButtonPress(_onMori),
+          onOpenJoker: isSpectator
+              ? _noop
+              : () => _onUiButtonPress(_onOpenJoker),
+          openJokerPlayerIds: openJokerPlayerIds,
+          onDraw: isSpectator ? _noop : () => _onUiButtonPress(_onDraw),
+          onFlip: isSpectator ? _noop : () => _onUiButtonPress(_onFlip),
         ),
         GameEffectsOverlay(effects: _gameEffects),
       ],

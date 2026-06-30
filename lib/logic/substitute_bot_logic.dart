@@ -13,7 +13,8 @@ class SubstituteDecision {
   const SubstituteDecision._(this.type, [this.cardIndex]);
 
   const SubstituteDecision.none() : this._(SubstituteActionType.none);
-  const SubstituteDecision.play(int index) : this._(SubstituteActionType.play, index);
+  const SubstituteDecision.play(int index)
+    : this._(SubstituteActionType.play, index);
   const SubstituteDecision.draw() : this._(SubstituteActionType.draw);
 }
 
@@ -38,19 +39,20 @@ class SubstituteBotLogic {
   }) {
     if (moriPhase == 'mori_declared' || moriPhase == 'finished') return false;
     return decideAction(
-      gameStarted: gameStarted,
-      isInitialPhase: isInitialPhase,
-      fieldNumber: fieldNumber,
-      fieldSuit: fieldSuit,
-      moriPhase: moriPhase,
-      currentTurnIndex: currentTurnIndex,
-      players: players,
-      playerId: playerId,
-      hand: hand,
-      lastDrawerId: lastDrawerId,
-      isDrawCompetitive: isDrawCompetitive,
-      hasPlayedThisTurn: hasPlayedThisTurn,
-    ).type != SubstituteActionType.none;
+          gameStarted: gameStarted,
+          isInitialPhase: isInitialPhase,
+          fieldNumber: fieldNumber,
+          fieldSuit: fieldSuit,
+          moriPhase: moriPhase,
+          currentTurnIndex: currentTurnIndex,
+          players: players,
+          playerId: playerId,
+          hand: hand,
+          lastDrawerId: lastDrawerId,
+          isDrawCompetitive: isDrawCompetitive,
+          hasPlayedThisTurn: hasPlayedThisTurn,
+        ).type !=
+        SubstituteActionType.none;
   }
 
   static SubstituteDecision decideAction({
@@ -156,7 +158,12 @@ class SubstituteBotLogic {
 
     if (isInitialPhase) {
       for (var i = 0; i < hand.length; i++) {
-        if (GameRules.canPlayNormal(fieldNumber, fieldSuit, hand[i], isInitialPhase: true)) {
+        if (GameRules.canPlayNormal(
+          fieldNumber,
+          fieldSuit,
+          hand[i],
+          isInitialPhase: true,
+        )) {
           indices.add(i);
         }
       }
@@ -174,10 +181,14 @@ class SubstituteBotLogic {
 
     for (var i = 0; i < hand.length; i++) {
       final card = hand[i];
-      final isInterrupt = card.number == fieldNumber;
-      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+      final isInterrupt = card.suit != Suit.joker && card.number == fieldNumber;
+      final usesTurnPlayLimit =
+          isServerTurn || isLastDrawer || isCompetitiveParticipant;
 
-      if (usesTurnPlayLimit && hasPlayedThisTurn && !isInterrupt && !isJokerField) {
+      if (usesTurnPlayLimit &&
+          hasPlayedThisTurn &&
+          !isInterrupt &&
+          !isJokerField) {
         continue;
       }
 
@@ -187,8 +198,7 @@ class SubstituteBotLogic {
           isInterrupt ||
           isJokerField) {
         if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) ||
-            isInterrupt ||
-            isJokerField) {
+            isInterrupt) {
           indices.add(i);
         }
       }
@@ -205,7 +215,8 @@ class SubstituteBotLogic {
     required List<String> players,
     required bool isDrawCompetitive,
   }) {
-    if (isInitialPhase || !GameRules.canDraw(handLength, lastDrawerId, playerId)) {
+    if (isInitialPhase ||
+        !GameRules.canDraw(handLength, lastDrawerId, playerId)) {
       return null;
     }
     final myIdx = players.indexOf(playerId);

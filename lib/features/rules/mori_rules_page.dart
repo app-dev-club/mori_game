@@ -39,7 +39,7 @@ class MoriRulesPage extends StatelessWidget {
               _Bullet('最初の1枚目は、全員が早い者勝ちで同じ数字のカードを出せます。'),
               _Bullet('誰も出せない場合、ホストは山札からもう1枚めくります。'),
               _Bullet('誰かがカードを出すと、隣の人にターンが移りゲームが始まります。'),
-              _Bullet('場にジョーカーが出た場合は、早い者勝ちでどんなカードも出せます。'),
+              _Bullet('場にジョーカーが出た場合は、早い者勝ちでジョーカー以外のどんなカードも出せます。'),
               SizedBox(height: 12),
               _Subheading('ターン制と割り込み'),
               _Bullet('基本はターン制で進行します。'),
@@ -221,7 +221,10 @@ class _Bullet extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• ', style: TextStyle(color: Colors.orangeAccent, fontSize: 16)),
+          const Text(
+            '• ',
+            style: TextStyle(color: Colors.orangeAccent, fontSize: 16),
+          ),
           Expanded(
             child: Text(
               text,

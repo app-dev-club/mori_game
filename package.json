@@ -1,0 +1,7 @@
+{
+  "name": "mori-game",
+  "private": true,
+  "scripts": {
+    "update-app-meta": "node scripts/update_app_meta.mjs"
+  }
+}
