@@ -39,7 +39,7 @@
       "android": {
         "default": {
           "projectId": "mori-game",
-          "appId": "1:347939440644:android:347cba0d40e41a2c164d51",
+          "appId": "1:347939440644:android:c3cf808b5dc5dee3164d51",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -47,7 +47,7 @@
         "lib/firebase_options.dart": {
           "projectId": "mori-game",
           "configurations": {
-            "android": "1:347939440644:android:347cba0d40e41a2c164d51",
+            "android": "1:347939440644:android:c3cf808b5dc5dee3164d51",
             "ios": "1:347939440644:ios:dd44bfc440971884164d51",
             "web": "1:347939440644:web:fa9fc6758e845668164d51"
           }

@@ -55,3 +55,22 @@ lib/firebase_options.dart
 # Cloud Functions
 functions/node_modules/
 functions/lib/
+
+# Environment / local secrets
+.env
+.env.*
+!.env.example
+functions/.env
+functions/.env.*
+!functions/.env.example
+functions/.runtimeconfig.json
+
+# Firebase emulator / debug logs
+firebase-debug.log
+firestore-debug.log
+database-debug.log
+ui-debug.log
+*-debug.log
+
+# Local editor state
+.cursor/
