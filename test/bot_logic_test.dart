@@ -17,6 +17,30 @@ void main() {
   const handCountsHostTwoBotThree = {'host': 2, 'bot_1': 3};
 
   group('BotLogic', () {
+    test('decideAction skips joker on joker field', () {
+      final decision = BotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 0,
+        fieldSuit: Suit.joker,
+        moriPhase: 'none',
+        currentTurnIndex: 1,
+        players: players,
+        botId: 'bot_1',
+        hand: [joker, heart3],
+        handCounts: handCountsAllFive,
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        lastPlayerId: 'system',
+        moriDeclaredPlayerIds: const [],
+        openJokerPlayerIds: const {},
+      );
+
+      expect(decision.type, BotActionType.play);
+      expect(decision.cardIndex, 1);
+    });
+
     test('isBot は bot_ プレフィックスを判定する', () {
       expect(BotLogic.isBot('bot_123'), isTrue);
       expect(BotLogic.isBot('bot_1'), isTrue);
@@ -255,7 +279,10 @@ void main() {
         currentTurnIndex: 1,
         players: players,
         botId: 'bot_1',
-        hand: [spade7, CardWidget(number: 3, suit: Suit.club)],
+        hand: [
+          spade7,
+          CardWidget(number: 3, suit: Suit.club),
+        ],
         handCounts: handCountsAllFive,
         lastDrawerId: null,
         isDrawCompetitive: false,
@@ -432,7 +459,12 @@ void main() {
         moriDeclaredPlayerIds: const [],
         openJokerPlayerIds: const {'host'},
         playerHands: {
-          'host': [joker, heart3, heart4, CardWidget(number: 5, suit: Suit.diamond)],
+          'host': [
+            joker,
+            heart3,
+            heart4,
+            CardWidget(number: 5, suit: Suit.diamond),
+          ],
         },
       );
       expect(decision.type, BotActionType.play);

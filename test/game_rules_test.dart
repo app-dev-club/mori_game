@@ -12,10 +12,7 @@ void main() {
 
   group('canPlayNormal', () {
     test('山札をめくる前は手札から出せない', () {
-      expect(
-        GameRules.canPlayNormal(-1, Suit.joker, heart7),
-        isFalse,
-      );
+      expect(GameRules.canPlayNormal(-1, Suit.joker, heart7), isFalse);
     });
 
     test('初期フェーズは同じ数字のみ出せる', () {
@@ -32,17 +29,68 @@ void main() {
     test('通常フェーズは同じ数字または同じスートで出せる', () {
       expect(GameRules.canPlayNormal(7, Suit.heart, spade7), isTrue);
       expect(GameRules.canPlayNormal(7, Suit.heart, heart5), isTrue);
-      expect(GameRules.canPlayNormal(7, Suit.heart, CardWidget(number: 5, suit: Suit.spade)), isFalse);
+      expect(
+        GameRules.canPlayNormal(
+          7,
+          Suit.heart,
+          CardWidget(number: 5, suit: Suit.spade),
+        ),
+        isFalse,
+      );
     });
 
     test('ジョーカー場では任意のカードを出せる', () {
       expect(GameRules.canPlayNormal(0, Suit.joker, heart5), isTrue);
-      expect(GameRules.canPlayNormal(0, Suit.joker, heart5, isInitialPhase: true), isTrue);
+      expect(
+        GameRules.canPlayNormal(0, Suit.joker, heart5, isInitialPhase: true),
+        isTrue,
+      );
+      expect(GameRules.canPlayNormal(0, Suit.joker, joker), isFalse);
+      expect(
+        GameRules.canPlayNormal(0, Suit.joker, joker, isInitialPhase: true),
+        isFalse,
+      );
     });
 
     test('未めくりプレースホルダーはジョーカー場とみなさない', () {
       expect(GameRules.isJokerOnField(-1, Suit.joker), isFalse);
       expect(GameRules.isJokerOnField(0, Suit.joker), isTrue);
+    });
+  });
+
+  group('findPlayableCardIndex', () {
+    test('skips joker on joker field', () {
+      expect(
+        GameRules.findPlayableCardIndex(
+          fieldNumber: 0,
+          fieldSuit: Suit.joker,
+          hand: [joker, heart5],
+          isInitialPhase: false,
+          currentTurnIndex: 1,
+          players: const ['host', 'guest'],
+          myId: 'guest',
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+          hasPlayedThisTurn: false,
+        ),
+        1,
+      );
+
+      expect(
+        GameRules.findPlayableCardIndex(
+          fieldNumber: 0,
+          fieldSuit: Suit.joker,
+          hand: [joker],
+          isInitialPhase: false,
+          currentTurnIndex: 1,
+          players: const ['host', 'guest'],
+          myId: 'guest',
+          lastDrawerId: null,
+          isDrawCompetitive: false,
+          hasPlayedThisTurn: false,
+        ),
+        isNull,
+      );
     });
   });
 
@@ -326,7 +374,10 @@ void main() {
         GameRules.findPlayableCardIndex(
           fieldNumber: 7,
           fieldSuit: Suit.heart,
-          hand: [CardWidget(number: 3, suit: Suit.spade), CardWidget(number: 4, suit: Suit.club)],
+          hand: [
+            CardWidget(number: 3, suit: Suit.spade),
+            CardWidget(number: 4, suit: Suit.club),
+          ],
           isInitialPhase: false,
           currentTurnIndex: 1,
           players: players,
@@ -373,9 +424,18 @@ void main() {
     const ids = ['host', 'guest1', 'guest2'];
 
     test('自分の次の手番から時計回りに並べる', () {
-      expect(GameRules.opponentsClockwiseFrom('host', ids), ['guest1', 'guest2']);
-      expect(GameRules.opponentsClockwiseFrom('guest1', ids), ['guest2', 'host']);
-      expect(GameRules.opponentsClockwiseFrom('guest2', ids), ['host', 'guest1']);
+      expect(GameRules.opponentsClockwiseFrom('host', ids), [
+        'guest1',
+        'guest2',
+      ]);
+      expect(GameRules.opponentsClockwiseFrom('guest1', ids), [
+        'guest2',
+        'host',
+      ]);
+      expect(GameRules.opponentsClockwiseFrom('guest2', ids), [
+        'host',
+        'guest1',
+      ]);
     });
 
     test('index 付きエントリは手番判定に使える', () {

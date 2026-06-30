@@ -74,15 +74,14 @@ class BotLogic {
     required String? lastPlayerId,
     required String playerId,
     required List<String> moriDeclaredPlayerIds,
-  }) =>
-      GameRules.canDeclareMori(
-        fieldNumber: fieldNumber,
-        hand: hand,
-        moriPhase: moriPhase,
-        lastPlayerId: lastPlayerId,
-        playerId: playerId,
-        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
-      );
+  }) => GameRules.canDeclareMori(
+    fieldNumber: fieldNumber,
+    hand: hand,
+    moriPhase: moriPhase,
+    lastPlayerId: lastPlayerId,
+    playerId: playerId,
+    moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+  );
 
   static bool canDeclareMoriGaeshi({
     required int fieldNumber,
@@ -91,15 +90,14 @@ class BotLogic {
     required String? lastMoriPlayerId,
     required String playerId,
     required List<String> moriDeclaredPlayerIds,
-  }) =>
-      GameRules.canDeclareMoriGaeshi(
-        fieldNumber: fieldNumber,
-        hand: hand,
-        moriPhase: moriPhase,
-        lastMoriPlayerId: lastMoriPlayerId,
-        playerId: playerId,
-        moriDeclaredPlayerIds: moriDeclaredPlayerIds,
-      );
+  }) => GameRules.canDeclareMoriGaeshi(
+    fieldNumber: fieldNumber,
+    hand: hand,
+    moriPhase: moriPhase,
+    lastMoriPlayerId: lastMoriPlayerId,
+    playerId: playerId,
+    moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+  );
 
   /// 持ち時間内でランダムな操作遅延（ミリ秒）を返す
   static int randomActionDelayMs({
@@ -146,24 +144,25 @@ class BotLogic {
       );
     }
     return decideAction(
-      gameStarted: gameStarted,
-      isInitialPhase: isInitialPhase,
-      fieldNumber: fieldNumber,
-      fieldSuit: fieldSuit,
-      moriPhase: moriPhase,
-      currentTurnIndex: currentTurnIndex,
-      players: players,
-      botId: botId,
-      hand: hand,
-      handCounts: handCounts,
-      lastDrawerId: lastDrawerId,
-      isDrawCompetitive: isDrawCompetitive,
-      hasPlayedThisTurn: hasPlayedThisTurn,
-      lastPlayerId: lastPlayerId,
-      moriDeclaredPlayerIds: moriDeclaredPlayerIds,
-      openJokerPlayerIds: openJokerPlayerIds,
-      playerHands: playerHands,
-    ).type != BotActionType.none;
+          gameStarted: gameStarted,
+          isInitialPhase: isInitialPhase,
+          fieldNumber: fieldNumber,
+          fieldSuit: fieldSuit,
+          moriPhase: moriPhase,
+          currentTurnIndex: currentTurnIndex,
+          players: players,
+          botId: botId,
+          hand: hand,
+          handCounts: handCounts,
+          lastDrawerId: lastDrawerId,
+          isDrawCompetitive: isDrawCompetitive,
+          hasPlayedThisTurn: hasPlayedThisTurn,
+          lastPlayerId: lastPlayerId,
+          moriDeclaredPlayerIds: moriDeclaredPlayerIds,
+          openJokerPlayerIds: openJokerPlayerIds,
+          playerHands: playerHands,
+        ).type !=
+        BotActionType.none;
   }
 
   /// 他プレイヤーに手札2枚（オープンジョーカー時はジョーカー除く）の人がいるか
@@ -360,7 +359,12 @@ class BotLogic {
 
     if (isInitialPhase) {
       for (var i = 0; i < hand.length; i++) {
-        if (GameRules.canPlayNormal(fieldNumber, fieldSuit, hand[i], isInitialPhase: true)) {
+        if (GameRules.canPlayNormal(
+          fieldNumber,
+          fieldSuit,
+          hand[i],
+          isInitialPhase: true,
+        )) {
           return i;
         }
       }
@@ -378,12 +382,16 @@ class BotLogic {
 
     for (var i = 0; i < hand.length; i++) {
       final card = hand[i];
-      final isInterrupt = card.number == fieldNumber;
+      final isInterrupt = card.suit != Suit.joker && card.number == fieldNumber;
       if (excludeInterruptBecauseOpponentHasTwoCards && isInterrupt) continue;
 
-      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+      final usesTurnPlayLimit =
+          isServerTurn || isLastDrawer || isCompetitiveParticipant;
 
-      if (usesTurnPlayLimit && hasPlayedThisTurn && !isInterrupt && !isJokerField) {
+      if (usesTurnPlayLimit &&
+          hasPlayedThisTurn &&
+          !isInterrupt &&
+          !isJokerField) {
         continue;
       }
 
@@ -393,8 +401,7 @@ class BotLogic {
           isInterrupt ||
           isJokerField) {
         if (GameRules.canPlayNormal(fieldNumber, fieldSuit, card) ||
-            isInterrupt ||
-            isJokerField) {
+            isInterrupt) {
           return i;
         }
       }
@@ -460,11 +467,10 @@ class BotLogic {
     Map<String, int> handCounts, {
     required Set<String> openJokerPlayerIds,
     Map<String, List<CardWidget>>? playerHands,
-  }) =>
-      players
-          .map(
-            (id) =>
-                '$id:${GameRules.decisionHandCount(playerId: id, handCounts: handCounts, openJokerPlayerIds: openJokerPlayerIds, playerHands: playerHands)}',
-          )
-          .join('|');
+  }) => players
+      .map(
+        (id) =>
+            '$id:${GameRules.decisionHandCount(playerId: id, handCounts: handCounts, openJokerPlayerIds: openJokerPlayerIds, playerHands: playerHands)}',
+      )
+      .join('|');
 }

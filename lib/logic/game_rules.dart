@@ -16,12 +16,19 @@ class GameRules {
   }
 
   /// ドロー競合フェーズ（手札6枚以下でドロー後）が有効か
-  static bool isDrawCompetitivePhase(bool isDrawCompetitive, String? lastDrawerId) {
+  static bool isDrawCompetitivePhase(
+    bool isDrawCompetitive,
+    String? lastDrawerId,
+  ) {
     return isDrawCompetitive && lastDrawerId != null;
   }
 
   /// ドローした直後の「次のプレイヤー」か
-  static bool isPlayerAfterDrawer(String? lastDrawerId, List<String> players, String myId) {
+  static bool isPlayerAfterDrawer(
+    String? lastDrawerId,
+    List<String> players,
+    String myId,
+  ) {
     if (lastDrawerId == null || players.isEmpty) return false;
     final drawerIdx = players.indexOf(lastDrawerId);
     if (drawerIdx < 0) return false;
@@ -35,21 +42,26 @@ class GameRules {
   ) {
     final myIdx = playerIds.indexOf(myId);
     if (myIdx < 0 || playerIds.length <= 1) return const [];
-    return List.generate(
-      playerIds.length - 1,
-      (i) {
-        final idx = (myIdx + i + 1) % playerIds.length;
-        return MapEntry(idx, playerIds[idx]);
-      },
-    );
+    return List.generate(playerIds.length - 1, (i) {
+      final idx = (myIdx + i + 1) % playerIds.length;
+      return MapEntry(idx, playerIds[idx]);
+    });
   }
 
   /// 盤面表示用: 自分の次の手番から時計回りに並べた相手 ID 一覧
-  static List<String> opponentsClockwiseFrom(String myId, List<String> playerIds) =>
-      opponentEntriesClockwiseFrom(myId, playerIds).map((e) => e.value).toList();
+  static List<String> opponentsClockwiseFrom(
+    String myId,
+    List<String> playerIds,
+  ) => opponentEntriesClockwiseFrom(
+    myId,
+    playerIds,
+  ).map((e) => e.value).toList();
 
   /// 新しい1戦の手番順（players 配列の並び）をランダムに決める
-  static List<String> shuffledPlayerOrder(List<String> playerIds, [Random? random]) {
+  static List<String> shuffledPlayerOrder(
+    List<String> playerIds, [
+    Random? random,
+  ]) {
     final ordered = List<String>.from(playerIds);
     ordered.shuffle(random ?? Random());
     return ordered;
@@ -63,7 +75,8 @@ class GameRules {
     required String myId,
   }) {
     if (!isDrawCompetitivePhase(isDrawCompetitive, lastDrawerId)) return false;
-    return lastDrawerId == myId || isPlayerAfterDrawer(lastDrawerId, players, myId);
+    return lastDrawerId == myId ||
+        isPlayerAfterDrawer(lastDrawerId, players, myId);
   }
 
   /// ドロー競合中に山札から引けるか
@@ -88,23 +101,24 @@ class GameRules {
         .where((c) => c.suit != Suit.joker)
         .map((c) => c.number)
         .toList();
-    
+
     int effectiveCount = numbers.length;
 
     // 手札が1枚の場合
     if (effectiveCount == 1) {
       return numbers[0] == fieldNumber;
     }
-    
+
     // 手札が2枚の場合（四則演算）
     if (effectiveCount == 2) {
       int a = numbers[0];
       int b = numbers[1];
       return (a + b == fieldNumber) ||
-             (a - b == fieldNumber) || (b - a == fieldNumber) ||
-             (a * b == fieldNumber) ||
-             (b != 0 && a % b == 0 && a ~/ b == fieldNumber) ||
-             (a != 0 && b % a == 0 && b ~/ a == fieldNumber);
+          (a - b == fieldNumber) ||
+          (b - a == fieldNumber) ||
+          (a * b == fieldNumber) ||
+          (b != 0 && a % b == 0 && a ~/ b == fieldNumber) ||
+          (a != 0 && b % a == 0 && b ~/ a == fieldNumber);
     }
 
     // 手札が3枚以上の場合（すべての和）
@@ -127,7 +141,9 @@ class GameRules {
   }) {
     if (moriPhase != 'none' || fieldNumber == -1) return false;
     if (moriDeclaredPlayerIds.contains(playerId)) return false;
-    if (lastPlayerId == null || lastPlayerId == playerId || lastPlayerId == 'system') {
+    if (lastPlayerId == null ||
+        lastPlayerId == playerId ||
+        lastPlayerId == 'system') {
       return false;
     }
     return isValidMori(fieldNumber, hand);
@@ -201,6 +217,7 @@ class GameRules {
     bool isInitialPhase = false,
   }) {
     if (fieldNumber == -1) return false;
+    if (card.suit == Suit.joker) return false;
     if (isJokerOnField(fieldNumber, fieldSuit)) return true;
     if (isInitialPhase) return card.number == fieldNumber;
     return card.number == fieldNumber || card.suit == fieldSuit;
@@ -276,7 +293,8 @@ class GameRules {
   }) {
     final myIdx = players.indexOf(myId);
     if (myIdx < 0) return false;
-    final isMyTurn = players.isNotEmpty && (currentTurnIndex % players.length == myIdx);
+    final isMyTurn =
+        players.isNotEmpty && (currentTurnIndex % players.length == myIdx);
     return isMyTurn && handCount >= maxHandSize && lastDrawerId == myId;
   }
 
@@ -293,12 +311,16 @@ class GameRules {
     required String? lastDrawerId,
     required bool isDrawCompetitive,
   }) {
-    if (!gameStarted || isInitialPhase || fieldNumber == -1 || moriPhase != 'none') {
+    if (!gameStarted ||
+        isInitialPhase ||
+        fieldNumber == -1 ||
+        moriPhase != 'none') {
       return false;
     }
     final myIdx = players.indexOf(myId);
     if (myIdx < 0) return false;
-    final isMyTurn = players.isNotEmpty && (currentTurnIndex % players.length == myIdx);
+    final isMyTurn =
+        players.isNotEmpty && (currentTurnIndex % players.length == myIdx);
     final canDrawInCompetition = GameRules.canDrawInCompetition(
       isDrawCompetitive: isDrawCompetitive,
       lastDrawerId: lastDrawerId,
@@ -306,7 +328,9 @@ class GameRules {
       myId: myId,
       handCount: handCount,
     );
-    final canDrawNow = (isMyTurn || canDrawInCompetition) && canDraw(handCount, lastDrawerId, myId);
+    final canDrawNow =
+        (isMyTurn || canDrawInCompetition) &&
+        canDraw(handCount, lastDrawerId, myId);
     final mustPlaySeventh = mustPlayAfterSeventhDraw(
       handCount: handCount,
       lastDrawerId: lastDrawerId,
@@ -339,7 +363,14 @@ class GameRules {
 
     if (isInitialPhase) {
       for (var i = 0; i < hand.length; i++) {
-        if (canPlayNormal(fieldNumber, fieldSuit, hand[i], isInitialPhase: true)) return i;
+        if (canPlayNormal(
+          fieldNumber,
+          fieldSuit,
+          hand[i],
+          isInitialPhase: true,
+        )) {
+          return i;
+        }
       }
       return null;
     }
@@ -355,10 +386,14 @@ class GameRules {
 
     for (var i = 0; i < hand.length; i++) {
       final card = hand[i];
-      final isInterrupt = card.number == fieldNumber;
-      final usesTurnPlayLimit = isServerTurn || isLastDrawer || isCompetitiveParticipant;
+      final isInterrupt = card.suit != Suit.joker && card.number == fieldNumber;
+      final usesTurnPlayLimit =
+          isServerTurn || isLastDrawer || isCompetitiveParticipant;
 
-      if (usesTurnPlayLimit && hasPlayedThisTurn && !isInterrupt && !isJokerField) {
+      if (usesTurnPlayLimit &&
+          hasPlayedThisTurn &&
+          !isInterrupt &&
+          !isJokerField) {
         continue;
       }
 
@@ -367,7 +402,7 @@ class GameRules {
           isCompetitiveParticipant ||
           isInterrupt ||
           isJokerField) {
-        if (canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt || isJokerField) {
+        if (canPlayNormal(fieldNumber, fieldSuit, card) || isInterrupt) {
           return i;
         }
       }

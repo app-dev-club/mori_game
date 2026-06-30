@@ -6,6 +6,30 @@ import 'package:mori_game/logic/substitute_bot_logic.dart';
 
 void main() {
   group('SubstituteBotLogic', () {
+    test('skips joker on joker field', () {
+      final decision = SubstituteBotLogic.decideAction(
+        gameStarted: true,
+        isInitialPhase: false,
+        fieldNumber: 0,
+        fieldSuit: Suit.joker,
+        moriPhase: 'none',
+        currentTurnIndex: 0,
+        players: const ['p1', 'p2'],
+        playerId: 'p1',
+        hand: const [
+          CardWidget(number: 0, suit: Suit.joker),
+          CardWidget(number: 5, suit: Suit.heart),
+        ],
+        lastDrawerId: null,
+        isDrawCompetitive: false,
+        hasPlayedThisTurn: false,
+        random: Random(0),
+      );
+
+      expect(decision.type, SubstituteActionType.play);
+      expect(decision.cardIndex, 1);
+    });
+
     test('never returns mori or burst actions', () {
       final hand = [
         const CardWidget(number: 5, suit: Suit.spade),
