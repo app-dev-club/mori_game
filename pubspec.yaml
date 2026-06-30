@@ -43,6 +43,9 @@ dependencies:
   audioplayers: ^6.5.0
   google_mobile_ads: ^9.0.0
   google_adsense: ^0.1.2
+  package_info_plus: ^10.2.0
+  http: ^1.6.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
