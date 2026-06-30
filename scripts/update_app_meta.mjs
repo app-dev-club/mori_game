@@ -13,6 +13,7 @@ const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pubspecPath = join(rootDir, 'pubspec.yaml');
 const configPath = join(rootDir, 'scripts', 'app_meta_config.json');
 
+const databaseInstance = 'mori-game-default-rtdb';
 const databaseUrl =
   'https://mori-game-default-rtdb.asia-southeast1.firebasedatabase.app';
 
@@ -71,28 +72,37 @@ function readProjectId() {
 function updateViaFirebaseCli(projectId, payload) {
   const tempDir = mkdtempSync(join(tmpdir(), 'mori-app-meta-'));
   const payloadPath = join(tempDir, 'payload.json');
-  writeFileSync(payloadPath, JSON.stringify(payload, null, 2), 'utf8');
+  writeFileSync(payloadPath, JSON.stringify(payload), 'utf8');
+
+  const firebaseCmd = process.platform === 'win32' ? 'firebase.cmd' : 'firebase';
 
   try {
     const result = spawnSync(
-      'firebase',
+      firebaseCmd,
       [
         'database:update',
         '/appMeta',
-        `@${payloadPath}`,
+        payloadPath,
         '--project',
         projectId,
+        '--instance',
+        databaseInstance,
         '--force',
       ],
       {
         cwd: rootDir,
         stdio: 'inherit',
-        shell: true,
+        shell: process.platform === 'win32',
         env: process.env,
       },
     );
+    if (result.error) {
+      throw result.error;
+    }
     if (result.status !== 0) {
-      throw new Error('firebase database:update が失敗しました（firebase login を確認してください）');
+      throw new Error(
+        'firebase database:update が失敗しました（firebase login と RTDB 権限を確認してください）',
+      );
     }
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
