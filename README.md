@@ -98,7 +98,7 @@
 - ビルドは基本hirotakasuzuki1219が実行する
   - Web
     - `flutter build web --release`
-    - `firebase deploy --only hosting`
+    - `firebase deploy --only functions,database,hosting`
   - Android
     - `flutter pub get`
     - `flutter devices`
@@ -118,10 +118,6 @@
       - 上記実行の前に`open /Users/hirotaka_suzuki/workspace/mori_game/ios/Runner.xcworkspace`からアップルアカウントを結びつける必要あり
     - デバイスがない時はこれの方がいいかも
       - `flutter build ipa --release --export-method app-store`
-    - Functionの更新
-      - `deploy --only functions`
-    - Databaseルールの更新
-      - `deploy --only database`
 ### Flutterプロジェクトを新しく立ち上げる
 - 作りたい場所にターミナルで移動した後
   - flutter create .
