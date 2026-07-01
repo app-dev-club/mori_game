@@ -13,7 +13,10 @@ void main() {
       expect(parsed.suit, Suit.heart);
 
       // Firebase Web では number が double で返ることがある
-      final fromDouble = MatchRecordCodec.parseCard({'number': 7.0, 'suit': 'heart'});
+      final fromDouble = MatchRecordCodec.parseCard({
+        'number': 7.0,
+        'suit': 'heart',
+      });
       expect(fromDouble.number, 7);
 
       final hand = [
@@ -31,7 +34,7 @@ void main() {
           matchIndex: 2,
           startedAtMs: 1_700_000_000_000,
         ),
-        '12345_m2',
+        '12345_m2_1700000000000',
       );
     });
   });

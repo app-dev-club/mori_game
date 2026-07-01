@@ -61,9 +61,11 @@ class MatchRecordService {
     required int currentTurnIndex,
     required bool isInitialPhase,
   }) async {
+    final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     final recordId = MatchRecordCodec.buildRecordId(
       roomId: roomId,
       matchIndex: matchIndex,
+      startedAtMs: startedAtMs,
     );
 
     final existingSnap = await _root.child(recordId).get();
@@ -76,7 +78,8 @@ class MatchRecordService {
       final metaRaw = data['meta'];
       if (metaRaw is Map) {
         final metaMap = Map<dynamic, dynamic>.from(metaRaw);
-        if (metaMap['recordId'] == null || metaMap['recordId'].toString().isEmpty) {
+        if (metaMap['recordId'] == null ||
+            metaMap['recordId'].toString().isEmpty) {
           metaMap['recordId'] = recordId;
         }
         _activeRecordId = recordId;
@@ -90,8 +93,6 @@ class MatchRecordService {
     if (isRecording) {
       reset();
     }
-
-    final startedAtMs = DateTime.now().millisecondsSinceEpoch;
 
     final meta = MatchRecordMeta(
       recordId: recordId,
@@ -225,10 +226,12 @@ class MatchRecordService {
   }) async {
     if (isRecording) return true;
 
-    final recordId = MatchRecordCodec.buildRecordId(
+    final recordId = await _findOpenRecordId(
       roomId: roomId,
       matchIndex: matchIndex,
     );
+    if (recordId == null) return false;
+
     final existingSnap = await _root.child(recordId).get();
     if (!existingSnap.exists || existingSnap.child('result').value != null) {
       return false;
@@ -247,6 +250,41 @@ class MatchRecordService {
     _eventSeq = _maxEventSeq(data['events']);
     _finalized = false;
     return true;
+  }
+
+  Future<String?> _findOpenRecordId({
+    required String roomId,
+    required int matchIndex,
+  }) async {
+    final snap = await _root.get();
+    if (!snap.exists || snap.value is! Map) return null;
+
+    String? bestId;
+    var bestStartedAt = -1;
+    final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+    for (final entry in raw.entries) {
+      if (entry.value is! Map) continue;
+      final recordId = entry.key.toString();
+      final data = Map<dynamic, dynamic>.from(entry.value as Map);
+      if (data['result'] != null) continue;
+      final metaRaw = data['meta'];
+      if (metaRaw is! Map) continue;
+      final meta = Map<dynamic, dynamic>.from(metaRaw);
+      if (meta['roomId']?.toString() != roomId) continue;
+      if (MatchRecordCodec.readInt(meta['matchIndex'], fallback: -1) !=
+          matchIndex) {
+        continue;
+      }
+      final startedAt = MatchRecordCodec.readInt(
+        meta['startedAt'],
+        fallback: 0,
+      );
+      if (startedAt > bestStartedAt) {
+        bestStartedAt = startedAt;
+        bestId = recordId;
+      }
+    }
+    return bestId;
   }
 
   int _nextSeq() => ++_eventSeq;
@@ -294,13 +332,14 @@ class MatchRecordService {
     return deduped.sublist(0, limit);
   }
 
-  /// 同一ルーム・同一試合番号では確定済みを優先し、未確定の重複を除外
+  /// 同一 recordId の重複だけを除外する。再戦で同じ部屋・同じ試合番号に
+  /// 戻ることがあるため、roomId + matchIndex では畳まない。
   static List<MatchRecordSummary> _dedupeSummaries(
     List<MatchRecordSummary> summaries,
   ) {
     final best = <String, MatchRecordSummary>{};
     for (final summary in summaries) {
-      final key = '${summary.meta.roomId}_m${summary.meta.matchIndex}';
+      final key = summary.meta.recordId;
       final existing = best[key];
       if (existing == null) {
         best[key] = summary;
@@ -315,22 +354,7 @@ class MatchRecordService {
         best[key] = summary;
       }
     }
-    return best.values
-        .where((s) => s.result != null || !_hasFinalizedSibling(s, best.values))
-        .toList();
-  }
-
-  static bool _hasFinalizedSibling(
-    MatchRecordSummary summary,
-    Iterable<MatchRecordSummary> all,
-  ) {
-    final key = '${summary.meta.roomId}_m${summary.meta.matchIndex}';
-    for (final other in all) {
-      if (identical(other, summary)) continue;
-      final otherKey = '${other.meta.roomId}_m${other.meta.matchIndex}';
-      if (otherKey == key && other.result != null) return true;
-    }
-    return false;
+    return best.values.toList();
   }
 
   static int _maxEventSeq(dynamic eventsRaw) {
@@ -368,17 +392,15 @@ class MatchRecordService {
         if (metaRaw is! Map) continue;
 
         final metaMap = Map<dynamic, dynamic>.from(metaRaw);
-        if (metaMap['recordId'] == null || metaMap['recordId'].toString().isEmpty) {
+        if (metaMap['recordId'] == null ||
+            metaMap['recordId'].toString().isEmpty) {
           metaMap['recordId'] = recordId;
         }
 
         final meta = MatchRecordMetaJson.fromJson(metaMap);
         final result = MatchRecordResultJson.fromJson(data['result']);
         merged.add(MatchRecordSummary(meta: meta, result: result));
-        updates[recordId] = {
-          'meta': meta.toJson(),
-          'result': result?.toJson(),
-        };
+        updates[recordId] = {'meta': meta.toJson(), 'result': result?.toJson()};
       }
 
       if (updates.isNotEmpty) {
@@ -396,7 +418,10 @@ class MatchRecordService {
     }
   }
 
-  List<MatchRecordSummary> _loadSummaries(DataSnapshot snap, {required int limit}) {
+  List<MatchRecordSummary> _loadSummaries(
+    DataSnapshot snap, {
+    required int limit,
+  }) {
     if (!snap.exists || snap.value is! Map) return [];
 
     final summaries = <MatchRecordSummary>[];
@@ -404,7 +429,10 @@ class MatchRecordService {
 
     for (final entry in raw.entries) {
       if (entry.value is! Map) continue;
-      final summary = _parseSummaryEntry(entry.key.toString(), entry.value as Map);
+      final summary = _parseSummaryEntry(
+        entry.key.toString(),
+        entry.value as Map,
+      );
       if (summary != null) summaries.add(summary);
     }
 
@@ -449,17 +477,15 @@ class MatchRecordService {
       if (metaRaw is! Map) continue;
 
       final metaMap = Map<dynamic, dynamic>.from(metaRaw);
-      if (metaMap['recordId'] == null || metaMap['recordId'].toString().isEmpty) {
+      if (metaMap['recordId'] == null ||
+          metaMap['recordId'].toString().isEmpty) {
         metaMap['recordId'] = recordId;
       }
 
       final meta = MatchRecordMetaJson.fromJson(metaMap);
       final result = MatchRecordResultJson.fromJson(data['result']);
       summaries.add(MatchRecordSummary(meta: meta, result: result));
-      updates[recordId] = {
-        'meta': meta.toJson(),
-        'result': result?.toJson(),
-      };
+      updates[recordId] = {'meta': meta.toJson(), 'result': result?.toJson()};
     }
 
     if (writeIndex && updates.isNotEmpty) {
@@ -491,7 +517,9 @@ class MatchRecordService {
 
     final initialRaw = data['initial'];
     final initial = initialRaw is Map
-        ? Map<String, dynamic>.from(initialRaw.map((k, v) => MapEntry(k.toString(), v)))
+        ? Map<String, dynamic>.from(
+            initialRaw.map((k, v) => MapEntry(k.toString(), v)),
+          )
         : <String, dynamic>{};
 
     return MatchRecord(
