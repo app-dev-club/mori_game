@@ -1289,9 +1289,18 @@ class _GameRoomPageState extends State<GameRoomPage>
     });
   }
 
-  void _onUiButtonPress(VoidCallback action) {
+  void _onUiButtonPress(FutureOr<void> Function() action) {
     _gameEffects.playButton();
-    action();
+    try {
+      final result = action();
+      if (result is Future<void>) {
+        unawaited(result.catchError((_) {
+          if (mounted) _showGameMessage('通信に失敗しました。もう一度お試しください');
+        }));
+      }
+    } catch (_) {
+      if (mounted) _showGameMessage('通信に失敗しました。もう一度お試しください');
+    }
   }
 
   void _emitCardPlayEffect({
@@ -2764,7 +2773,7 @@ class _GameRoomPageState extends State<GameRoomPage>
         .toList();
   }
 
-  void _onFlip() {
+  Future<void> _onFlip() async {
     if (!isHost) return;
     if (_showPostGameOverlay && _hasRemainingSeriesMatches) {
       _showGameMessage('カウントダウンが終わるまでお待ちください');
@@ -2794,7 +2803,7 @@ class _GameRoomPageState extends State<GameRoomPage>
     final playOrder = isFirstMatchStart
         ? GameRules.shuffledPlayerOrder(playerIds)
         : playerIds;
-    _db.updateGameStatus({
+    await _db.updateGameStatus({
       'field': {'number': card.number, 'suit': card.suit.name},
       'deck': deck
           .sublist(0, deck.length - 1)

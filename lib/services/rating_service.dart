@@ -80,9 +80,9 @@ class RatingService {
       });
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw Exception(
-          'レート情報の保存が拒否されました。Firebase の database.rules をデプロイしてください。',
-        );
+        // レート本体は Cloud Functions が管理する。クライアントから作れない
+        // ルールでも、ログインやロビー表示は止めない。
+        return;
       }
       rethrow;
     }
