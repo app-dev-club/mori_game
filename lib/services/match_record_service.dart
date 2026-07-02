@@ -40,6 +40,7 @@ class MatchRecordService {
   MatchRecordMeta? _activeMeta;
   int _eventSeq = 0;
   bool _finalized = false;
+  Future<void>? _startInFlight;
 
   bool get isRecording => _activeRecordId != null && !_finalized;
 
@@ -61,6 +62,67 @@ class MatchRecordService {
     required int currentTurnIndex,
     required bool isInitialPhase,
   }) async {
+    final inFlight = _startInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      if (_isRecordingMatch(roomId: roomId, matchIndex: matchIndex)) return;
+    }
+
+    final startFuture = _startMatchLocked(
+      roomId: roomId,
+      matchIndex: matchIndex,
+      seriesTotal: seriesTotal,
+      turnTimeoutSeconds: turnTimeoutSeconds,
+      playerIds: playerIds,
+      playerNames: playerNames,
+      botIds: botIds,
+      hands: hands,
+      deck: deck,
+      field: field,
+      fieldHistory: fieldHistory,
+      currentTurnIndex: currentTurnIndex,
+      isInitialPhase: isInitialPhase,
+    );
+    _startInFlight = startFuture;
+    try {
+      await startFuture;
+    } finally {
+      if (identical(_startInFlight, startFuture)) {
+        _startInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _startMatchLocked({
+    required String roomId,
+    required int matchIndex,
+    required int seriesTotal,
+    required int turnTimeoutSeconds,
+    required List<String> playerIds,
+    required Map<String, String> playerNames,
+    required List<String> botIds,
+    required Map<String, List<Map<String, dynamic>>> hands,
+    required List<Map<String, dynamic>> deck,
+    required Map<String, dynamic> field,
+    required List<Map<String, dynamic>> fieldHistory,
+    required int currentTurnIndex,
+    required bool isInitialPhase,
+  }) async {
+    if (_isRecordingMatch(roomId: roomId, matchIndex: matchIndex)) return;
+
+    if (isRecording) {
+      reset();
+    }
+
+    final openRecordId = await _findOpenRecordId(
+      roomId: roomId,
+      matchIndex: matchIndex,
+    );
+    if (openRecordId != null) {
+      final adopted = await _adoptRecord(openRecordId);
+      if (adopted) return;
+    }
+
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     final recordId = MatchRecordCodec.buildRecordId(
       roomId: roomId,
@@ -74,24 +136,8 @@ class MatchRecordService {
     }
 
     if (existingSnap.exists) {
-      final data = Map<dynamic, dynamic>.from(existingSnap.value as Map);
-      final metaRaw = data['meta'];
-      if (metaRaw is Map) {
-        final metaMap = Map<dynamic, dynamic>.from(metaRaw);
-        if (metaMap['recordId'] == null ||
-            metaMap['recordId'].toString().isEmpty) {
-          metaMap['recordId'] = recordId;
-        }
-        _activeRecordId = recordId;
-        _activeMeta = MatchRecordMetaJson.fromJson(metaMap);
-        _eventSeq = _maxEventSeq(data['events']);
-        _finalized = false;
-      }
+      await _adoptRecord(recordId);
       return;
-    }
-
-    if (isRecording) {
-      reset();
     }
 
     final meta = MatchRecordMeta(
@@ -232,6 +278,18 @@ class MatchRecordService {
     );
     if (recordId == null) return false;
 
+    return _adoptRecord(recordId);
+  }
+
+  bool _isRecordingMatch({required String roomId, required int matchIndex}) {
+    if (!isRecording) return false;
+    final meta = _activeMeta;
+    return meta != null &&
+        meta.roomId == roomId &&
+        meta.matchIndex == matchIndex;
+  }
+
+  Future<bool> _adoptRecord(String recordId) async {
     final existingSnap = await _root.child(recordId).get();
     if (!existingSnap.exists || existingSnap.child('result').value != null) {
       return false;
